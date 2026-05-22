@@ -230,3 +230,76 @@ export const locationSecrets = pgTable(
 
 export type LocationSecret = typeof locationSecrets.$inferSelect;
 export type NewLocationSecret = typeof locationSecrets.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// External Setup Tracker — per-location checklist of wall-clock-heavy
+// external dependencies (DNS, Meta domain verification, Twilio A2P, etc.).
+// The longest-pole items (Twilio A2P at 1-2 weeks) live here. Status state
+// machine: not_started → in_progress → submitted → approved → verified.
+// `failed` is a terminal status that needs operator intervention.
+// ---------------------------------------------------------------------------
+
+export const setupPhaseEnum = pgEnum("setup_phase", [
+  "domain_dns",
+  "tracking_platforms",
+  "email_sms",
+  "fareharbor",
+  "site_infrastructure",
+  "indexing",
+  "cutover",
+]);
+
+export const setupStatusEnum = pgEnum("setup_status", [
+  "not_started",
+  "in_progress",
+  "submitted",
+  "approved",
+  "verified",
+  "failed",
+]);
+
+export const setupOwnerEnum = pgEnum("setup_owner", [
+  "operator",
+  "va",
+  "client",
+]);
+
+export const externalSetupItems = pgTable(
+  "external_setup_items",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    phase: setupPhaseEnum("phase").notNull(),
+    /** Stable string identifier within the template — e.g. "domain_registered",
+     * "twilio_a2p_brand". Lets us upsert on (location_id, kind) when the
+     * template grows new items. */
+    kind: text("kind").notNull(),
+    label: text("label").notNull(),
+    /** Optional longer description shown under the label. */
+    description: text("description"),
+    status: setupStatusEnum("status").notNull().default("not_started"),
+    owner: setupOwnerEnum("owner"),
+    submittedAt: timestamp("submitted_at"),
+    expectedBy: timestamp("expected_by"),
+    lastCheckedAt: timestamp("last_checked_at"),
+    notes: text("notes"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationPhaseIdx: index("setup_items_location_phase_idx").on(
+      t.locationId,
+      t.phase,
+    ),
+    locationKindIdx: uniqueIndex("setup_items_location_kind_idx").on(
+      t.locationId,
+      t.kind,
+    ),
+  }),
+);
+
+export type ExternalSetupItem = typeof externalSetupItems.$inferSelect;
+export type NewExternalSetupItem = typeof externalSetupItems.$inferInsert;

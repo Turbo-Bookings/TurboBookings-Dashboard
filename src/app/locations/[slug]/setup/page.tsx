@@ -1,11 +1,31 @@
-import { TabPlaceholder } from "@/components/TabPlaceholder";
+import { notFound } from "next/navigation";
+import { SetupTracker } from "@/components/SetupTracker";
+import { getSetupItemsForLocation } from "@/lib/actions/setup";
+import { getLocationBySlug } from "@/lib/data/locations";
 
-export default function SetupPage() {
+type Props = {
+  params: Promise<{ slug: string }>;
+};
+
+export default async function SetupPage({ params }: Props) {
+  const { slug } = await params;
+  const loc = await getLocationBySlug(slug);
+  if (!loc) notFound();
+
+  const items = await getSetupItemsForLocation(loc.id);
+
   return (
-    <TabPlaceholder
-      name="External Setup Tracker"
-      description="Kanban / grouped checklist of wall-clock-heavy external dependencies: DNS, Meta domain verification, Twilio A2P, Resend domain, GSC, FareHarbor webhook, Vercel + Neon + Edge Config provisioning."
-      phase="Phase 1"
-    />
+    <div className="mt-6 space-y-6">
+      <div className="max-w-2xl">
+        <p className="text-sm text-zinc-500">
+          Wall-clock-heavy external dependencies. Twilio A2P brand registration
+          is the longest pole (1-2 weeks) — start it as early as possible. Each
+          item: edit status / owner / expected date inline. Overdue items
+          highlight red.
+        </p>
+      </div>
+
+      <SetupTracker location={loc} items={items} />
+    </div>
   );
 }
