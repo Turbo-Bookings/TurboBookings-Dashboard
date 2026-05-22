@@ -8,6 +8,13 @@
       "when": 1779421501523,
       "tag": "0000_nosy_owl",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779423548315,
+      "tag": "0001_white_kronos",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,13 @@
-import { jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 // Locations move through this lifecycle: a fresh row enters as `draft`,
 // transitions to `building` when the Fork CLI is triggered, becomes
@@ -87,3 +96,35 @@ export const locations = pgTable("locations", {
 
 export type Location = typeof locations.$inferSelect;
 export type NewLocation = typeof locations.$inferInsert;
+
+// Asset kinds. Singular kinds (hero_*, og_image) have at most one row per
+// location — the action layer enforces this by deleting existing rows on
+// upload. gallery_photo is the only kind that can repeat per location.
+export const assetKindEnum = pgEnum("asset_kind", [
+  "hero_desktop",
+  "hero_mobile",
+  "og_image",
+  "gallery_photo",
+]);
+
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    kind: assetKindEnum("kind").notNull(),
+    blobUrl: text("blob_url").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationKindIdx: index("assets_location_kind_idx").on(t.locationId, t.kind),
+  }),
+);
+
+export type Asset = typeof assets.$inferSelect;
+export type NewAsset = typeof assets.$inferInsert;
