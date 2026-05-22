@@ -15,6 +15,13 @@
       "when": 1779423548315,
       "tag": "0001_white_kronos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779424800259,
+      "tag": "0002_cloudy_machine_man",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   jsonb,
@@ -128,3 +129,65 @@ export const assets = pgTable(
 
 export type Asset = typeof assets.$inferSelect;
 export type NewAsset = typeof assets.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Tracking config — per-location runtime tracking IDs + feature flags. The
+// system of record. A future step mirrors the Edge Config of each location's
+// Vercel project so site renders hot-update without redeploy. Until Miami +
+// HTown are refactored to read from Edge Config, the writes here are
+// effectively admin-only.
+// ---------------------------------------------------------------------------
+
+export const trackingModeEnum = pgEnum("tracking_mode", [
+  "direct",
+  "gtm_only",
+  "hybrid",
+]);
+
+export type VerificationResult = {
+  /** "match" — found and matches stored value
+   *  "mismatch" — found on the site but value differs
+   *  "not_found" — site rendered but expected pattern absent
+   *  "fetch_failed" — couldn't load the live URL */
+  status: "match" | "mismatch" | "not_found" | "fetch_failed";
+  checkedAt: string;
+  foundValue?: string;
+  message?: string;
+};
+
+export const trackingConfig = pgTable("tracking_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id, { onDelete: "cascade" })
+    .unique(),
+  mode: trackingModeEnum("mode").notNull().default("direct"),
+
+  // direct-mode fields
+  metaPixelId: text("meta_pixel_id"),
+  metaDomainVerification: text("meta_domain_verification"),
+  ga4MeasurementId: text("ga4_measurement_id"),
+  gtmContainerId: text("gtm_container_id"),
+  googleAdsConversionId: text("google_ads_conversion_id"),
+
+  // Feature flag — defaults OFF because FareHarbor's own CAPI integration is
+  // canonical for Purchase. Operators flip on only when running custom
+  // server-side CAPI (e.g. before a FareHarbor migration).
+  metaCapiPurchaseEnabled: boolean("meta_capi_purchase_enabled")
+    .notNull()
+    .default(false),
+
+  // gtm_only / hybrid mode — optional server-side GTM endpoint
+  serverSideGtmEndpoint: text("server_side_gtm_endpoint"),
+
+  // Per-field verification results from the last live-site check
+  verificationResults: jsonb("verification_results")
+    .$type<Record<string, VerificationResult>>()
+    .default({}),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type TrackingConfig = typeof trackingConfig.$inferSelect;
+export type NewTrackingConfig = typeof trackingConfig.$inferInsert;
