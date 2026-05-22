@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TurboBookings Dashboard
 
-## Getting Started
+Multi-tenant client portal for ATV-tour location buildouts and operations. Sits above the per-location marketing sites (Miami, HTown, DTown, future) — manages intake, tracking config, external-setup tracking, asset library, and cross-location analytics.
 
-First, run the development server:
+Lives at [dashboard.turbobookings.net](https://dashboard.turbobookings.net).
+
+## Status
+
+**Phase 1 — buildout MVP, in progress.**
+
+The approved plan is at `~/.claude/plans/snazzy-jingling-squirrel.md`. See `AGENTS.md` for project context, cross-repo responsibility split, and the git workflow.
+
+## Local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Next.js 16 App Router + React 19
+- TypeScript + Tailwind CSS v4
+- Neon Postgres + Drizzle ORM (planned, provisioned via Vercel Marketplace)
+- Clerk auth (planned)
+- Vercel Blob + Vercel Edge Config
 
-## Learn More
+## Companion repos
 
-To learn more about Next.js, take a look at the following resources:
+| Repo | Purpose |
+|---|---|
+| [`takeovers-site`](https://github.com/Turbo-Bookings/takeovers-site) | Miami marketing site — the template every location fork comes from |
+| [`htown-atv-rentals-site`](https://github.com/Turbo-Bookings/htown-atv-rentals-site) | Houston, first fork |
+| Replit `Takeovers-Phone-and-SMS-Agent` | AI receptionist + voice + predictive marketing — the long-term operations brain |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The cross-repo integration contract lives at `~/takeovers-site/docs/unified-platform-integration.md`.
