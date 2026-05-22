@@ -11,7 +11,8 @@
     "db:migrate": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs migrate",
     "db:push": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs push",
     "db:studio": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs studio",
-    "db:seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts"
+    "db:seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
+    "fork": "node --env-file-if-exists=.env.local --import tsx scripts/fork.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.0",
