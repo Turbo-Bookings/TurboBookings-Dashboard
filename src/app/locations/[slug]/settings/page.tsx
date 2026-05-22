@@ -1,11 +1,19 @@
-import { TabPlaceholder } from "@/components/TabPlaceholder";
+import { notFound } from "next/navigation";
+import { SettingsPanel } from "@/components/SettingsPanel";
+import { getLocationBySlug } from "@/lib/data/locations";
 
-export default function SettingsPage() {
+type Props = {
+  params: Promise<{ slug: string }>;
+};
+
+export default async function SettingsPage({ params }: Props) {
+  const { slug } = await params;
+  const loc = await getLocationBySlug(slug);
+  if (!loc) notFound();
+
   return (
-    <TabPlaceholder
-      name="Settings"
-      description="Clerk org membership, plan tier (Phase 2), add-on toggles (Phase 2), deep links to Vercel / GitHub / Neon, archive / delete actions."
-      phase="Phase 1"
-    />
+    <div className="mt-6">
+      <SettingsPanel location={loc} />
+    </div>
   );
 }
