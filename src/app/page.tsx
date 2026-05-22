@@ -41,7 +41,12 @@ export default async function HomePage() {
             {rows.length} {rows.length === 1 ? "location" : "locations"}
           </p>
         </div>
-        {/* Placeholder for + New Location button (next commit) */}
+        <Link
+          href="/locations/new"
+          className="inline-flex items-center gap-1.5 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-zinc-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        >
+          <span className="text-base leading-none">+</span> New location
+        </Link>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
