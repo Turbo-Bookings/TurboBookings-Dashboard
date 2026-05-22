@@ -2,6 +2,7 @@
 
 import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { recordAudit } from "@/lib/audit";
 import { encryptSecret } from "@/lib/crypto/secrets";
 import { getDb, locationSecrets, locations } from "@/lib/db";
 import type { LocationSecret } from "@/lib/db/schema";
@@ -73,6 +74,12 @@ export async function setSecret(
   }
 
   revalidatePath(`/locations/${slug}/integrations`);
+  await recordAudit({
+    slug,
+    action: "secret.set",
+    summary: `Set secret: ${SECRET_KINDS[kind].label}${pushedToVercel ? " · pushed to Vercel" : ""}`,
+    payload: { kind, pushedToVercel },
+  });
   return { ok: true, pushedToVercel, pushReason };
 }
 
@@ -95,6 +102,12 @@ export async function clearSecret(slug: string, kind: SecretKind): Promise<void>
     );
 
   revalidatePath(`/locations/${slug}/integrations`);
+  await recordAudit({
+    slug,
+    action: "secret.clear",
+    summary: `Cleared secret: ${SECRET_KINDS[kind].label}`,
+    payload: { kind },
+  });
 }
 
 // Read helper for the Integrations page. Returns presence + lastSet

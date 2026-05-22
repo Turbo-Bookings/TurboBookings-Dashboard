@@ -1,11 +1,30 @@
-import { TabPlaceholder } from "@/components/TabPlaceholder";
+import { notFound } from "next/navigation";
+import { ActivityFeed } from "@/components/ActivityFeed";
+import { listAuditForLocation } from "@/lib/audit";
+import { getLocationBySlug } from "@/lib/data/locations";
 
-export default function ActivityPage() {
+type Props = {
+  params: Promise<{ slug: string }>;
+};
+
+export default async function ActivityPage({ params }: Props) {
+  const { slug } = await params;
+  const loc = await getLocationBySlug(slug);
+  if (!loc) notFound();
+
+  const entries = await listAuditForLocation(loc.id, 200);
+
   return (
-    <TabPlaceholder
-      name="Activity"
-      description="Audit log of every config change to this location. Diff highlighting, filterable by user / key / time, per-row revert."
-      phase="Phase 1"
-    />
+    <div className="mt-6 space-y-6">
+      <div className="max-w-2xl">
+        <p className="text-sm text-zinc-500">
+          Every config change to this location, newest first. Records who
+          changed what and when. Phase 2 will add per-row revert; for now
+          this is a read-only feed.
+        </p>
+      </div>
+
+      <ActivityFeed entries={entries} />
+    </div>
   );
 }

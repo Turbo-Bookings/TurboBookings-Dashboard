@@ -3,6 +3,7 @@
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { recordAudit } from "@/lib/audit";
 import { getDb, locations, type TourCatalogItem } from "@/lib/db";
 
 type FieldErrors = Partial<
@@ -171,6 +172,7 @@ export async function updateLocationBranding(
 
   revalidatePath(`/locations/${slug}`);
   revalidatePath("/");
+  await recordAudit({ slug, action: "branding.save", summary: "Updated branding details" });
 
   return { ok: true, savedAt: Date.now() };
 }
@@ -266,5 +268,11 @@ export async function updateTourCatalog(
     .where(eq(locations.slug, slug));
 
   revalidatePath(`/locations/${slug}`);
+  await recordAudit({
+    slug,
+    action: "tour_catalog.save",
+    summary: `Updated tour catalog (${cleaned.length} item${cleaned.length === 1 ? "" : "s"})`,
+    payload: { count: cleaned.length },
+  });
   return { ok: true };
 }

@@ -2,6 +2,7 @@
 
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { recordAudit } from "@/lib/audit";
 import { getDb, locations, trackingConfig } from "@/lib/db";
 import type {
   TrackingConfig,
@@ -119,6 +120,12 @@ export async function updateTracking(
   // this up automatically.
 
   revalidatePath(`/locations/${slug}/tracking`);
+  await recordAudit({
+    slug,
+    action: "tracking.update",
+    summary: `Updated tracking config (mode: ${mode})`,
+    payload: { mode, metaCapiPurchaseEnabled },
+  });
   return { ok: true };
 }
 

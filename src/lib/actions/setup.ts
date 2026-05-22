@@ -2,6 +2,7 @@
 
 import { asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { recordAudit } from "@/lib/audit";
 import { externalSetupItems, getDb, locations } from "@/lib/db";
 import type { ExternalSetupItem } from "@/lib/db/schema";
 import { SETUP_TEMPLATE } from "@/lib/external-setup/template";
@@ -88,10 +89,36 @@ export async function updateSetupItem(
     updates.expectedBy = patch.expectedBy ? new Date(patch.expectedBy) : null;
   }
 
+  // Read the row first so the audit summary can include the item label.
+  const db2 = getDb();
+  const before = await db2
+    .select()
+    .from(externalSetupItems)
+    .where(eq(externalSetupItems.id, itemId))
+    .limit(1);
+
   await db
     .update(externalSetupItems)
     .set(updates as Partial<ExternalSetupItem>)
     .where(eq(externalSetupItems.id, itemId));
+
+  if (before[0]) {
+    const changes: string[] = [];
+    if (patch.status !== undefined && patch.status !== before[0].status) {
+      changes.push(`${before[0].status} → ${patch.status}`);
+    }
+    if (patch.owner !== undefined && patch.owner !== before[0].owner) {
+      changes.push(`owner: ${patch.owner ?? "—"}`);
+    }
+    if (changes.length > 0) {
+      await recordAudit({
+        slug,
+        action: "setup.update",
+        summary: `${before[0].label} (${changes.join(", ")})`,
+        payload: { itemId, ...patch },
+      });
+    }
+  }
 
   revalidatePath(`/locations/${slug}/setup`);
 }

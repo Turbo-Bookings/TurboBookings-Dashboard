@@ -303,3 +303,40 @@ export const externalSetupItems = pgTable(
 
 export type ExternalSetupItem = typeof externalSetupItems.$inferSelect;
 export type NewExternalSetupItem = typeof externalSetupItems.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Audit log — one row per config change. Captured by action handlers via
+// the recordAudit helper. Phase 1 stores summary text only; full diff +
+// per-row revert is a Phase 2 polish.
+// ---------------------------------------------------------------------------
+
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    /** Clerk user_id of the actor. Nullable for system-initiated writes
+     * (template seeding, fork CLI, scheduled jobs). */
+    userId: text("user_id"),
+    /** Short stable identifier — e.g. "tracking.update", "secret.set",
+     * "setup.status_change", "branding.save". */
+    action: text("action").notNull(),
+    /** Human-readable summary shown in the Activity feed. */
+    summary: text("summary").notNull(),
+    /** Optional structured payload (old/new values, etc.) for future diff
+     * rendering + revert. */
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationCreatedIdx: index("audit_log_location_created_idx").on(
+      t.locationId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type AuditLog = typeof auditLog.$inferSelect;
+export type NewAuditLog = typeof auditLog.$inferInsert;
