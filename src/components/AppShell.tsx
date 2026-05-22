@@ -1,12 +1,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { UserButton } from "@clerk/nextjs";
 
 type Props = {
   children: ReactNode;
 };
 
-// Top-level chrome shared by every authenticated screen. Once Clerk is wired,
-// the right side will host the user menu + location switcher.
+// Top-level chrome shared by every authenticated screen. UserButton on the
+// right hosts the Clerk-managed account menu (profile, sign-out, etc.).
+// Location switcher will land alongside it when we have non-operator users.
 export function AppShell({ children }: Props) {
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -20,8 +22,11 @@ export function AppShell({ children }: Props) {
               Dashboard
             </span>
           </Link>
-          {/* Reserved for Clerk user menu + location switcher */}
-          <div className="text-xs text-zinc-400">Phase 1 · pre-auth</div>
+          <UserButton
+            appearance={{
+              elements: { avatarBox: "h-8 w-8" },
+            }}
+          />
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
