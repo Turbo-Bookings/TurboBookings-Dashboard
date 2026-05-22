@@ -7,6 +7,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -191,3 +192,41 @@ export const trackingConfig = pgTable("tracking_config", {
 
 export type TrackingConfig = typeof trackingConfig.$inferSelect;
 export type NewTrackingConfig = typeof trackingConfig.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Per-location encrypted secrets. Generic key/value so we don't need a
+// migration to add a new secret kind — set whatever well-known key the
+// integration expects (META_CAPI_TOKEN, FAREHARBOR_WEBHOOK_SECRET, etc.)
+//
+// encryptedValue is base64(iv || authTag || ciphertext), AES-256-GCM,
+// key = ADMIN_ENCRYPTION_KEY env var. See lib/crypto/secrets.ts.
+//
+// vercelEnvSyncedAt records when the secret was last successfully pushed to
+// the location's Vercel env. Null = never pushed (either because
+// VERCEL_API_TOKEN isn't configured or the location has no vercelProjectId
+// yet). UI shows this as a "Pushed to Vercel: ✓ / not yet" indicator.
+// ---------------------------------------------------------------------------
+
+export const locationSecrets = pgTable(
+  "location_secrets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    encryptedValue: text("encrypted_value").notNull(),
+    vercelEnvSyncedAt: timestamp("vercel_env_synced_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationKeyIdx: uniqueIndex("location_secrets_location_key_idx").on(
+      t.locationId,
+      t.key,
+    ),
+  }),
+);
+
+export type LocationSecret = typeof locationSecrets.$inferSelect;
+export type NewLocationSecret = typeof locationSecrets.$inferInsert;
