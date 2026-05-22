@@ -1,25 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { eq } from "drizzle-orm";
 import { AppShell } from "@/components/AppShell";
 import { LocationTabs } from "@/components/LocationTabs";
 import { StatusBadge } from "@/components/StatusBadge";
-import { getDb, locations } from "@/lib/db";
+import { getLocationBySlug } from "@/lib/data/locations";
 
 type Props = {
   children: React.ReactNode;
   params: Promise<{ slug: string }>;
 };
 
-async function getLocation(slug: string) {
-  const db = getDb();
-  const rows = await db.select().from(locations).where(eq(locations.slug, slug)).limit(1);
-  return rows[0];
-}
-
 export default async function LocationLayout({ children, params }: Props) {
   const { slug } = await params;
-  const loc = await getLocation(slug);
+  const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 
   return (

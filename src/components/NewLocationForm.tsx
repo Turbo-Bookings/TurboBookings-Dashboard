@@ -4,10 +4,7 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { Field } from "@/components/Field";
-import {
-  createLocation,
-  type CreateLocationState,
-} from "@/lib/actions/locations";
+import { createLocation } from "@/lib/actions/locations";
 
 // Initial state is the same shape useActionState will pass back on every
 // validation failure — no errors, empty values. Typed as the ok:false branch
