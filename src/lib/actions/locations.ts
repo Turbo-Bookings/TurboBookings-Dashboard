@@ -3,7 +3,7 @@
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getDb, locations } from "@/lib/db";
+import { getDb, locations, type TourCatalogItem } from "@/lib/db";
 
 type FieldErrors = Partial<
   Record<"slug" | "city" | "apex" | "displayName" | "form", string>
@@ -173,4 +173,98 @@ export async function updateLocationBranding(
   revalidatePath("/");
 
   return { ok: true, savedAt: Date.now() };
+}
+
+// ---------------------------------------------------------------------------
+// Replace the entire tour catalog JSONB column. Editor sends the full array
+// each save (no partial updates) — simpler than diffing add/remove/reorder
+// at this scale (~3-10 tours per location).
+// ---------------------------------------------------------------------------
+
+export type UpdateTourCatalogState =
+  | { ok: true }
+  | { ok: false; error: string; rowErrors?: Record<number, Record<string, string>> };
+
+// Tour stable key: starts with a letter, then letters/digits. Mirrors how
+// existing tour catalogs are keyed in src/config/site.ts on the location
+// repos (atv1h, glowAtv, utv4seat, etc.). Lower-cased on save.
+const TOUR_KEY_RE = /^[a-z][a-z0-9]*$/;
+
+export async function updateTourCatalog(
+  slug: string,
+  _prev: UpdateTourCatalogState | null,
+  formData: FormData,
+): Promise<UpdateTourCatalogState> {
+  const raw = formData.get("tourCatalog");
+  if (typeof raw !== "string") return { ok: false, error: "Missing tourCatalog payload" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, error: "Invalid tour catalog payload (not JSON)" };
+  }
+  if (!Array.isArray(parsed)) {
+    return { ok: false, error: "Tour catalog must be an array" };
+  }
+
+  const cleaned: TourCatalogItem[] = [];
+  const rowErrors: Record<number, Record<string, string>> = {};
+  const seenKeys = new Set<string>();
+
+  parsed.forEach((rawRow, idx) => {
+    const row = rawRow as Record<string, unknown>;
+    const errs: Record<string, string> = {};
+
+    const key = String(row.key ?? "").trim().toLowerCase();
+    const displayName = String(row.displayName ?? "").trim();
+    const fareharborItemId = String(row.fareharborItemId ?? "").trim();
+    const price = Number(row.price ?? 0);
+    const durationMinutes = Number(row.durationMinutes ?? 0);
+    const flowOverrideRaw = String(row.flowOverride ?? "").trim();
+
+    if (!key) errs.key = "Required";
+    else if (!TOUR_KEY_RE.test(key))
+      errs.key = "Lowercase letter then letters/digits (e.g. atv1h, glowAtv lowercased)";
+    else if (seenKeys.has(key)) errs.key = "Duplicate key";
+
+    if (!displayName) errs.displayName = "Required";
+    if (!fareharborItemId) errs.fareharborItemId = "Required";
+    else if (!/^\d+$/.test(fareharborItemId))
+      errs.fareharborItemId = "Must be numeric";
+
+    if (!Number.isFinite(price) || price < 0)
+      errs.price = "Must be a non-negative number";
+    if (!Number.isInteger(durationMinutes) || durationMinutes < 0)
+      errs.durationMinutes = "Must be a non-negative whole number";
+
+    if (Object.keys(errs).length > 0) {
+      rowErrors[idx] = errs;
+      return;
+    }
+
+    seenKeys.add(key);
+    const item: TourCatalogItem = {
+      key,
+      displayName,
+      fareharborItemId,
+      price,
+      durationMinutes,
+    };
+    if (flowOverrideRaw) item.flowOverride = flowOverrideRaw;
+    cleaned.push(item);
+  });
+
+  if (Object.keys(rowErrors).length > 0) {
+    return { ok: false, error: "Fix the highlighted rows", rowErrors };
+  }
+
+  const db = getDb();
+  await db
+    .update(locations)
+    .set({ fareharborTourCatalog: cleaned, updatedAt: sql`now()` })
+    .where(eq(locations.slug, slug));
+
+  revalidatePath(`/locations/${slug}`);
+  return { ok: true };
 }
