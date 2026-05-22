@@ -1,0 +1,266 @@
+{
+  "id": "a9d8e801-7d34-4df4-abc4-d2cd14be7902",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.locations": {
+      "name": "locations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "location_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "brand_display_name": {
+          "name": "brand_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "brand_location_label": {
+          "name": "brand_location_label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "brand_legal_name": {
+          "name": "brand_legal_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_address": {
+          "name": "contact_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_phone": {
+          "name": "contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_phone_e164": {
+          "name": "contact_phone_e164",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "contact_support_email": {
+          "name": "contact_support_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain_apex": {
+          "name": "domain_apex",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain_canonical": {
+          "name": "domain_canonical",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain_locales": {
+          "name": "domain_locales",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[\"en\"]'::jsonb"
+        },
+        "domain_default_locale": {
+          "name": "domain_default_locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'en'"
+        },
+        "visual_primary_color": {
+          "name": "visual_primary_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visual_accent_color": {
+          "name": "visual_accent_color",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visual_display_font": {
+          "name": "visual_display_font",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Anton'"
+        },
+        "visual_body_font": {
+          "name": "visual_body_font",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'Inter'"
+        },
+        "visual_logo_url": {
+          "name": "visual_logo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fareharbor_shortname": {
+          "name": "fareharbor_shortname",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fareharbor_default_flow_id": {
+          "name": "fareharbor_default_flow_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fareharbor_tour_catalog": {
+          "name": "fareharbor_tour_catalog",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
+        "marketing_from_name": {
+          "name": "marketing_from_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marketing_sending_subdomain": {
+          "name": "marketing_sending_subdomain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marketing_reply_to_email": {
+          "name": "marketing_reply_to_email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marketing_ai_chat_kb": {
+          "name": "marketing_ai_chat_kb",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "socials_instagram": {
+          "name": "socials_instagram",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "socials_tiktok": {
+          "name": "socials_tiktok",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "socials_facebook": {
+          "name": "socials_facebook",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vercel_project_id": {
+          "name": "vercel_project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vercel_edge_config_id": {
+          "name": "vercel_edge_config_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "github_repo_url": {
+          "name": "github_repo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "locations_slug_unique": {
+          "name": "locations_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.location_status": {
+      "name": "location_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "building",
+        "launched",
+        "paused",
+        "archived"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
