@@ -9,8 +9,14 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    await auth.protect();
+  if (isPublicRoute(req)) return;
+
+  // Clerk's auth.protect() defaults to 404 (intentional info-hiding for
+  // public APIs). For a dashboard surface we want unauthenticated users
+  // sent to sign-in instead. Manual redirect via redirectToSignIn().
+  const { userId, redirectToSignIn } = await auth();
+  if (!userId) {
+    return redirectToSignIn({ returnBackUrl: req.url });
   }
 });
 
