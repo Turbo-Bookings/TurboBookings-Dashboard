@@ -4,8 +4,13 @@
 
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
-import { sql } from "drizzle-orm";
-import { locations, type NewLocation } from "../src/lib/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  cancellationPolicies,
+  cancellationPolicyRules,
+  locations,
+  type NewLocation,
+} from "../src/lib/db/schema";
 
 const seed: NewLocation[] = [
   {
@@ -22,6 +27,8 @@ const seed: NewLocation[] = [
     domainCanonical: "https://www.takeoversmiamiatvrentals.com",
     domainLocales: ["en", "es"],
     domainDefaultLocale: "en",
+    // FL state sales tax = 7%
+    taxRateBps: 700,
     fareharborShortname: "takeoversmiamiatvrentals",
     fareharborDefaultFlowId: "1612171",
     fareharborTourCatalog: [
@@ -95,7 +102,61 @@ async function main() {
     console.log(`✓ upserted ${row.slug} (${row.status})`);
   }
 
+  // Default cancellation policy per location — Miami's matches what the
+  // FareHarbor crawl revealed (24-hour cutoff, 100% refund if before).
+  // HTown + DTown start with the same defaults; operator adjusts via UI.
+  await seedDefaultCancellationPolicies(db);
+
   console.log("\nDone.");
+}
+
+async function seedDefaultCancellationPolicies(
+  db: ReturnType<typeof drizzle>,
+): Promise<void> {
+  const allLocs = await db.select().from(locations);
+  for (const loc of allLocs) {
+    // Idempotent — only insert if no default policy exists yet for this
+    // location.
+    const existing = await db
+      .select({ id: cancellationPolicies.id })
+      .from(cancellationPolicies)
+      .where(
+        and(
+          eq(cancellationPolicies.locationId, loc.id),
+          eq(cancellationPolicies.isDefault, true),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+
+    const inserted = await db
+      .insert(cancellationPolicies)
+      .values({
+        locationId: loc.id,
+        name: "Default",
+        isDefault: true,
+        gracePeriodMinutes: 15, // 15-min window after booking to cancel for any reason
+      })
+      .returning({ id: cancellationPolicies.id });
+
+    // One rule: cancel ≥24 hours before start → 100% refund. Anything
+    // closer = 0% (the implicit "no rule matched" fallback).
+    await db.insert(cancellationPolicyRules).values({
+      policyId: inserted[0].id,
+      hoursBeforeStart: 24,
+      refundPctBps: 10000,
+    });
+
+    // Set the location's default cancellation policy FK
+    await db
+      .update(locations)
+      .set({ cancellationPolicyId: inserted[0].id, updatedAt: sql`now()` })
+      .where(eq(locations.id, loc.id));
+
+    console.log(
+      `  ✓ default cancellation policy for ${loc.slug} (24hr cutoff, 100% refund)`,
+    );
+  }
 }
 
 main().catch((err) => {
