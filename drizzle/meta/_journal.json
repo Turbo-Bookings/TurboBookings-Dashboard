@@ -43,6 +43,13 @@
       "when": 1779452285012,
       "tag": "0005_outstanding_cammi",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779564281633,
+      "tag": "0006_chunky_rhodey",
+      "breakpoints": true
     }
   ]
 }
