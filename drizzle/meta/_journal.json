@@ -50,6 +50,13 @@
       "when": 1779564281633,
       "tag": "0006_chunky_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780023652066,
+      "tag": "0007_charming_madrox",
+      "breakpoints": true
     }
   ]
 }

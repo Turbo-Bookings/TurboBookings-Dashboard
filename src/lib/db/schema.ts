@@ -401,7 +401,7 @@ export type NewAuditLog = typeof auditLog.$inferInsert;
 //   item_customer_types, resource_requirements
 //   custom_fields → item_custom_fields
 //   availabilities, availability_schedules
-//   contacts → bookings → booking_lines, *_field_values, reschedules
+//   customers → bookings → booking_lines, *_field_values, reschedules
 //   payments, payment_methods_on_file, booking_holds
 //   discount_codes → discount_redemptions
 // ===========================================================================
@@ -783,12 +783,12 @@ export const availabilitySchedules = pgTable("availability_schedules", {
 export type AvailabilitySchedule = typeof availabilitySchedules.$inferSelect;
 export type NewAvailabilitySchedule = typeof availabilitySchedules.$inferInsert;
 
-// ---------- Contacts (customer records) ----------
+// ---------- Customers ----------
 
 // Deduped by lowercased email — the unique index doubles as case-insensitive
 // dedup without needing the citext extension.
-export const contacts = pgTable(
-  "contacts",
+export const customers = pgTable(
+  "customers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     locationId: uuid("location_id")
@@ -798,6 +798,13 @@ export const contacts = pgTable(
     phoneE164: text("phone_e164"),
     firstName: text("first_name"),
     lastName: text("last_name"),
+    // Cross-system identity. Set when the customer arrives from a marketing
+    // site that issued the tb_aid cookie. Join key for pre-identification
+    // touchpoints on Replit. See CROSS_SYSTEM_EVENT_CONTRACT.md §3.
+    anonymousId: uuid("anonymous_id"),
+    firstAttributionClickId: text("first_attribution_click_id"),
+    firstAttributionClickType: text("first_attribution_click_type"),
+    firstSeenAt: timestamp("first_seen_at", { withTimezone: true }),
     // Marketing consent — separate from booking. TCPA requires affirmative
     // opt-in for SMS that can't be inferred from email opt-in.
     marketingEmailConsentAt: timestamp("marketing_email_consent_at", {
@@ -806,26 +813,27 @@ export const contacts = pgTable(
     marketingSmsConsentAt: timestamp("marketing_sms_consent_at", {
       withTimezone: true,
     }),
-    // Set automatically after the contact's second confirmed booking.
+    // Set automatically after the customer's second confirmed booking.
     returningCustomer: boolean("returning_customer").notNull().default(false),
     notes: text("notes"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => ({
-    locationEmailIdx: uniqueIndex("contacts_location_email_idx").on(
+    locationEmailIdx: uniqueIndex("customers_location_email_idx").on(
       t.locationId,
       t.emailLower,
     ),
-    locationPhoneIdx: index("contacts_location_phone_idx").on(
+    locationPhoneIdx: index("customers_location_phone_idx").on(
       t.locationId,
       t.phoneE164,
     ),
+    anonymousIdIdx: index("customers_anonymous_id_idx").on(t.anonymousId),
   }),
 );
 
-export type Contact = typeof contacts.$inferSelect;
-export type NewContact = typeof contacts.$inferInsert;
+export type Customer = typeof customers.$inferSelect;
+export type NewCustomer = typeof customers.$inferInsert;
 
 // ---------- Bookings (the core record) ----------
 
@@ -863,9 +871,9 @@ export const bookings = pgTable(
     availabilityId: uuid("availability_id")
       .notNull()
       .references(() => availabilities.id, { onDelete: "restrict" }),
-    contactId: uuid("contact_id")
+    customerId: uuid("customer_id")
       .notNull()
-      .references(() => contacts.id, { onDelete: "restrict" }),
+      .references(() => customers.id, { onDelete: "restrict" }),
 
     // Human-readable sequential number, per location. Assigned by a per-
     // location sequence (migration adds a Postgres sequence + default).
@@ -901,7 +909,7 @@ export const bookings = pgTable(
       t.status,
     ),
     availabilityIdx: index("bookings_availability_idx").on(t.availabilityId),
-    contactIdx: index("bookings_contact_idx").on(t.contactId),
+    customerIdx: index("bookings_customer_idx").on(t.customerId),
     displayNumberIdx: uniqueIndex("bookings_location_display_idx").on(
       t.locationId,
       t.displayNumber,
@@ -1055,15 +1063,15 @@ export type NewPayment = typeof payments.$inferInsert;
 
 // Saved Payment Methods. Created when customer pays deposit (SetupIntent
 // confirms the card and saves it for later use at the security hold step).
-// Many-to-one with contacts so a returning customer can use a previously-
+// Many-to-one with customers so a returning customer can use a previously-
 // saved card.
 export const paymentMethodsOnFile = pgTable(
   "payment_methods_on_file",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    contactId: uuid("contact_id")
+    customerId: uuid("customer_id")
       .notNull()
-      .references(() => contacts.id, { onDelete: "cascade" }),
+      .references(() => customers.id, { onDelete: "cascade" }),
     // Optional — which booking's deposit saved this card. Null if added
     // ad-hoc at check-in.
     addedFromBookingId: uuid("added_from_booking_id").references(
@@ -1080,7 +1088,7 @@ export const paymentMethodsOnFile = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
   (t) => ({
-    contactIdx: index("pmof_contact_idx").on(t.contactId),
+    customerIdx: index("pmof_customer_idx").on(t.customerId),
   }),
 );
 
