@@ -57,6 +57,13 @@
       "when": 1780023652066,
       "tag": "0007_charming_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780024340641,
+      "tag": "0008_cloudy_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

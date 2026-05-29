@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -1203,3 +1204,39 @@ export const discountRedemptions = pgTable(
 
 export type DiscountRedemption = typeof discountRedemptions.$inferSelect;
 export type NewDiscountRedemption = typeof discountRedemptions.$inferInsert;
+
+// ===========================================================================
+// CROSS-SYSTEM EVENT QUEUE — added 2026-05-28 for Vercel ↔ Replit integration
+// ---------------------------------------------------------------------------
+// Outbound queue for events flowing Vercel → Replit. Spec'd in
+// VERCEL_PREP_FOR_REPLIT_INTEGRATION.md §4.2 + CROSS_SYSTEM_EVENT_CONTRACT.md.
+// emitEvent() in src/lib/events/emit.ts writes here on any send failure;
+// a Vercel cron drains the queue with exponential backoff (1min, 5min, 30min,
+// 6h, then dead-letter).
+// ===========================================================================
+
+export const outboundEventQueue = pgTable(
+  "outbound_event_queue",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventId: uuid("event_id").notNull(),
+    envelope: jsonb("envelope").$type<Record<string, unknown>>().notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", {
+      withTimezone: true,
+    }).notNull(),
+    lastError: text("last_error"),
+    succeededAt: timestamp("succeeded_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pendingIdx: index("outbound_event_queue_pending_idx")
+      .on(t.nextAttemptAt)
+      .where(sql`${t.succeededAt} IS NULL`),
+  }),
+);
+
+export type OutboundEvent = typeof outboundEventQueue.$inferSelect;
+export type NewOutboundEvent = typeof outboundEventQueue.$inferInsert;
