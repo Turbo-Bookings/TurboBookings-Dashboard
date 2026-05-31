@@ -15,6 +15,7 @@ type Tab = {
 // least-empty for `draft` locations.
 const TABS: Tab[] = [
   { label: "Branding & Tours", segment: "" },
+  { label: "Catalog", segment: "catalog" },
   { label: "Tracking", segment: "tracking" },
   { label: "Integrations", segment: "integrations" },
   { label: "Setup", segment: "setup" },
