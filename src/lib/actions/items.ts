@@ -9,6 +9,8 @@ import {
   getDb,
   itemCustomerTypes,
   items,
+  resourceRequirements,
+  resources,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 
@@ -443,4 +445,154 @@ export async function saveItemPricing(
 
   revalidatePath(`/locations/${slug}/catalog/tours/${itemId}/pricing`);
   return { ok: true, rowErrors: {} };
+}
+
+// ---------- Resource requirements actions ----------
+
+type ResourceReqInput = {
+  customerTypeId: string;
+  resourceId: string;
+  quantityConsumed: number;
+};
+
+export type SaveResourceReqState = {
+  ok: boolean;
+  // Keyed by `${customerTypeId}:${resourceId}` so the editor can flag a cell.
+  cellErrors: Record<string, string>;
+  formError?: string;
+};
+
+const MAX_QTY_CONSUMED = 1000;
+
+function parseResourceReqRow(raw: unknown): ResourceReqInput | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.customerTypeId !== "string") return null;
+  if (typeof obj.resourceId !== "string") return null;
+  // Blank/zero cells arrive as 0 and mean "no requirement" — kept so the
+  // diff below can delete a previously-set cell that was cleared.
+  const quantityConsumed =
+    typeof obj.quantityConsumed === "number" ? obj.quantityConsumed : NaN;
+  return {
+    customerTypeId: obj.customerTypeId,
+    resourceId: obj.resourceId,
+    quantityConsumed,
+  };
+}
+
+export async function saveItemResourceRequirements(
+  slug: string,
+  itemId: string,
+  _prev: SaveResourceReqState | null,
+  formData: FormData,
+): Promise<SaveResourceReqState> {
+  const location = await getLocationBySlug(slug);
+  if (!location)
+    return { ok: false, cellErrors: {}, formError: "Location not found" };
+
+  const raw = formData.get("cells");
+  if (typeof raw !== "string")
+    return { ok: false, cellErrors: {}, formError: "Missing cells payload" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, cellErrors: {}, formError: "Malformed cells payload" };
+  }
+  if (!Array.isArray(parsed))
+    return { ok: false, cellErrors: {}, formError: "Malformed cells payload" };
+
+  const cells: ResourceReqInput[] = [];
+  for (const r of parsed) {
+    const row = parseResourceReqRow(r);
+    if (!row)
+      return { ok: false, cellErrors: {}, formError: "Malformed cell" };
+    cells.push(row);
+  }
+
+  const db = getDb();
+  const item = await db
+    .select({ name: items.name })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.locationId, location.id)))
+    .limit(1);
+  if (!item[0])
+    return { ok: false, cellErrors: {}, formError: "Tour not found" };
+
+  // Whitelist valid IDs: customer types must be ON this tour, resources must
+  // belong to this location. Anything else is silently dropped.
+  const [attachedCts, locationResources] = await Promise.all([
+    db
+      .select({ id: itemCustomerTypes.customerTypeId })
+      .from(itemCustomerTypes)
+      .where(eq(itemCustomerTypes.itemId, itemId)),
+    db
+      .select({ id: resources.id })
+      .from(resources)
+      .where(eq(resources.locationId, location.id)),
+  ]);
+  const validCt = new Set(attachedCts.map((r) => r.id));
+  const validRes = new Set(locationResources.map((r) => r.id));
+
+  // Validate quantities; only cells in range with valid IDs are considered.
+  const cellErrors: Record<string, string> = {};
+  const desired = new Map<string, ResourceReqInput>();
+  for (const c of cells) {
+    if (!validCt.has(c.customerTypeId) || !validRes.has(c.resourceId)) continue;
+    const key = `${c.customerTypeId}:${c.resourceId}`;
+    const q = c.quantityConsumed;
+    if (Number.isNaN(q)) continue; // blank cell → no requirement
+    if (!Number.isInteger(q) || q < 0 || q > MAX_QTY_CONSUMED) {
+      cellErrors[key] = `Whole number 0–${MAX_QTY_CONSUMED}`;
+      continue;
+    }
+    if (q >= 1) desired.set(key, c);
+  }
+  if (Object.keys(cellErrors).length > 0) return { ok: false, cellErrors };
+
+  const existing = await db
+    .select()
+    .from(resourceRequirements)
+    .where(eq(resourceRequirements.itemId, itemId));
+  const existingByKey = new Map(
+    existing.map((r) => [`${r.customerTypeId}:${r.resourceId}`, r]),
+  );
+
+  // Diff: delete cleared cells, insert new ones, update changed quantities.
+  // One statement per change, mirroring the pricing save (neon-http has no
+  // multi-statement transaction); each diff op is independently idempotent.
+  for (const [key, row] of existingByKey) {
+    if (!desired.has(key)) {
+      await db
+        .delete(resourceRequirements)
+        .where(eq(resourceRequirements.id, row.id));
+    }
+  }
+  for (const [key, cell] of desired) {
+    const ex = existingByKey.get(key);
+    if (!ex) {
+      await db.insert(resourceRequirements).values({
+        itemId,
+        customerTypeId: cell.customerTypeId,
+        resourceId: cell.resourceId,
+        quantityConsumed: cell.quantityConsumed,
+      });
+    } else if (ex.quantityConsumed !== cell.quantityConsumed) {
+      await db
+        .update(resourceRequirements)
+        .set({ quantityConsumed: cell.quantityConsumed })
+        .where(eq(resourceRequirements.id, ex.id));
+    }
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.item_resource_requirements.save",
+    summary: `Saved resource requirements for tour "${item[0].name}" (${desired.size} mappings)`,
+    payload: { itemId, mappingCount: desired.size },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours/${itemId}/resources`);
+  return { ok: true, cellErrors: {} };
 }

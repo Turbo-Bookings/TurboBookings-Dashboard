@@ -110,6 +110,12 @@ export default async function ToursPage({ params }: Props) {
                     Pricing
                   </Link>
                   <Link
+                    href={`/locations/${slug}/catalog/tours/${item.id}/resources`}
+                    className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                  >
+                    Resources
+                  </Link>
+                  <Link
                     href={`/locations/${slug}/catalog/tours/${item.id}`}
                     className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                   >

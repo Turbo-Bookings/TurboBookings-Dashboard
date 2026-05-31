@@ -1,6 +1,13 @@
 import "server-only";
 import { asc, eq, inArray } from "drizzle-orm";
-import { customerTypes, getDb, itemCustomerTypes, items } from "@/lib/db";
+import {
+  customerTypes,
+  getDb,
+  itemCustomerTypes,
+  items,
+  resourceRequirements,
+  resources,
+} from "@/lib/db";
 import type {
   CustomerType,
   Item,
@@ -121,4 +128,85 @@ export async function getCustomerTypesNotInItem(
     .orderBy(asc(customerTypes.sortOrder));
 
   return all.filter((ct) => !ct.archived && !attachedIds.has(ct.id));
+}
+
+// ---------- Resource requirements matrix ----------
+// Rows = customer types attached to the tour (via item_customer_types).
+// Columns = the location's resource pools. Each cell = how many of that
+// resource one unit of (tour × customer type) consumes. Feeds slot-capacity
+// math: a slot stays bookable until any required resource is exhausted.
+
+export type ResourceRowCustomerType = {
+  customerTypeId: string;
+  singular: string;
+  ticketColor: string | null;
+  archived: boolean;
+};
+
+export type ResourceColumn = {
+  id: string;
+  name: string;
+  maxConcurrentUses: number;
+};
+
+export type ResourceRequirementCell = {
+  customerTypeId: string;
+  resourceId: string;
+  quantityConsumed: number;
+};
+
+export type ItemResourceMatrix = {
+  customerTypes: ResourceRowCustomerType[];
+  resources: ResourceColumn[];
+  cells: ResourceRequirementCell[];
+};
+
+export async function getItemResourceMatrix(
+  itemId: string,
+): Promise<ItemResourceMatrix> {
+  const db = getDb();
+
+  const ctRows = await db
+    .select({ ct: customerTypes })
+    .from(itemCustomerTypes)
+    .innerJoin(
+      customerTypes,
+      eq(itemCustomerTypes.customerTypeId, customerTypes.id),
+    )
+    .where(eq(itemCustomerTypes.itemId, itemId))
+    .orderBy(asc(itemCustomerTypes.sortOrder), asc(customerTypes.sortOrder));
+
+  // Resources scoped to the same location as the item's customer types.
+  const locationId = ctRows[0]?.ct.locationId;
+  const resourceRows = locationId
+    ? await db
+        .select()
+        .from(resources)
+        .where(eq(resources.locationId, locationId))
+        .orderBy(asc(resources.sortOrder), asc(resources.createdAt))
+    : [];
+
+  const reqRows = await db
+    .select()
+    .from(resourceRequirements)
+    .where(eq(resourceRequirements.itemId, itemId));
+
+  return {
+    customerTypes: ctRows.map(({ ct }) => ({
+      customerTypeId: ct.id,
+      singular: ct.singular,
+      ticketColor: ct.ticketColor,
+      archived: ct.archived,
+    })),
+    resources: resourceRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      maxConcurrentUses: r.maxConcurrentUses,
+    })),
+    cells: reqRows.map((r) => ({
+      customerTypeId: r.customerTypeId,
+      resourceId: r.resourceId,
+      quantityConsumed: r.quantityConsumed,
+    })),
+  };
 }

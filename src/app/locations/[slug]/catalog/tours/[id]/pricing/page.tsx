@@ -94,7 +94,15 @@ export default async function PricingMatrixPage({ params }: Props) {
             affiliate, or group rates.
           </p>
         </div>
-        <AddCustomerTypeForm available={available} addAction={addAction} />
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <AddCustomerTypeForm available={available} addAction={addAction} />
+          <Link
+            href={`/locations/${slug}/catalog/tours/${id}/resources`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Resource requirements →
+          </Link>
+        </div>
       </header>
 
       <PricingMatrixEditor

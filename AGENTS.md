@@ -10,6 +10,12 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 The approved plan lives at `~/.claude/plans/snazzy-jingling-squirrel.md` — read it before any non-trivial changes.
 
+**Booking-system build status & sprint roadmap:** `docs/BOOKING_SYSTEM_SPRINTS.md`
+is the live pick-up point — what sprint we're on, what's done, and the exact next
+action. Read it first when resuming the custom booking system (Catalog tab +
+the `bookingsystem` repo). Current: Sprints A–B done; **next is Sprint C
+(recurring availability schedules)**.
+
 ## Companion repos
 
 - `~/takeovers-site` — Miami marketing site, the template every fork comes from

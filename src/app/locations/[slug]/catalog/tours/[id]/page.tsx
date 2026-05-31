@@ -35,12 +35,20 @@ export default async function EditTourPage({ params }: Props) {
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           Edit tour
         </h2>
-        <Link
-          href={`/locations/${slug}/catalog/tours/${id}/pricing`}
-          className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-        >
-          Pricing matrix →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link
+            href={`/locations/${slug}/catalog/tours/${id}/pricing`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Pricing matrix →
+          </Link>
+          <Link
+            href={`/locations/${slug}/catalog/tours/${id}/resources`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Resources →
+          </Link>
+        </div>
       </div>
       <ItemForm
         action={action}
