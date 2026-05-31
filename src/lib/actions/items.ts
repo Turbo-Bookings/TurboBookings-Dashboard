@@ -1,0 +1,446 @@
+"use server";
+
+import { and, eq, max } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { recordAudit } from "@/lib/audit";
+import {
+  customerTypes,
+  getDb,
+  itemCustomerTypes,
+  items,
+} from "@/lib/db";
+import { getLocationBySlug } from "@/lib/data/locations";
+
+type ItemFieldErrors = Partial<
+  Record<"name" | "defaultDurationMinutes" | "descriptionMd" | "form", string>
+>;
+
+export type ItemFormState = {
+  ok: boolean;
+  errors: ItemFieldErrors;
+  values: {
+    name: string;
+    descriptionMd: string;
+    defaultDurationMinutes: string;
+    bookableOnline: boolean;
+    listingVisible: boolean;
+  };
+};
+
+const MAX_NAME_LEN = 120;
+const MAX_DESC_LEN = 8000;
+
+function parseItemForm(formData: FormData): ItemFormState["values"] {
+  return {
+    name: String(formData.get("name") ?? "").trim(),
+    descriptionMd: String(formData.get("descriptionMd") ?? ""),
+    defaultDurationMinutes: String(
+      formData.get("defaultDurationMinutes") ?? "",
+    ).trim(),
+    bookableOnline: formData.get("bookableOnline") === "on",
+    listingVisible: formData.get("listingVisible") === "on",
+  };
+}
+
+function validateItem(values: ItemFormState["values"]): ItemFieldErrors {
+  const errors: ItemFieldErrors = {};
+  if (!values.name) errors.name = "Required";
+  else if (values.name.length > MAX_NAME_LEN)
+    errors.name = `Keep under ${MAX_NAME_LEN} characters`;
+
+  const dur = Number(values.defaultDurationMinutes);
+  if (!values.defaultDurationMinutes)
+    errors.defaultDurationMinutes = "Required";
+  else if (!Number.isInteger(dur) || dur < 1)
+    errors.defaultDurationMinutes = "Whole number of minutes, at least 1";
+  else if (dur > 24 * 60)
+    errors.defaultDurationMinutes = "Keep under 24 hours";
+
+  if (values.descriptionMd.length > MAX_DESC_LEN)
+    errors.descriptionMd = `Keep under ${MAX_DESC_LEN} characters`;
+
+  return errors;
+}
+
+async function nextItemSortOrder(locationId: string): Promise<number> {
+  const db = getDb();
+  const r = await db
+    .select({ max: max(items.sortOrder) })
+    .from(items)
+    .where(eq(items.locationId, locationId));
+  return (r[0]?.max ?? -1) + 1;
+}
+
+export async function createItem(
+  slug: string,
+  _prev: ItemFormState | null,
+  formData: FormData,
+): Promise<ItemFormState> {
+  const values = parseItemForm(formData);
+  const errors = validateItem(values);
+  if (Object.keys(errors).length > 0) return { ok: false, errors, values };
+
+  const location = await getLocationBySlug(slug);
+  if (!location)
+    return { ok: false, errors: { form: "Location not found" }, values };
+
+  const db = getDb();
+  const sortOrder = await nextItemSortOrder(location.id);
+
+  const result = await db
+    .insert(items)
+    .values({
+      locationId: location.id,
+      name: values.name,
+      descriptionMd: values.descriptionMd || null,
+      defaultDurationMinutes: Number(values.defaultDurationMinutes),
+      bookableOnline: values.bookableOnline,
+      listingVisible: values.listingVisible,
+      sortOrder,
+    })
+    .returning({ id: items.id });
+
+  const newId = result[0]?.id;
+
+  await recordAudit({
+    slug,
+    action: "catalog.item.create",
+    summary: `Created tour "${values.name}"`,
+    payload: {
+      name: values.name,
+      defaultDurationMinutes: Number(values.defaultDurationMinutes),
+    },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours`);
+  // Send the operator straight into the pricing matrix — an item without
+  // any item_customer_types isn't bookable, so this nudges the next step.
+  if (newId) redirect(`/locations/${slug}/catalog/tours/${newId}/pricing`);
+  redirect(`/locations/${slug}/catalog/tours`);
+}
+
+export async function updateItem(
+  slug: string,
+  id: string,
+  _prev: ItemFormState | null,
+  formData: FormData,
+): Promise<ItemFormState> {
+  const values = parseItemForm(formData);
+  const errors = validateItem(values);
+  if (Object.keys(errors).length > 0) return { ok: false, errors, values };
+
+  const location = await getLocationBySlug(slug);
+  if (!location)
+    return { ok: false, errors: { form: "Location not found" }, values };
+
+  const db = getDb();
+  const r = await db
+    .update(items)
+    .set({
+      name: values.name,
+      descriptionMd: values.descriptionMd || null,
+      defaultDurationMinutes: Number(values.defaultDurationMinutes),
+      bookableOnline: values.bookableOnline,
+      listingVisible: values.listingVisible,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(items.id, id), eq(items.locationId, location.id)))
+    .returning({ id: items.id });
+
+  if (r.length === 0)
+    return { ok: false, errors: { form: "Tour not found" }, values };
+
+  await recordAudit({
+    slug,
+    action: "catalog.item.update",
+    summary: `Updated tour "${values.name}"`,
+    payload: { id },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours`);
+  redirect(`/locations/${slug}/catalog/tours`);
+}
+
+export async function deleteItem(
+  slug: string,
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+
+  const db = getDb();
+  const before = await db
+    .select({ name: items.name })
+    .from(items)
+    .where(and(eq(items.id, id), eq(items.locationId, location.id)))
+    .limit(1);
+  if (!before[0]) return { ok: false, error: "Tour not found" };
+
+  try {
+    await db
+      .delete(items)
+      .where(and(eq(items.id, id), eq(items.locationId, location.id)));
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("bookings_item_id_items_id_fk")) {
+      return {
+        ok: false,
+        error:
+          "Tour has existing bookings. Hide it from online booking + listings instead of deleting.",
+      };
+    }
+    throw err;
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.item.delete",
+    summary: `Deleted tour "${before[0].name}"`,
+    payload: { id },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours`);
+  return { ok: true };
+}
+
+// ---------- Pricing matrix actions ----------
+
+export async function addCustomerTypeToItem(
+  slug: string,
+  itemId: string,
+  customerTypeId: string,
+): Promise<void> {
+  const location = await getLocationBySlug(slug);
+  if (!location) return;
+
+  const db = getDb();
+
+  // Belt-and-suspenders: both rows must belong to this location.
+  const [item, ct] = await Promise.all([
+    db
+      .select({ id: items.id, name: items.name })
+      .from(items)
+      .where(and(eq(items.id, itemId), eq(items.locationId, location.id)))
+      .limit(1),
+    db
+      .select({ id: customerTypes.id, singular: customerTypes.singular })
+      .from(customerTypes)
+      .where(
+        and(
+          eq(customerTypes.id, customerTypeId),
+          eq(customerTypes.locationId, location.id),
+        ),
+      )
+      .limit(1),
+  ]);
+  if (!item[0] || !ct[0]) return;
+
+  // Sort order: place at end of current item's list.
+  const existing = await db
+    .select({ max: max(itemCustomerTypes.sortOrder) })
+    .from(itemCustomerTypes)
+    .where(eq(itemCustomerTypes.itemId, itemId));
+  const sortOrder = (existing[0]?.max ?? -1) + 1;
+
+  await db.insert(itemCustomerTypes).values({
+    itemId,
+    customerTypeId,
+    priceCents: 0,
+    visibility: "visible",
+    minQuantity: 0,
+    sortOrder,
+  });
+
+  await recordAudit({
+    slug,
+    action: "catalog.item_customer_type.add",
+    summary: `Added "${ct[0].singular}" to tour "${item[0].name}"`,
+    payload: { itemId, customerTypeId },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours/${itemId}/pricing`);
+}
+
+export async function removeCustomerTypeFromItem(
+  slug: string,
+  itemId: string,
+  customerTypeId: string,
+): Promise<void> {
+  const location = await getLocationBySlug(slug);
+  if (!location) return;
+
+  const db = getDb();
+  const item = await db
+    .select({ name: items.name })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.locationId, location.id)))
+    .limit(1);
+  if (!item[0]) return;
+
+  await db
+    .delete(itemCustomerTypes)
+    .where(
+      and(
+        eq(itemCustomerTypes.itemId, itemId),
+        eq(itemCustomerTypes.customerTypeId, customerTypeId),
+      ),
+    );
+
+  await recordAudit({
+    slug,
+    action: "catalog.item_customer_type.remove",
+    summary: `Removed customer type from tour "${item[0].name}"`,
+    payload: { itemId, customerTypeId },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours/${itemId}/pricing`);
+}
+
+type PricingRowInput = {
+  id: string;
+  priceCents: number;
+  taxRateBpsOverride: number | null;
+  visibility: "visible" | "hidden";
+  minQuantity: number;
+  maxQuantity: number | null;
+};
+
+type PricingRowErrors = Partial<
+  Record<"priceCents" | "taxRateBpsOverride" | "minQuantity" | "maxQuantity", string>
+>;
+
+export type SavePricingState = {
+  ok: boolean;
+  rowErrors: Record<string, PricingRowErrors>;
+  formError?: string;
+};
+
+function parsePricingRow(raw: unknown): PricingRowInput | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.id !== "string") return null;
+
+  const priceCents = typeof obj.priceCents === "number" ? obj.priceCents : 0;
+  const taxRateBpsOverride =
+    typeof obj.taxRateBpsOverride === "number"
+      ? obj.taxRateBpsOverride
+      : null;
+  const visibility = obj.visibility === "hidden" ? "hidden" : "visible";
+  const minQuantity = typeof obj.minQuantity === "number" ? obj.minQuantity : 0;
+  const maxQuantity =
+    typeof obj.maxQuantity === "number" ? obj.maxQuantity : null;
+
+  return {
+    id: obj.id,
+    priceCents,
+    taxRateBpsOverride,
+    visibility,
+    minQuantity,
+    maxQuantity,
+  };
+}
+
+function validatePricingRow(row: PricingRowInput): PricingRowErrors {
+  const errors: PricingRowErrors = {};
+  if (!Number.isInteger(row.priceCents) || row.priceCents < 0)
+    errors.priceCents = "Non-negative whole cents";
+  if (
+    row.taxRateBpsOverride != null &&
+    (!Number.isInteger(row.taxRateBpsOverride) ||
+      row.taxRateBpsOverride < 0 ||
+      row.taxRateBpsOverride > 10_000)
+  )
+    errors.taxRateBpsOverride = "0–100%";
+  if (!Number.isInteger(row.minQuantity) || row.minQuantity < 0)
+    errors.minQuantity = "0 or more";
+  if (row.maxQuantity != null) {
+    if (!Number.isInteger(row.maxQuantity) || row.maxQuantity < 1)
+      errors.maxQuantity = "1 or more, or leave blank";
+    else if (row.maxQuantity < row.minQuantity)
+      errors.maxQuantity = "Max must be ≥ min";
+  }
+  return errors;
+}
+
+export async function saveItemPricing(
+  slug: string,
+  itemId: string,
+  _prev: SavePricingState | null,
+  formData: FormData,
+): Promise<SavePricingState> {
+  const location = await getLocationBySlug(slug);
+  if (!location)
+    return { ok: false, rowErrors: {}, formError: "Location not found" };
+
+  const raw = formData.get("rows");
+  if (typeof raw !== "string")
+    return { ok: false, rowErrors: {}, formError: "Missing rows payload" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { ok: false, rowErrors: {}, formError: "Malformed rows payload" };
+  }
+  if (!Array.isArray(parsed))
+    return { ok: false, rowErrors: {}, formError: "Malformed rows payload" };
+
+  const rows: PricingRowInput[] = [];
+  for (const r of parsed) {
+    const parsedRow = parsePricingRow(r);
+    if (!parsedRow)
+      return { ok: false, rowErrors: {}, formError: "Malformed row" };
+    rows.push(parsedRow);
+  }
+
+  const rowErrors: Record<string, PricingRowErrors> = {};
+  let hasErrors = false;
+  for (const row of rows) {
+    const errs = validatePricingRow(row);
+    if (Object.keys(errs).length > 0) {
+      rowErrors[row.id] = errs;
+      hasErrors = true;
+    }
+  }
+  if (hasErrors) return { ok: false, rowErrors };
+
+  const db = getDb();
+  const item = await db
+    .select({ name: items.name })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.locationId, location.id)))
+    .limit(1);
+  if (!item[0])
+    return { ok: false, rowErrors: {}, formError: "Tour not found" };
+
+  // Batch update each row; this isn't a transactional sweep but it's
+  // idempotent and per-row failures bubble up via the catch below.
+  for (const row of rows) {
+    await db
+      .update(itemCustomerTypes)
+      .set({
+        priceCents: row.priceCents,
+        taxRateBpsOverride: row.taxRateBpsOverride,
+        visibility: row.visibility,
+        minQuantity: row.minQuantity,
+        maxQuantity: row.maxQuantity,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(itemCustomerTypes.id, row.id),
+          eq(itemCustomerTypes.itemId, itemId),
+        ),
+      );
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.item_pricing.save",
+    summary: `Saved pricing for tour "${item[0].name}" (${rows.length} customer types)`,
+    payload: { itemId, rowCount: rows.length },
+  });
+
+  revalidatePath(`/locations/${slug}/catalog/tours/${itemId}/pricing`);
+  return { ok: true, rowErrors: {} };
+}
