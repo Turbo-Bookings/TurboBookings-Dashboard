@@ -4,10 +4,25 @@ import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
-import { availabilitySchedules, getDb, items } from "@/lib/db";
+import { availabilities, availabilitySchedules, getDb, items } from "@/lib/db";
+import { materializeScheduleRow } from "@/lib/availability/generate";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getScheduleById } from "@/lib/data/schedules";
 import { compileWeekly, type WeekdayCode } from "@/lib/rrule/weekly";
+import type { AvailabilitySchedule } from "@/lib/db/schema";
+
+// (Re)generate concrete slots for a schedule; never let a generation hiccup
+// break the operator's save — the nightly cron reconciles either way.
+async function safeMaterialize(
+  schedule: AvailabilitySchedule,
+  timezone: string | null,
+): Promise<void> {
+  try {
+    await materializeScheduleRow(schedule, timezone, new Date());
+  } catch (err) {
+    console.error("materialize after schedule mutation failed", err);
+  }
+}
 
 const VALID_WEEKDAYS = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 const VALID_STATUS = ["on", "off", "auto"] as const;
@@ -173,17 +188,22 @@ export async function createSchedule(
 
   const times = uniqueSortedTimes(values.startTimesLocal);
   const db = getDb();
-  await db.insert(availabilitySchedules).values({
-    itemId: values.itemId,
-    rruleText,
-    startTimesLocal: times,
-    durationMinutes: Number(values.durationMinutes),
-    capacityPerSlot: capacity.value,
-    defaultOnlineBookingStatus:
-      values.defaultOnlineBookingStatus as (typeof VALID_STATUS)[number],
-    materializeDaysAhead: Number(values.materializeDaysAhead),
-    active: values.active,
-  });
+  const created = await db
+    .insert(availabilitySchedules)
+    .values({
+      itemId: values.itemId,
+      rruleText,
+      startTimesLocal: times,
+      durationMinutes: Number(values.durationMinutes),
+      capacityPerSlot: capacity.value,
+      defaultOnlineBookingStatus:
+        values.defaultOnlineBookingStatus as (typeof VALID_STATUS)[number],
+      materializeDaysAhead: Number(values.materializeDaysAhead),
+      active: values.active,
+    })
+    .returning();
+
+  if (created[0]) await safeMaterialize(created[0], location.timezone);
 
   await recordAudit({
     slug,
@@ -231,7 +251,7 @@ export async function updateSchedule(
 
   const times = uniqueSortedTimes(values.startTimesLocal);
   const db = getDb();
-  await db
+  const updated = await db
     .update(availabilitySchedules)
     .set({
       itemId: values.itemId,
@@ -245,7 +265,10 @@ export async function updateSchedule(
       active: values.active,
       updatedAt: new Date(),
     })
-    .where(eq(availabilitySchedules.id, id));
+    .where(eq(availabilitySchedules.id, id))
+    .returning();
+
+  if (updated[0]) await safeMaterialize(updated[0], location.timezone);
 
   await recordAudit({
     slug,
@@ -269,6 +292,8 @@ export async function deleteSchedule(
   if (!existing) return { ok: false, error: "Schedule not found" };
 
   const db = getDb();
+  // No FK cascade on availabilities.schedule_id, so remove its slots explicitly.
+  await db.delete(availabilities).where(eq(availabilities.scheduleId, id));
   await db.delete(availabilitySchedules).where(eq(availabilitySchedules.id, id));
 
   await recordAudit({
@@ -298,6 +323,9 @@ export async function setScheduleActive(
     .update(availabilitySchedules)
     .set({ active, updatedAt: new Date() })
     .where(eq(availabilitySchedules.id, id));
+
+  // Regenerate (active) or clear future slots (paused).
+  await safeMaterialize({ ...existing, active }, location.timezone);
 
   await recordAudit({
     slug,

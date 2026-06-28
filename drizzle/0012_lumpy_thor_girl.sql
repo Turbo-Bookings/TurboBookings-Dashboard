@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "avails_schedule_starts_idx" ON "availabilities" USING btree ("schedule_id","starts_at");

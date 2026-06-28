@@ -7,9 +7,9 @@
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
 > - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine (Phase 0 scaffold only).
-> - **Status:** Sprints A–B done + committed. Sprint C **built 2026-06-27** (build + DB-path
->   verified; UI click-test + commit pending). **▶ NEXT after C is committed: Sprint D — generate
->   concrete slots from schedules.**
+> - **Status:** Sprints A–C done + committed. **Sprint D-1** (slot generation engine + slot view)
+>   **built 2026-06-27** (tsc/lint/build + live-DB DST & idempotency tests pass; UI click-test +
+>   commit pending). **▶ NEXT: Sprint D-2 — per-slot overrides, blackout dates, calendar view.**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
@@ -107,11 +107,25 @@ resource_requirements" mapping. Build + tsc + eslint all clean.
 customer-type mix; fixed: `capacity_per_slot − booked`); per-slot overrides;
 blackout dates; calendar view; nightly materialize cron.
 
-### Sprint D — Schedule, part 2: generated slots + overrides
-- `availabilities` — bulk-generate concrete date+time slots from schedules.
+### Sprint D-1 — Slot generation engine + view ✅ BUILT 2026-06-27
+- `availabilities` bulk-generated from schedules: RRULE × `start_times_local` ×
+  `locations.timezone` → UTC slots, DST-correct via `luxon`. Engine in
+  `src/lib/availability/generate.ts` (`expandScheduleToSlots`,
+  `materializeScheduleRow` insert-missing+prune via unique `(schedule_id,
+  starts_at)` index [migration `0012`], `materializeAllActiveSchedules`).
+- Generation runs on schedule create/update/pause/delete (hooked into
+  `actions/schedules.ts`) and nightly via `api/cron/materialize-availability`
+  (vercel.json `0 8 * * *`, CRON_SECRET-guarded).
+- Slot view: `catalog/schedule/slots` (date-grouped, tz-formatted) + data in
+  `lib/data/availability.ts`. Added `luxon` dep.
+- Verified: tsc/lint/build clean; live-DB test (July CDT→15:00Z, Nov CST→16:00Z;
+  idempotent re-run; prune-on-time-removal). **Pending: UI click-test + commit.**
+
+### Sprint D-2 — Per-slot overrides + calendar *(next)*
 - One-off overrides: per-slot `online_booking_status` (on/off/auto), capacity
   override, blackout dates, manual extra slots.
 - Calendar view of generated availability.
+- Booking-safety: preserve booked slots on regenerate (exclude from prune).
 
 ### Sprint E — Custom Fields *(inferred; schema exists, no UI)*
 - `custom_fields` (per-location pool — V1 kinds: text, checkbox, dropdown,
@@ -157,14 +171,13 @@ blackout dates; calendar view; nightly materialize cron.
 ---
 
 ## Immediate next action — START HERE NEXT SESSION
-Sprint C is **built** (schedule builder + RRULE helpers + tz column) and verified
-by build + a live-DB data-path test, but **not yet click-tested in the browser or
-committed**. Two things remain:
-1. Click-test the schedule builder at `/locations/dtown/catalog/schedule` (needs
-   Clerk sign-in): create / edit / delete a schedule, confirm the live preview and
-   the round-trip of weekdays + season. Then commit Sprint C to `develop`.
-2. **Sprint D — generate concrete `availabilities` slots** from schedules:
-   expand the RRULE × `starts_at_time_local` × `locations.timezone` → UTC slots,
-   per-slot overrides, blackout dates, calendar view, nightly materialize cron.
-   The `rrule` helpers (`lib/rrule/weekly.ts`) and the tz column are already in
-   place for this.
+Sprints A–C committed. **Sprint D-1** (slot generation engine + `catalog/schedule/slots`
+view) is **built + committed** — schedules now materialize concrete `availabilities`
+(DST-correct via luxon) on save and via the nightly cron. Two things remain:
+1. Click-test on `/locations/dtown/catalog/schedule` (Clerk sign-in): create a
+   schedule → "Generated slots →" shows slots at the right local times; pause →
+   future slots clear; delete → its slots gone. Set `CRON_SECRET` in Vercel for
+   the new `materialize-availability` cron.
+2. **Sprint D-2** — per-slot overrides (capacity / on-off), blackout dates,
+   calendar view, and booking-safe regeneration (exclude booked slots from the
+   prune). Then the customer-facing booking flow (Sprints G–I, `bookingsystem`).

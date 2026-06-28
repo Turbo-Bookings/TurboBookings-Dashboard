@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/retry-events",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/materialize-availability",
+      "schedule": "0 8 * * *"
     }
   ]
 }

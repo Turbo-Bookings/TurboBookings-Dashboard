@@ -769,6 +769,13 @@ export const availabilities = pgTable(
   (t) => ({
     itemStartsIdx: index("avails_item_starts_idx").on(t.itemId, t.startsAt),
     scheduleIdx: index("avails_schedule_idx").on(t.scheduleId),
+    // Dedupe generated slots so regeneration / the nightly cron can
+    // insert-missing via onConflictDoNothing. Null scheduleId (manual one-offs)
+    // are treated as distinct by Postgres, so they're unaffected.
+    scheduleStartsIdx: uniqueIndex("avails_schedule_starts_idx").on(
+      t.scheduleId,
+      t.startsAt,
+    ),
   }),
 );
 

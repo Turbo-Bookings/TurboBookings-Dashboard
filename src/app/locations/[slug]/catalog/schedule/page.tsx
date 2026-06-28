@@ -88,14 +88,22 @@ export default async function SchedulePage({ params }: Props) {
             )}
           </p>
         </div>
-        {items.length > 0 && (
+        <div className="flex shrink-0 items-center gap-4">
           <Link
-            href={`${base}/new`}
-            className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+            href={`${base}/slots`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
           >
-            + New schedule
+            Generated slots →
           </Link>
-        )}
+          {items.length > 0 && (
+            <Link
+              href={`${base}/new`}
+              className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
+            >
+              + New schedule
+            </Link>
+          )}
+        </div>
       </header>
 
       {items.length === 0 ? (
