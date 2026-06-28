@@ -1,18 +1,27 @@
 "use server";
 
+import { auth } from "@clerk/nextjs/server";
 import { and, desc, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
+  availabilities,
+  availabilitySchedules,
   bookingHolds,
   bookingLines,
+  bookingReschedules,
   bookings,
   getDb,
+  items,
   paymentMethodsOnFile,
   payments,
+  resourceRequirements,
+  resources,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getCancellationRefund } from "@/lib/booking/refund";
+import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { withTxn } from "@/lib/db/txn";
 import {
   captureHold as stripeCaptureHold,
   createManualHold,
@@ -368,5 +377,124 @@ export async function releaseHold(
     payload: { bookingId: h.bookingId },
   });
   revalidate(slug, h.bookingId);
+  return { ok: true };
+}
+
+// Operator-only reschedule: move a booking to a new slot of the SAME tour,
+// capacity-checked; logs booking_reschedules; an optional fee is added to the
+// balance due at venue (not auto-charged in V1). Emits booking.rescheduled.
+export async function rescheduleBooking(
+  slug: string,
+  bookingId: string,
+  toAvailabilityId: string,
+  feeCents: number,
+  reason: string,
+): Promise<Result> {
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const fee = Number.isInteger(feeCents) && feeCents > 0 ? feeCents : 0;
+  const db = getDb();
+  const b = (
+    await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.locationId, location.id)))
+      .limit(1)
+  )[0];
+  if (!b) return { ok: false, error: "Booking not found" };
+  if (b.status !== "active") return { ok: false, error: "Booking is not active" };
+  if (toAvailabilityId === b.availabilityId)
+    return { ok: false, error: "Pick a different time" };
+
+  const item = (
+    await db.select().from(items).where(eq(items.id, b.itemId)).limit(1)
+  )[0];
+  if (!item) return { ok: false, error: "Tour not found" };
+
+  const lineRows = await db
+    .select({ q: bookingLines.quantity })
+    .from(bookingLines)
+    .where(eq(bookingLines.bookingId, bookingId));
+  const partySize = lineRows.reduce((s, r) => s + r.q, 0);
+
+  let performedBy: string | null = null;
+  try {
+    const { userId } = await auth();
+    performedBy = userId ?? null;
+  } catch {}
+
+  try {
+    await withTxn(async (tx) => {
+      const slot = (
+        await tx.select().from(availabilities).where(eq(availabilities.id, toAvailabilityId)).for("update")
+      )[0];
+      if (!slot) throw new Error("New time not found");
+      if (slot.itemId !== b.itemId) throw new Error("That time is for a different tour");
+
+      const bookedRows = await tx
+        .select({ qty: bookingLines.quantity })
+        .from(bookings)
+        .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+        .where(and(eq(bookings.availabilityId, toAvailabilityId), eq(bookings.status, "active")));
+      const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
+
+      let remaining: number;
+      if (item.capacityMode === "fixed") {
+        let base = slot.capacityOverride;
+        if (base == null && slot.scheduleId) {
+          const sc = (
+            await tx.select({ c: availabilitySchedules.capacityPerSlot }).from(availabilitySchedules).where(eq(availabilitySchedules.id, slot.scheduleId)).limit(1)
+          )[0];
+          base = sc?.c ?? null;
+        }
+        remaining = fixedRemaining(base, booked);
+      } else {
+        const rr = await tx
+          .select({ rr: resourceRequirements, r: resources })
+          .from(resourceRequirements)
+          .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
+          .where(eq(resourceRequirements.itemId, b.itemId));
+        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
+        for (const { rr: req, r } of rr) {
+          const cur = byRes.get(r.id);
+          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
+          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
+        }
+        remaining = resourceRemaining(
+          [...byRes.values()].map<ResourcePool>((p) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: booked })),
+        );
+      }
+      if (partySize > remaining) throw new Error("Not enough capacity at the new time");
+
+      await tx
+        .update(bookings)
+        .set({
+          availabilityId: toAvailabilityId,
+          balanceDueCents: b.balanceDueCents + fee,
+          totalCents: b.totalCents + fee,
+          updatedAt: new Date(),
+        })
+        .where(eq(bookings.id, bookingId));
+      await tx.insert(bookingReschedules).values({
+        bookingId,
+        fromAvailabilityId: b.availabilityId,
+        toAvailabilityId,
+        feeChargedCents: fee,
+        performedByUserId: performedBy,
+        reason: reason || null,
+      });
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Reschedule failed" };
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.booking.reschedule",
+    summary: `Rescheduled #${b.displayNumber}${fee > 0 ? ` · fee $${(fee / 100).toFixed(2)}` : ""}`,
+    payload: { bookingId },
+  });
+  await emitLifecycle(location, bookingId, "booking.rescheduled");
+  revalidate(slug, bookingId);
   return { ok: true };
 }

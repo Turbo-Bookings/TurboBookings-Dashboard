@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { BookingActions } from "@/components/BookingActions";
 import { CheckInControls } from "@/components/CheckInControls";
+import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getCancellationRefund } from "@/lib/booking/refund";
+import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,8 @@ export default async function BookingDetailPage({ params }: Props) {
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
   const refund = await getCancellationRefund(loc.id, id);
+  const tourData = b.status === "active" ? await getTourBookingData(slug, b.itemId) : null;
+  const rescheduleSlots = tourData && tourData.ok ? tourData.slots : [];
   const tz = loc.timezone ?? "America/Chicago";
   const when = slot
     ? new Intl.DateTimeFormat("en-US", {
@@ -71,6 +75,16 @@ export default async function BookingDetailPage({ params }: Props) {
           amountCents: h.hold.amountCents,
         }))}
       />
+
+      {b.status === "active" && (
+        <RescheduleControls
+          slug={slug}
+          bookingId={b.id}
+          currentId={b.availabilityId}
+          slots={rescheduleSlots}
+          tz={tz}
+        />
+      )}
 
       {/* Customer */}
       <div className="mt-5 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
