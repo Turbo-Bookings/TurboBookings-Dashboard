@@ -15,14 +15,11 @@ type SubTab = {
 //   - Resources    → resources (capacity pools — ATVs, UTVs, etc.)
 //   - Customer Types → customer_types (Single Rider, Double Rider, etc.)
 //   - Schedule     → availability_schedules + availabilities
+// Tour Catalog = the tours + their availability. Shared pools (Customer Types,
+// Resources, Custom Fields, Discounts, Cancellation) now live under Settings ▸ Build.
 const SUB_TABS: SubTab[] = [
   { label: "Tours", segment: "tours" },
-  { label: "Resources", segment: "resources" },
-  { label: "Customer Types", segment: "customer-types" },
   { label: "Schedule", segment: "schedule" },
-  { label: "Custom Fields", segment: "custom-fields" },
-  { label: "Cancellation", segment: "cancellation" },
-  { label: "Discounts", segment: "discounts" },
 ];
 
 type Props = {

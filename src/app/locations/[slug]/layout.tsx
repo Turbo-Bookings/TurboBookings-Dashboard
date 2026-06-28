@@ -1,9 +1,6 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AppShell } from "@/components/AppShell";
-import { LocationTabs } from "@/components/LocationTabs";
-import { StatusBadge } from "@/components/StatusBadge";
-import { getLocationBySlug } from "@/lib/data/locations";
+import { LocationShell } from "@/components/LocationShell";
+import { getLocationBySlug, listLocationsForSwitcher } from "@/lib/data/locations";
 
 type Props = {
   children: React.ReactNode;
@@ -12,29 +9,20 @@ type Props = {
 
 export default async function LocationLayout({ children, params }: Props) {
   const { slug } = await params;
-  const loc = await getLocationBySlug(slug);
+  const [loc, locations] = await Promise.all([
+    getLocationBySlug(slug),
+    listLocationsForSwitcher(),
+  ]);
   if (!loc) notFound();
 
   return (
-    <AppShell>
-      <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500">
-        <Link href="/" className="hover:text-zinc-700 dark:hover:text-zinc-300">
-          Locations
-        </Link>
-        <span>/</span>
-        <span className="font-mono">{loc.slug}</span>
-      </div>
-
-      <div className="mb-6 flex items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {loc.brandDisplayName ?? loc.slug}
-        </h1>
-        <StatusBadge status={loc.status} />
-      </div>
-
-      <LocationTabs slug={loc.slug} />
-
+    <LocationShell
+      slug={loc.slug}
+      brandName={loc.brandDisplayName ?? loc.slug}
+      status={loc.status}
+      locations={locations}
+    >
       {children}
-    </AppShell>
+    </LocationShell>
   );
 }

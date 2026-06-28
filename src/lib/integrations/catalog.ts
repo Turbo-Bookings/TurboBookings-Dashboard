@@ -25,3 +25,13 @@ export const SECRET_KINDS = {
 } as const;
 
 export type SecretKind = keyof typeof SECRET_KINDS;
+
+// Where each secret's management UI lives. Server-side tracking tokens surface
+// under the Tracking page (alongside the CAPI toggle); the rest under Integrations.
+export const TRACKING_SECRET_KINDS: SecretKind[] = [
+  "META_CAPI_TOKEN",
+  "GOOGLE_ADS_CONVERSION_API_TOKEN",
+];
+export const INTEGRATION_SECRET_KINDS: SecretKind[] = [
+  "FAREHARBOR_WEBHOOK_SECRET",
+];

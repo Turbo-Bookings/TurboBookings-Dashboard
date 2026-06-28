@@ -60,8 +60,8 @@ async function emitLifecycle(
 }
 
 function revalidate(slug: string, bookingId?: string) {
+  revalidatePath(`/locations/${slug}/manifest`);
   revalidatePath(`/locations/${slug}/bookings`);
-  revalidatePath(`/locations/${slug}/bookings/list`);
   if (bookingId) revalidatePath(`/locations/${slug}/bookings/${bookingId}`);
 }
 

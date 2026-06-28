@@ -67,7 +67,7 @@ export default async function HomePage() {
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/locations/${loc.slug}`}
+                    href={`/locations/${loc.slug}/dashboard`}
                     className="font-medium text-zinc-900 hover:text-blue-600 dark:text-zinc-100 dark:hover:text-blue-400"
                   >
                     {loc.brandDisplayName ?? loc.slug}
