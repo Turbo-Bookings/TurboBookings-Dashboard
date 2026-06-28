@@ -6,14 +6,16 @@
 >
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
-> - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine. Sprint D (all of
->   A–D) committed. **Customer flow STARTED:** Sprint G **Slice 1** (shopping funnel + tracking,
->   `1e7a4c7`) + **Slice 1.5 UX foundation 2026-06-28** (branded hero + image tour cards + calendar
->   date picker + detail layout w/ info sections + markdown + per-location light/dark theme set on the
->   dashboard Visual Identity tab). See `~/bookingsystem/docs/embedding-and-tracking.md`.
-> - **▶ NEXT: per-tour photo upload in the dashboard (reuse MediaForm), then customer flow Slice 2
->   (checkout: seat hold + info form + oversell-safe commit), then Slice 3 (Stripe payment + webhook +
->   confirmation + emit booking.created).**
+> - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine. Sprint D committed.
+>   **Customer flow COMPLETE end-to-end (Sprints G–I core)** 2026-06-28: Slice 1 (shopping +
+>   tracking), Slice 1.5 (branding/calendar/detail/theme), **Slice 2+3 (`83f13d4`): single-page guest
+>   checkout → Stripe Payment Element (wallets) → oversell-safe atomic commit → confirmation; webhook
+>   + success-fallback both commit idempotently; server Purchase (Meta CAPI/GA4 MP) + emit
+>   booking.created; full funnel events.** Needs Stripe TEST keys in the booking app env to take a
+>   live test charge. See `~/bookingsystem/docs/embedding-and-tracking.md`.
+> - **▶ NEXT (fast-follows): per-tour photo upload (dashboard, reuse MediaForm); pre-payment seat
+>   hold + countdown; operator bookings manifest; then the conversion-optimization pass (real reviews,
+>   copy, A/B). Migrate Miami/Houston onto the system once Dallas proves it.**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
