@@ -90,6 +90,12 @@ export default async function SchedulePage({ params }: Props) {
         </div>
         <div className="flex shrink-0 items-center gap-4">
           <Link
+            href={`${base}/calendar`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Calendar →
+          </Link>
+          <Link
             href={`${base}/slots`}
             className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
           >

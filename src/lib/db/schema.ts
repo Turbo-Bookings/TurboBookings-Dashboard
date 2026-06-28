@@ -819,6 +819,37 @@ export const availabilitySchedules = pgTable("availability_schedules", {
 export type AvailabilitySchedule = typeof availabilitySchedules.$inferSelect;
 export type NewAvailabilitySchedule = typeof availabilitySchedules.$inferInsert;
 
+// ---------- Blackout dates ----------
+// Operator-declared closed dates (holidays, weather, private events). Slot
+// generation skips any recurrence date covered by a blackout on every run, so
+// blackouts persist across nightly regeneration. Stored as local "YYYY-MM-DD"
+// (interpreted in locations.timezone); endDate null = single day. itemId null =
+// applies to all of the location's tours.
+export const blackoutDates = pgTable(
+  "blackout_dates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    itemId: uuid("item_id").references(() => items.id, { onDelete: "cascade" }),
+    startDate: text("start_date").notNull(),
+    endDate: text("end_date"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationDateIdx: index("blackout_dates_location_date_idx").on(
+      t.locationId,
+      t.startDate,
+    ),
+  }),
+);
+
+export type BlackoutDate = typeof blackoutDates.$inferSelect;
+export type NewBlackoutDate = typeof blackoutDates.$inferInsert;
+
 // ---------- Customers ----------
 
 // Deduped by lowercased email — the unique index doubles as case-insensitive

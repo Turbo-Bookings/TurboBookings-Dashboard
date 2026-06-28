@@ -7,9 +7,10 @@
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
 > - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine (Phase 0 scaffold only).
-> - **Status:** Sprints A–C done + committed. **Sprint D-1** (slot generation engine + slot view)
->   **built 2026-06-27** (tsc/lint/build + live-DB DST & idempotency tests pass; UI click-test +
->   commit pending). **▶ NEXT: Sprint D-2 — per-slot overrides, blackout dates, calendar view.**
+> - **Status:** Sprints A–C + D-1 committed. **Sprint D-2** (per-slot overrides, blackout dates,
+>   calendar view, booking-safe regeneration) **built 2026-06-27** (tsc/lint/build + live-DB blackout
+>   & booking-safe tests pass; UI click-test + commit pending). **▶ NEXT: customer-facing booking
+>   flow (Sprints G–I, `bookingsystem` repo) — now unblocked because real availability exists.**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
@@ -121,11 +122,21 @@ blackout dates; calendar view; nightly materialize cron.
 - Verified: tsc/lint/build clean; live-DB test (July CDT→15:00Z, Nov CST→16:00Z;
   idempotent re-run; prune-on-time-removal). **Pending: UI click-test + commit.**
 
-### Sprint D-2 — Per-slot overrides + calendar *(next)*
-- One-off overrides: per-slot `online_booking_status` (on/off/auto), capacity
-  override, blackout dates, manual extra slots.
-- Calendar view of generated availability.
-- Booking-safety: preserve booked slots on regenerate (exclude from prune).
+### Sprint D-2 — Per-slot overrides + blackouts + calendar ✅ BUILT 2026-06-27
+- **Blackout dates**: `blackout_dates` table (migration `0013`; per-location,
+  optional per-tour, day or range). The generator skips blacked-out days every
+  run, so blackouts persist across regeneration; adding/removing one re-runs
+  `materializeLocationActiveSchedules`. `data/blackouts.ts` + `actions/blackouts.ts`.
+- **Per-slot overrides**: on/off/auto status for any slot, capacity override for
+  fixed-capacity tours, manual slot delete (booking-safe). `actions/availability.ts`
+  + `components/SlotControls.tsx`.
+- **Booking-safe regeneration**: prune/clear now excludes slots referenced by
+  `bookings` (`notInArray(... bookedSlotIds())`) — verified with a real booking.
+- **Calendar**: `catalog/schedule/calendar` month grid (slot counts + blackout
+  markers) → click a day for slot controls + a blackout toggle
+  (`components/BlackoutToggle.tsx`). Data: `slotCountsForMonth`, `listSlotsForDay`.
+- Verified: tsc/lint/build clean; live-DB test (blackout prunes unbooked slots,
+  preserves booked). **Pending: UI click-test + commit.**
 
 ### Sprint E — Custom Fields *(inferred; schema exists, no UI)*
 - `custom_fields` (per-location pool — V1 kinds: text, checkbox, dropdown,
@@ -171,13 +182,14 @@ blackout dates; calendar view; nightly materialize cron.
 ---
 
 ## Immediate next action — START HERE NEXT SESSION
-Sprints A–C committed. **Sprint D-1** (slot generation engine + `catalog/schedule/slots`
-view) is **built + committed** — schedules now materialize concrete `availabilities`
-(DST-correct via luxon) on save and via the nightly cron. Two things remain:
-1. Click-test on `/locations/dtown/catalog/schedule` (Clerk sign-in): create a
-   schedule → "Generated slots →" shows slots at the right local times; pause →
-   future slots clear; delete → its slots gone. Set `CRON_SECRET` in Vercel for
-   the new `materialize-availability` cron.
-2. **Sprint D-2** — per-slot overrides (capacity / on-off), blackout dates,
-   calendar view, and booking-safe regeneration (exclude booked slots from the
-   prune). Then the customer-facing booking flow (Sprints G–I, `bookingsystem`).
+**Sprint D is complete** (D-1 generation + D-2 overrides/blackouts/calendar), all
+committed on `develop`. The dashboard now fully manages the catalog + availability.
+Remaining + next:
+1. Click-test the Calendar (`/locations/dtown/catalog/schedule/calendar`, Clerk
+   sign-in): month grid counts; click a day → toggle a slot off / set capacity /
+   delete; black out a day → its slots clear and stay gone after a schedule
+   re-save; un-blackout → slots return. Set `CRON_SECRET` in Vercel for the
+   `materialize-availability` cron.
+2. **Next major step: the customer-facing booking flow** in the `bookingsystem`
+   repo (Sprints G–I): availability display → cart/hold → checkout → Stripe.
+   It's now unblocked — real, timezone-correct `availabilities` exist to sell.

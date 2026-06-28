@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
 import { availabilities, availabilitySchedules, getDb, items } from "@/lib/db";
-import { materializeScheduleRow } from "@/lib/availability/generate";
+import {
+  loadBlackoutKeySet,
+  materializeScheduleRow,
+} from "@/lib/availability/generate";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getScheduleById } from "@/lib/data/schedules";
 import { compileWeekly, type WeekdayCode } from "@/lib/rrule/weekly";
@@ -15,10 +18,11 @@ import type { AvailabilitySchedule } from "@/lib/db/schema";
 // break the operator's save — the nightly cron reconciles either way.
 async function safeMaterialize(
   schedule: AvailabilitySchedule,
-  timezone: string | null,
+  location: { id: string; timezone: string | null },
 ): Promise<void> {
   try {
-    await materializeScheduleRow(schedule, timezone, new Date());
+    const keys = await loadBlackoutKeySet(location.id, schedule.itemId);
+    await materializeScheduleRow(schedule, location.timezone, new Date(), keys);
   } catch (err) {
     console.error("materialize after schedule mutation failed", err);
   }
@@ -203,7 +207,7 @@ export async function createSchedule(
     })
     .returning();
 
-  if (created[0]) await safeMaterialize(created[0], location.timezone);
+  if (created[0]) await safeMaterialize(created[0], location);
 
   await recordAudit({
     slug,
@@ -268,7 +272,7 @@ export async function updateSchedule(
     .where(eq(availabilitySchedules.id, id))
     .returning();
 
-  if (updated[0]) await safeMaterialize(updated[0], location.timezone);
+  if (updated[0]) await safeMaterialize(updated[0], location);
 
   await recordAudit({
     slug,
@@ -325,7 +329,7 @@ export async function setScheduleActive(
     .where(eq(availabilitySchedules.id, id));
 
   // Regenerate (active) or clear future slots (paused).
-  await safeMaterialize({ ...existing, active }, location.timezone);
+  await safeMaterialize({ ...existing, active }, location);
 
   await recordAudit({
     slug,
