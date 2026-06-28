@@ -13,9 +13,18 @@
 >   + success-fallback both commit idempotently; server Purchase (Meta CAPI/GA4 MP) + emit
 >   booking.created; full funnel events.** Needs Stripe TEST keys in the booking app env to take a
 >   live test charge. See `~/bookingsystem/docs/embedding-and-tracking.md`.
-> - **▶ NEXT (fast-follows): per-tour photo upload (dashboard, reuse MediaForm); pre-payment seat
->   hold + countdown; operator bookings manifest; then the conversion-optimization pass (real reviews,
->   copy, A/B). Migrate Miami/Houston onto the system once Dallas proves it.**
+> - **Customer flow VERIFIED end-to-end 2026-06-28** with a live Stripe test booking (#0001 dtown).
+> - **OPERATOR BACKEND (Sprint J) COMPLETE 2026-06-28 — OB-1..OB-7, all on `develop`:** manifest +
+>   check-in (per-line + bulk, mixed rollup); bookings list/detail; cancel + policy-aware refund;
+>   security holds (place/capture/release on card-on-file); manual/phone booking (charge card or
+>   pay-at-venue, oversell-safe); operator reschedule (+history); config editors (discount codes,
+>   cancellation policies, custom fields; equipment OOS via Resources); reports + CSV export; RBAC
+>   (4 roles, mutation-layer enforcement, Clerk publicMetadata.role). Commits 6aaf300→9c5dd9a.
+> - **▶ NEXT: front-end optimization + real photos (per-tour photo upload via MediaForm, conversion
+>   pass — reviews/copy/A-B, seat-hold countdown); then the live Dallas build + replicable
+>   operator-onboarding SOPs. Wire custom-field collection + discount-code apply into the customer
+>   checkout. RBAC UI hiding (hide actions for lower roles) is a polish follow-up. Migrate
+>   Miami/Houston once Dallas proves it.**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
