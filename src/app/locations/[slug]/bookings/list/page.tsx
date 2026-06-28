@@ -1,11 +1,117 @@
-import { redirect } from "next/navigation";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { CalendarRange, List, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { listBookings } from "@/lib/data/bookings";
+import { getLocationBySlug } from "@/lib/data/locations";
+import { bookingTone } from "@/lib/ui/status";
 
-// Bookings list moved to the /bookings index.
-export default async function BookingsListRedirect({
-  params,
-}: {
+export const dynamic = "force-dynamic";
+
+function usd(c: number): string {
+  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+type Props = {
   params: Promise<{ slug: string }>;
-}) {
+  searchParams: Promise<{ status?: string; q?: string }>;
+};
+
+export default async function BookingsListPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  redirect(`/locations/${slug}/bookings`);
+  const sp = await searchParams;
+  const loc = await getLocationBySlug(slug);
+  if (!loc) notFound();
+
+  const tz = loc.timezone ?? "America/Chicago";
+  const rows = await listBookings(loc.id, { status: sp.status, q: sp.q });
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const base = `/locations/${slug}/bookings`;
+
+  return (
+    <section>
+      <PageHeader
+        title="Bookings"
+        description={`${rows.length} booking${rows.length === 1 ? "" : "s"}`}
+        actions={
+          <Link
+            href={`${base}/new`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <Plus className="h-4 w-4" /> New booking
+          </Link>
+        }
+      />
+
+      <ViewToggle base={base} active="list" />
+
+      <form className="mb-4 flex flex-wrap items-center gap-2" action={`${base}/list`}>
+        <select
+          name="status"
+          defaultValue={sp.status ?? "all"}
+          className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="refunded">Refunded</option>
+        </select>
+        <input
+          name="q"
+          defaultValue={sp.q ?? ""}
+          placeholder="Name, email, or #"
+          className="w-56 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        <button className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900">
+          Filter
+        </button>
+      </form>
+
+      {rows.length === 0 ? (
+        <p className="text-sm text-zinc-500">No bookings match.</p>
+      ) : (
+        <ul className="divide-y divide-zinc-200 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+          {rows.map((r) => (
+            <li key={r.id} className="flex items-center gap-4 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                  <Link href={`${base}/${r.id}`} className="hover:underline">
+                    #{r.displayNumber}
+                  </Link>{" "}
+                  · {r.customerName}
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500">
+                  {r.itemName} · {fmt.format(r.startsAt)} · {r.source}
+                </p>
+              </div>
+              <span className="text-sm">{usd(r.totalCents)}</span>
+              <Badge tone={bookingTone(r.status)}>{r.status}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export function ViewToggle({ base, active }: { base: string; active: "grid" | "list" }) {
+  const on = "bg-blue-600 text-white";
+  const off = "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800";
+  return (
+    <div className="mb-4 inline-flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700">
+      <Link href={base} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${active === "grid" ? on : off}`}>
+        <CalendarRange className="h-4 w-4" /> Grid
+      </Link>
+      <Link href={`${base}/list`} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${active === "list" ? on : off}`}>
+        <List className="h-4 w-4" /> List
+      </Link>
+    </div>
+  );
 }

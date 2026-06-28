@@ -17,7 +17,10 @@ import {
   items,
   paymentMethodsOnFile,
   payments,
+  resourceRequirements,
+  resources,
 } from "@/lib/db";
+import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 
 type CheckIn = "not_yet" | "checked_in" | "no_show";
 
@@ -171,6 +174,121 @@ export async function manifestForDate(
         s.capacityMode === "fixed" ? s.a.capacityOverride ?? s.schedCap : null,
       booked: bs.reduce((n, b) => n + b.partySize, 0),
       bookings: bs,
+    };
+  });
+}
+
+// ---------- Bookings grid (calendar) ----------
+
+export type GridSlot = {
+  availabilityId: string;
+  itemId: string;
+  itemName: string;
+  startsAt: Date;
+  endsAt: Date;
+  onlineStatus: string;
+  booked: number;
+  available: number | null;
+  full: boolean;
+};
+
+export async function gridForDate(
+  locationId: string,
+  dateKey: string,
+  tz: string,
+): Promise<GridSlot[]> {
+  const db = getDb();
+  const zone = tz || "utc";
+  const dayStart = DateTime.fromISO(dateKey, { zone }).startOf("day");
+  if (!dayStart.isValid) return [];
+  const start = dayStart.toUTC().toJSDate();
+  const end = dayStart.plus({ days: 1 }).toUTC().toJSDate();
+
+  const slots = await db
+    .select({
+      a: availabilities,
+      itemName: items.name,
+      capacityMode: items.capacityMode,
+      schedCap: availabilitySchedules.capacityPerSlot,
+    })
+    .from(availabilities)
+    .innerJoin(items, eq(availabilities.itemId, items.id))
+    .leftJoin(availabilitySchedules, eq(availabilities.scheduleId, availabilitySchedules.id))
+    .where(
+      and(
+        eq(items.locationId, locationId),
+        gte(availabilities.startsAt, start),
+        lt(availabilities.startsAt, end),
+      ),
+    )
+    .orderBy(asc(availabilities.startsAt));
+  if (slots.length === 0) return [];
+
+  const slotIds = slots.map((s) => s.a.id);
+  const bookedRows = await db
+    .select({ availabilityId: bookings.availabilityId, qty: bookingLines.quantity })
+    .from(bookings)
+    .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+    .where(and(inArray(bookings.availabilityId, slotIds), eq(bookings.status, "active")));
+  const bookedBySlot = new Map<string, number>();
+  for (const r of bookedRows)
+    bookedBySlot.set(r.availabilityId, (bookedBySlot.get(r.availabilityId) ?? 0) + r.qty);
+
+  // Resource pools per resource-based item (for available counts).
+  const resourceItemIds = [
+    ...new Set(slots.filter((s) => s.capacityMode === "resource_based").map((s) => s.a.itemId)),
+  ];
+  const poolsByItem = new Map<string, { max: number; oos: number; maxQ: number }[]>();
+  if (resourceItemIds.length) {
+    const rr = await db
+      .select({ itemId: resourceRequirements.itemId, rr: resourceRequirements, r: resources })
+      .from(resourceRequirements)
+      .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
+      .where(inArray(resourceRequirements.itemId, resourceItemIds));
+    const byItemRes = new Map<string, Map<string, { max: number; oos: number; maxQ: number }>>();
+    for (const row of rr) {
+      let m = byItemRes.get(row.itemId);
+      if (!m) {
+        m = new Map();
+        byItemRes.set(row.itemId, m);
+      }
+      const cur = m.get(row.r.id);
+      if (!cur)
+        m.set(row.r.id, { max: row.r.maxConcurrentUses, oos: row.r.outOfServiceCount, maxQ: row.rr.quantityConsumed });
+      else cur.maxQ = Math.max(cur.maxQ, row.rr.quantityConsumed);
+    }
+    for (const [itemId, m] of byItemRes) poolsByItem.set(itemId, [...m.values()]);
+  }
+
+  return slots.map((s) => {
+    const booked = bookedBySlot.get(s.a.id) ?? 0;
+    let available: number | null;
+    if (s.capacityMode === "fixed") {
+      const base = s.a.capacityOverride ?? s.schedCap;
+      available = base != null ? fixedRemaining(base, booked) : null;
+    } else {
+      const pools = poolsByItem.get(s.a.itemId) ?? [];
+      available = pools.length
+        ? resourceRemaining(
+            pools.map<ResourcePool>((p) => ({
+              maxConcurrentUses: p.max,
+              outOfServiceCount: p.oos,
+              maxQuantityConsumed: p.maxQ,
+              consumed: booked,
+            })),
+          )
+        : null;
+    }
+    return {
+      availabilityId: s.a.id,
+      itemId: s.a.itemId,
+      itemName: s.itemName,
+      startsAt: s.a.startsAt,
+      endsAt: s.a.endsAt,
+      onlineStatus: s.a.onlineBookingStatus,
+      booked,
+      available,
+      full: available != null && available <= 0,
     };
   });
 }

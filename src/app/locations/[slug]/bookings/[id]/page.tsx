@@ -44,7 +44,7 @@ export default async function BookingDetailPage({ params }: Props) {
   return (
     <section className="max-w-3xl">
       <div className="mb-4 flex items-center gap-2 text-xs text-zinc-500">
-        <Link href={base} className="hover:text-zinc-700 dark:hover:text-zinc-300">
+        <Link href={`${base}/list`} className="hover:text-zinc-700 dark:hover:text-zinc-300">
           All bookings
         </Link>
         <span>/</span>
