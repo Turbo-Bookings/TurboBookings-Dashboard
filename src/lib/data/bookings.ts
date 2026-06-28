@@ -326,3 +326,142 @@ export async function getBookingDetail(id: string, locationId: string) {
     cardOnFile: cardOnFile ?? null,
   };
 }
+
+// ---------- Reports ----------
+
+export type BookingsReport = {
+  bookings: number;
+  pax: number;
+  grossCents: number;
+  paidCents: number;
+  onlineCount: number;
+  directCount: number;
+  byTour: { name: string; bookings: number; pax: number; grossCents: number }[];
+};
+
+async function paxByBooking(ids: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (ids.length === 0) return map;
+  const db = getDb();
+  const rows = await db
+    .select({ bid: bookingLines.bookingId, q: bookingLines.quantity })
+    .from(bookingLines)
+    .where(inArray(bookingLines.bookingId, ids));
+  for (const r of rows) map.set(r.bid, (map.get(r.bid) ?? 0) + r.q);
+  return map;
+}
+
+export async function bookingsReport(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<BookingsReport> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: bookings.id,
+      itemName: items.name,
+      source: bookings.source,
+      totalCents: bookings.totalCents,
+      paidCents: bookings.depositPaidCents,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        gte(availabilities.startsAt, from),
+        lt(availabilities.startsAt, to),
+      ),
+    );
+  const pax = await paxByBooking(rows.map((r) => r.id));
+  const byTour = new Map<string, { name: string; bookings: number; pax: number; grossCents: number }>();
+  let totalPax = 0, gross = 0, paid = 0, online = 0, direct = 0;
+  for (const r of rows) {
+    const p = pax.get(r.id) ?? 0;
+    totalPax += p;
+    gross += r.totalCents;
+    paid += r.paidCents;
+    if (r.source === "online") online++;
+    else if (r.source === "direct") direct++;
+    const t = byTour.get(r.itemName) ?? { name: r.itemName, bookings: 0, pax: 0, grossCents: 0 };
+    t.bookings++;
+    t.pax += p;
+    t.grossCents += r.totalCents;
+    byTour.set(r.itemName, t);
+  }
+  return {
+    bookings: rows.length,
+    pax: totalPax,
+    grossCents: gross,
+    paidCents: paid,
+    onlineCount: online,
+    directCount: direct,
+    byTour: [...byTour.values()].sort((a, b) => b.grossCents - a.grossCents),
+  };
+}
+
+export type CsvRow = {
+  displayNumber: string;
+  status: string;
+  source: string;
+  startsAt: Date;
+  itemName: string;
+  customerName: string;
+  email: string;
+  pax: number;
+  totalCents: number;
+  paidCents: number;
+  balanceCents: number;
+};
+
+export async function listBookingsForCsv(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<CsvRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: bookings.id,
+      displayNumber: bookings.displayNumber,
+      status: bookings.status,
+      source: bookings.source,
+      startsAt: availabilities.startsAt,
+      itemName: items.name,
+      first: customers.firstName,
+      last: customers.lastName,
+      email: customers.emailLower,
+      totalCents: bookings.totalCents,
+      paidCents: bookings.depositPaidCents,
+      balanceCents: bookings.balanceDueCents,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .innerJoin(customers, eq(bookings.customerId, customers.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        gte(availabilities.startsAt, from),
+        lt(availabilities.startsAt, to),
+      ),
+    )
+    .orderBy(asc(availabilities.startsAt));
+  const pax = await paxByBooking(rows.map((r) => r.id));
+  return rows.map((r) => ({
+    displayNumber: r.displayNumber,
+    status: r.status,
+    source: r.source,
+    startsAt: r.startsAt,
+    itemName: r.itemName,
+    customerName: [r.first, r.last].filter(Boolean).join(" ") || "",
+    email: r.email,
+    pax: pax.get(r.id) ?? 0,
+    totalCents: r.totalCents,
+    paidCents: r.paidCents,
+    balanceCents: r.balanceCents,
+  }));
+}
