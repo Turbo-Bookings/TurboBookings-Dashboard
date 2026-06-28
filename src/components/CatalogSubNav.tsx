@@ -20,6 +20,9 @@ const SUB_TABS: SubTab[] = [
   { label: "Resources", segment: "resources" },
   { label: "Customer Types", segment: "customer-types" },
   { label: "Schedule", segment: "schedule" },
+  { label: "Custom Fields", segment: "custom-fields" },
+  { label: "Cancellation", segment: "cancellation" },
+  { label: "Discounts", segment: "discounts" },
 ];
 
 type Props = {
