@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
+import { BookingActions } from "@/components/BookingActions";
 import { CheckInControls } from "@/components/CheckInControls";
 import { getBookingDetail } from "@/lib/data/bookings";
+import { getCancellationRefund } from "@/lib/booking/refund";
 import { getLocationBySlug } from "@/lib/data/locations";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,7 @@ export default async function BookingDetailPage({ params }: Props) {
   if (!d || !d.booking) notFound();
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
+  const refund = await getCancellationRefund(loc.id, id);
   const tz = loc.timezone ?? "America/Chicago";
   const when = slot
     ? new Intl.DateTimeFormat("en-US", {
@@ -54,6 +57,20 @@ export default async function BookingDetailPage({ params }: Props) {
           </p>
         </div>
       </div>
+
+      <BookingActions
+        slug={slug}
+        bookingId={b.id}
+        status={b.status}
+        refundLabel={refund.label}
+        refundCents={refund.refundCents}
+        hasCardOnFile={!!d.cardOnFile}
+        holds={holds.map((h) => ({
+          id: h.hold.id,
+          status: h.hold.status,
+          amountCents: h.hold.amountCents,
+        }))}
+      />
 
       {/* Customer */}
       <div className="mt-5 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
