@@ -6,11 +6,12 @@
 >
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
-> - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine (Phase 0 scaffold only).
-> - **Status:** Sprints A–C + D-1 committed. **Sprint D-2** (per-slot overrides, blackout dates,
->   calendar view, booking-safe regeneration) **built 2026-06-27** (tsc/lint/build + live-DB blackout
->   & booking-safe tests pass; UI click-test + commit pending). **▶ NEXT: customer-facing booking
->   flow (Sprints G–I, `bookingsystem` repo) — now unblocked because real availability exists.**
+> - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine. Sprint D (all of
+>   A–D) committed. **Customer flow STARTED:** Sprint G **Slice 1 (branded shopping experience +
+>   funnel tracking) built + committed 2026-06-28** (`1e7a4c7`). See
+>   `~/bookingsystem/docs/embedding-and-tracking.md` for the rewrite/embedding + Railway-brain model.
+> - **▶ NEXT: customer flow Slice 2 (checkout: seat hold + info form + oversell-safe commit), then
+>   Slice 3 (Stripe payment + webhook + confirmation + emit booking.created).**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
@@ -158,9 +159,14 @@ blackout dates; calendar view; nightly materialize cron.
 > of existing tables. Order is inferred from a normal booking funnel.
 
 ### Sprint G — Availability display + cart/hold
-- Public availability query (read `availabilities` honoring capacity already
-  consumed by bookings + open holds).
-- `booking_holds` — temporary seat hold while customer checks out (TTL).
+- **Slice 1 ✅ BUILT 2026-06-28 (`1e7a4c7`)** — branded shopping: tour list → detail →
+  date/time picker (real slots, tz-correct, capacity-aware) → rider quantities → live
+  deposit/fee/tax price → continue; tenant pixel/GA4 tags + funnel events; schema
+  re-synced; Replit→Railway retarget; `docs/embedding-and-tracking.md`.
+- **Slice 2 (next)** — seat hold (`booking_holds` + TTL), customer info form + custom
+  fields, oversell-safe commit (neon pooled driver / optimistic check).
+- Public availability query honors capacity consumed by bookings + open holds (the
+  precise shared-pool/atomic path lands with the commit step).
 
 ### Sprint H — Checkout + booking creation
 - `customers`, `bookings`, `booking_lines` (per customer-type line),
