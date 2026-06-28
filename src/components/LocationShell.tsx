@@ -202,7 +202,7 @@ export function LocationShell({ slug, brandName, status, locations, children }: 
     <div className="flex min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Desktop sidebar */}
       <aside
-        className={`sticky top-0 hidden h-screen shrink-0 border-r border-zinc-200 bg-white md:block dark:border-zinc-800 dark:bg-zinc-900 ${
+        className={`sticky top-0 hidden h-screen shrink-0 border-r border-zinc-200 bg-white md:block print:hidden dark:border-zinc-800 dark:bg-zinc-900 ${
           collapsed ? "w-16" : "w-60"
         } transition-[width] duration-200`}
       >
@@ -221,7 +221,7 @@ export function LocationShell({ slug, brandName, status, locations, children }: 
 
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-zinc-200 bg-white/80 px-4 backdrop-blur md:px-8 dark:border-zinc-800 dark:bg-zinc-950/80">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-zinc-200 bg-white/80 px-4 backdrop-blur md:px-8 print:hidden dark:border-zinc-800 dark:bg-zinc-950/80">
           <button
             onClick={() => setDrawerOpen(true)}
             className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-100 md:hidden dark:hover:bg-zinc-800"

@@ -44,12 +44,15 @@ export type ManifestBooking = {
   status: string;
   balanceDueCents: number;
   partySize: number;
+  notes: string | null;
   rollup: "not_yet" | "checked_in" | "no_show" | "mixed";
   lines: ManifestLine[];
 };
 export type ManifestSlot = {
   availabilityId: string;
+  itemId: string;
   itemName: string;
+  onlineStatus: string;
   capacityMode: "resource_based" | "fixed";
   startsAt: Date;
   endsAt: Date;
@@ -101,6 +104,7 @@ export async function manifestForDate(
       displayNumber: bookings.displayNumber,
       status: bookings.status,
       balanceDueCents: bookings.balanceDueCents,
+      notes: bookings.notes,
       custFirst: customers.firstName,
       custLast: customers.lastName,
       custPhone: customers.phoneE164,
@@ -134,6 +138,7 @@ export async function manifestForDate(
         status: r.status,
         balanceDueCents: r.balanceDueCents,
         partySize: 0,
+        notes: r.notes,
         rollup: "not_yet",
         lines: [],
       };
@@ -156,7 +161,9 @@ export async function manifestForDate(
     );
     return {
       availabilityId: s.a.id,
+      itemId: s.a.itemId,
       itemName: s.itemName,
+      onlineStatus: s.a.onlineBookingStatus,
       capacityMode: s.capacityMode,
       startsAt: s.a.startsAt,
       endsAt: s.a.endsAt,

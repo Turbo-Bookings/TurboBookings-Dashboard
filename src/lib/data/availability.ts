@@ -140,10 +140,15 @@ export async function slotCountsForMonth(
 export async function getSlot(
   slotId: string,
   locationId: string,
-): Promise<{ id: string; itemId: string } | null> {
+): Promise<{ id: string; itemId: string; startsAt: Date; endsAt: Date } | null> {
   const db = getDb();
   const rows = await db
-    .select({ id: availabilities.id, itemId: availabilities.itemId })
+    .select({
+      id: availabilities.id,
+      itemId: availabilities.itemId,
+      startsAt: availabilities.startsAt,
+      endsAt: availabilities.endsAt,
+    })
     .from(availabilities)
     .innerJoin(items, eq(availabilities.itemId, items.id))
     .where(and(eq(availabilities.id, slotId), eq(items.locationId, locationId)))

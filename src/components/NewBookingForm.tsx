@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -33,6 +33,9 @@ type Props = {
   publishableKey: string | null;
   stripeAccount: string | null;
   configured: boolean;
+  // When launched from a manifest/grid slot, the tour + time are pre-set + locked.
+  lockedItem?: { id: string; name: string };
+  lockedSlot?: { id: string; label: string };
 };
 
 function usd(c: number): string {
@@ -41,18 +44,18 @@ function usd(c: number): string {
 const input =
   "w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
 
-export function NewBookingForm({ slug, tz, items, location, publishableKey, stripeAccount, configured }: Props) {
+export function NewBookingForm({ slug, tz, items, location, publishableKey, stripeAccount, configured, lockedItem, lockedSlot }: Props) {
   const router = useRouter();
-  const [itemId, setItemId] = useState("");
+  const [itemId, setItemId] = useState(lockedItem?.id ?? "");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [pricing, setPricing] = useState<Price[]>([]);
-  const [slotId, setSlotId] = useState("");
+  const [slotId, setSlotId] = useState(lockedSlot?.id ?? "");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [payMode, setPayMode] = useState<"venue" | "card">("venue");
-  const [loadingTour, setLoadingTour] = useState(false);
+  const [loadingTour, setLoadingTour] = useState(!!lockedItem);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -87,6 +90,23 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
     } else setError(r.error);
   }
 
+  // Locked mode (launched from a slot): load pricing on mount, keep the preset slot.
+  useEffect(() => {
+    if (!lockedItem) return;
+    let active = true;
+    getTourBookingData(slug, lockedItem.id).then((r) => {
+      if (!active) return;
+      setLoadingTour(false);
+      if (r.ok) {
+        setSlots(r.slots);
+        setPricing(r.pricing);
+      } else setError(r.error);
+    });
+    return () => {
+      active = false;
+    };
+  }, [lockedItem, slug]);
+
   const lines = pricing
     .filter((p) => (qty[p.ct] ?? 0) > 0)
     .map((p) => ({ ct: p.ct, q: qty[p.ct] }));
@@ -119,33 +139,47 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
 
   return (
     <div className="max-w-xl space-y-5">
-      <div>
-        <label className="block text-sm font-medium">Tour</label>
-        <select className={`mt-1 ${input}`} value={itemId} onChange={(e) => onTour(e.target.value)}>
-          <option value="">Select a tour…</option>
-          {items.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {lockedItem ? (
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <span className="text-zinc-500">Tour:</span>{" "}
+          <span className="font-medium">{lockedItem.name}</span>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium">Tour</label>
+          <select className={`mt-1 ${input}`} value={itemId} onChange={(e) => onTour(e.target.value)}>
+            <option value="">Select a tour…</option>
+            {items.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {loadingTour && <p className="text-sm text-zinc-500">Loading availability…</p>}
 
       {itemId && !loadingTour && (
         <>
-          <div>
-            <label className="block text-sm font-medium">Date &amp; time</label>
-            <select className={`mt-1 ${input}`} value={slotId} onChange={(e) => setSlotId(e.target.value)}>
-              <option value="">Select a time…</option>
-              {slots.map((s) => (
-                <option key={s.id} value={s.id} disabled={s.remaining <= 0}>
-                  {fmtSlot.format(new Date(s.startsAt))} ({s.remaining} left)
-                </option>
-              ))}
-            </select>
-          </div>
+          {lockedSlot ? (
+            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+              <span className="text-zinc-500">Time:</span>{" "}
+              <span className="font-medium">{lockedSlot.label}</span>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium">Date &amp; time</label>
+              <select className={`mt-1 ${input}`} value={slotId} onChange={(e) => setSlotId(e.target.value)}>
+                <option value="">Select a time…</option>
+                {slots.map((s) => (
+                  <option key={s.id} value={s.id} disabled={s.remaining <= 0}>
+                    {fmtSlot.format(new Date(s.startsAt))} ({s.remaining} left)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium">Riders</label>
