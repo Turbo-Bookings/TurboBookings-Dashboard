@@ -11,6 +11,7 @@ import {
   locations,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 type FieldErrors = Partial<Record<"name" | "grace" | "rules" | "form", string>>;
 
@@ -84,6 +85,8 @@ export async function createPolicy(
   formData: FormData,
 ): Promise<PolicyFormState> {
   const values = parse(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
   const location = await getLocationBySlug(slug);
@@ -116,6 +119,8 @@ export async function updatePolicy(
   formData: FormData,
 ): Promise<PolicyFormState> {
   const values = parse(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
   const location = await getLocationBySlug(slug);
@@ -143,6 +148,8 @@ export async function deletePolicy(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();

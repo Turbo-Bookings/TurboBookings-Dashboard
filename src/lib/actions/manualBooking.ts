@@ -19,6 +19,7 @@ import {
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { getItemPricing } from "@/lib/data/items";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
 import { emitEvent } from "@/lib/events/emit";
 import { quote } from "@/lib/pricing/quote";
@@ -165,6 +166,8 @@ export async function createOperatorIntent(
   slug: string,
   payload: Payload,
 ): Promise<{ ok: true; clientSecret: string; stripeAccount: string | null } | { ok: false; error: string }> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
   if (!stripeConfigured()) return { ok: false, error: "Payments not configured" };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -197,6 +200,8 @@ export async function createDirectBooking(
   payload: Payload,
   paymentIntentId?: string,
 ): Promise<{ ok: true; bookingId: string } | { ok: false; error: string }> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   if (!payload.contact.name.trim() || !EMAIL_RE.test(payload.contact.email))

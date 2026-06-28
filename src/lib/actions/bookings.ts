@@ -19,6 +19,7 @@ import {
   resources,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund } from "@/lib/booking/refund";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { withTxn } from "@/lib/db/txn";
@@ -152,6 +153,8 @@ export async function cancelBooking(
   bookingId: string,
   reason: string,
 ): Promise<Result> {
+  const deny = await denyIfCannot("refund");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();
@@ -230,6 +233,8 @@ export async function placeHold(
 ): Promise<Result> {
   if (!Number.isInteger(amountCents) || amountCents < 50)
     return { ok: false, error: "Enter a valid hold amount" };
+  const deny = await denyIfCannot("refund");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();
@@ -312,6 +317,8 @@ export async function captureHold(
   holdId: string,
   amountCents?: number,
 ): Promise<Result> {
+  const deny = await denyIfCannot("refund");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const h = await holdInLocation(holdId, location.id);
@@ -351,6 +358,8 @@ export async function releaseHold(
   slug: string,
   holdId: string,
 ): Promise<Result> {
+  const deny = await denyIfCannot("refund");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const h = await holdInLocation(holdId, location.id);
@@ -390,6 +399,8 @@ export async function rescheduleBooking(
   feeCents: number,
   reason: string,
 ): Promise<Result> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const fee = Number.isInteger(feeCents) && feeCents > 0 ? feeCents : 0;

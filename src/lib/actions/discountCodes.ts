@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
 import { discountCodes, getDb } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 type FieldErrors = Partial<
   Record<"code" | "amount" | "maxUses" | "validUntil" | "form", string>
@@ -75,6 +76,8 @@ export async function createDiscountCode(
   formData: FormData,
 ): Promise<DiscountFormState> {
   const values = parse(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
   const location = await getLocationBySlug(slug);
@@ -99,6 +102,8 @@ export async function updateDiscountCode(
   formData: FormData,
 ): Promise<DiscountFormState> {
   const values = parse(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
   const location = await getLocationBySlug(slug);
@@ -125,6 +130,8 @@ export async function deleteDiscountCode(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();
