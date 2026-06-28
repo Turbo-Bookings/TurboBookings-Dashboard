@@ -16,6 +16,7 @@ type Tab = {
 const TABS: Tab[] = [
   { label: "Branding & Tours", segment: "" },
   { label: "Catalog", segment: "catalog" },
+  { label: "Bookings", segment: "bookings" },
   { label: "Tracking", segment: "tracking" },
   { label: "Integrations", segment: "integrations" },
   { label: "Setup", segment: "setup" },
