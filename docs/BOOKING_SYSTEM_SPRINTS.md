@@ -1,5 +1,30 @@
 # Custom Booking System — Sprint Roadmap (reconstructed 2026-05-30)
 
+> ## ⭐ SINGLE SOURCE OF TRUTH — RESUME HERE
+> This file is the canonical build-status + sequencing roadmap for the custom booking system across
+> **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
+>
+> - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
+>   surface, and the active sprint. First file to read: this one.
+> - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine (Phase 0 scaffold only).
+> - **Status:** Sprints A–B done + committed. Sprint C **built 2026-06-27** (build + DB-path
+>   verified; UI click-test + commit pending). **▶ NEXT after C is committed: Sprint D — generate
+>   concrete slots from schedules.**
+>
+> **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
+> the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
+> **availability** — concrete date/time slots — which is produced by the dashboard's schedule builder
+> (Sprint C → D). Until the dashboard can generate availability, there is nothing for a customer to
+> book or for us to test the flow against.
+>
+> **Terminology map** (legacy "Phase" vs. live "Sprint" — reconciled here so they stop competing):
+> - *Phase 0* = schema + scaffold + cross-system tracking — **done in both repos**.
+> - *Dashboard catalog/config* = **Sprints A–F** (this repo).
+> - *"Phase 1 booking flow"* = the customer engine = **Sprints G–I** (`bookingsystem` repo).
+> - *Operational dashboard* (manifest / refund / reschedule) = **Sprint J**.
+> - `~/.claude/plans/snazzy-jingling-squirrel.md` is the dashboard-WIDE plan; THIS doc is the
+>   booking-system-specific live roadmap.
+
 > **Provenance:** This roadmap was reconstructed after a terminal crash lost the
 > working session. The Sprint A–D naming is recovered from real breadcrumbs in the
 > code (commit messages + the `schedule` stub + the `CatalogSubNav` comment).
@@ -49,10 +74,38 @@ resource_requirements" mapping. Build + tsc + eslint all clean.
 (`items.cancellation_policy_id` column exists, no UI); item photo upload
 (`items.photo_urls` — Blob, lands with the asset library).
 
-### Sprint C — Schedule, part 1: recurring availability
+### Sprint C — Schedule, part 1: recurring availability ✅ BUILT 2026-06-27
 - `availability_schedules` (RRULE-driven). Weekly recurring patterns per tour:
-  days, start times, capacity per slot, season start/end, min lead time.
-- Schedule builder UI replacing the `schedule` placeholder.
+  weekday toggles, start time, duration, capacity per slot, online-booking
+  status, season window, materialize horizon.
+- Schedule builder UI replaced the `schedule` placeholder (`catalog/schedule`
+  list/new/[id]) with a live "next 5 slots" preview.
+- Added `rrule` dep + `src/lib/rrule/weekly.ts` (compile/parse/preview — naive
+  recurrence; time stored separately in `starts_at_time_local`). Added
+  `locations.timezone` column (migration `0009`) + seeded per-location tz +
+  dtown test catalog (2 customer types, 2 tours).
+- Files: `lib/rrule/weekly.ts`, `lib/data/schedules.ts`, `lib/actions/schedules.ts`,
+  `components/ScheduleForm.tsx`, `app/locations/[slug]/catalog/schedule/{page,new,[id]}`.
+- **Refinement (2026-06-27, operator feedback):**
+  - **Multiple start times per schedule** — `starts_at_time_local` (single)
+    replaced by `start_times_local jsonb` array. Schedule form has an interval
+    generator ("every N min from X to Y") + manual add/remove chips; preview
+    interleaves date × time. (Migrations `0010` add+backfill, `0011` drop old col.)
+  - **Per-tour capacity mode** — new `items.capacity_mode` enum
+    (`resource_based` default | `fixed`), set on the tour form. Resolves the
+    capacityPerSlot-vs-resources conflict: `capacity_per_slot` is now nullable and
+    used ONLY for fixed tours; resource-based tours derive capacity from resource
+    pools (the schedule form shows "limited by ATVs (30)…" instead of a number).
+    Backfill set existing tours with resource requirements → `resource_based`,
+    others → `fixed`.
+- Verified: tsc + lint + build clean; live-DB round-trip (multi-time + null/fixed
+  capacity). **Pending: UI click-test (needs Clerk sign-in) + commit.**
+
+**Deferred to Sprint D:** local→UTC slot generation using `locations.timezone` +
+`start_times_local`; the capacity math (resource-based: per required pool
+`floor((max − outOfService − consumed)/quantityConsumed)` honoring the
+customer-type mix; fixed: `capacity_per_slot − booked`); per-slot overrides;
+blackout dates; calendar view; nightly materialize cron.
 
 ### Sprint D — Schedule, part 2: generated slots + overrides
 - `availabilities` — bulk-generate concrete date+time slots from schedules.
@@ -104,14 +157,14 @@ resource_requirements" mapping. Build + tsc + eslint all clean.
 ---
 
 ## Immediate next action — START HERE NEXT SESSION
-Sprint B is done and committed on `develop`. **Next up: Sprint C — recurring
-availability schedules (`availability_schedules`, RRULE-driven).** Replace the
-`schedule` placeholder with a schedule builder (days, start times, capacity per
-slot, season window, min lead time). Mirror the established Catalog patterns:
-`data/<x>.ts` + `actions/<x>.ts` (validate → audit → revalidate) + a client
-editor component + pages under `catalog/schedule/`. Then Sprint D generates
-concrete `availabilities` slots from those schedules.
-
-Optional warm-up before Sprint C: smoke-test Sprint B against the dev DB (create
-a tour, set pricing, set resource requirements) — it's only been build-verified,
-not click-tested with live data.
+Sprint C is **built** (schedule builder + RRULE helpers + tz column) and verified
+by build + a live-DB data-path test, but **not yet click-tested in the browser or
+committed**. Two things remain:
+1. Click-test the schedule builder at `/locations/dtown/catalog/schedule` (needs
+   Clerk sign-in): create / edit / delete a schedule, confirm the live preview and
+   the round-trip of weekdays + season. Then commit Sprint C to `develop`.
+2. **Sprint D — generate concrete `availabilities` slots** from schedules:
+   expand the RRULE × `starts_at_time_local` × `locations.timezone` → UTC slots,
+   per-slot overrides, blackout dates, calendar view, nightly materialize cron.
+   The `rrule` helpers (`lib/rrule/weekly.ts`) and the tz column are already in
+   place for this.

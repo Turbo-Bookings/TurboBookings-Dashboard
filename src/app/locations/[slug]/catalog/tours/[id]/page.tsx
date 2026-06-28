@@ -57,6 +57,7 @@ export default async function EditTourPage({ params }: Props) {
           name: item.name,
           descriptionMd: item.descriptionMd ?? "",
           defaultDurationMinutes: item.defaultDurationMinutes.toString(),
+          capacityMode: item.capacityMode,
           bookableOnline: item.bookableOnline,
           listingVisible: item.listingVisible,
         }}

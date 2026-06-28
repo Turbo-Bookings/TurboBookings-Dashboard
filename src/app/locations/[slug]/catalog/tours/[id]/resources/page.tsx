@@ -59,6 +59,26 @@ export default async function ResourceRequirementsPage({ params }: Props) {
         </Link>
       </header>
 
+      {item.capacityMode === "fixed" ? (
+        <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+          This tour uses a <strong>fixed capacity</strong> set on each schedule, so
+          these resource requirements don&apos;t limit bookings. Switch it to
+          &ldquo;From resources&rdquo; on the{" "}
+          <Link
+            href={`/locations/${slug}/catalog/tours/${id}`}
+            className="underline"
+          >
+            tour settings
+          </Link>{" "}
+          to make capacity come from resources.
+        </div>
+      ) : (
+        <div className="mb-4 rounded-md border border-zinc-200 bg-zinc-50/60 p-3 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/40 dark:text-zinc-400">
+          This tour is <strong>resource-based</strong> — these requirements
+          determine its bookable capacity.
+        </div>
+      )}
+
       <ResourceRequirementsEditor
         customerTypes={matrix.customerTypes}
         resources={matrix.resources}

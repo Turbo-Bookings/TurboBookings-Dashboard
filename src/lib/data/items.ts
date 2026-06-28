@@ -60,6 +60,62 @@ export async function listItemsWithPricingSummary(
   });
 }
 
+// Lightweight item list for dropdowns (e.g. the schedule builder's tour
+// picker). defaultDurationMinutes lets the form pre-fill a slot duration;
+// capacityMode tells the schedule form whether to ask for a capacity number.
+export type ItemForSelect = {
+  id: string;
+  name: string;
+  defaultDurationMinutes: number;
+  capacityMode: Item["capacityMode"];
+  bookableOnline: boolean;
+};
+
+export async function listItemsForSelect(
+  locationId: string,
+): Promise<ItemForSelect[]> {
+  const db = getDb();
+  return db
+    .select({
+      id: items.id,
+      name: items.name,
+      defaultDurationMinutes: items.defaultDurationMinutes,
+      capacityMode: items.capacityMode,
+      bookableOnline: items.bookableOnline,
+    })
+    .from(items)
+    .where(eq(items.locationId, locationId))
+    .orderBy(asc(items.sortOrder), asc(items.createdAt));
+}
+
+// Resource pools each tour consumes (deduped by resource), for showing
+// "capacity limited by ATVs (30)…" on resource-based tours. Keyed by item id.
+export type ResourceSummary = { name: string; maxConcurrentUses: number };
+
+export async function getResourceSummariesByItem(
+  locationId: string,
+): Promise<Record<string, ResourceSummary[]>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      itemId: resourceRequirements.itemId,
+      name: resources.name,
+      maxConcurrentUses: resources.maxConcurrentUses,
+    })
+    .from(resourceRequirements)
+    .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
+    .innerJoin(items, eq(resourceRequirements.itemId, items.id))
+    .where(eq(items.locationId, locationId));
+
+  const out: Record<string, ResourceSummary[]> = {};
+  for (const r of rows) {
+    const list = out[r.itemId] ?? (out[r.itemId] = []);
+    if (!list.some((x) => x.name === r.name))
+      list.push({ name: r.name, maxConcurrentUses: r.maxConcurrentUses });
+  }
+  return out;
+}
+
 export async function getItemById(
   id: string,
   locationId: string,

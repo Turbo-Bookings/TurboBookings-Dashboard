@@ -64,6 +64,27 @@
       "when": 1780024340641,
       "tag": "0008_cloudy_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782605629162,
+      "tag": "0009_flaky_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1782609147645,
+      "tag": "0010_nasty_ink",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1782609188690,
+      "tag": "0011_brown_owl",
+      "breakpoints": true
     }
   ]
 }

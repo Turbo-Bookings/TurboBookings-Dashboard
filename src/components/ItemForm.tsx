@@ -22,6 +22,7 @@ const EMPTY: ItemFormState["values"] = {
   name: "",
   descriptionMd: "",
   defaultDurationMinutes: "60",
+  capacityMode: "resource_based",
   bookableOnline: true,
   listingVisible: true,
 };
@@ -74,6 +75,59 @@ export function ItemForm({
           hint="Drives default end time when a slot is created"
           error={errors.defaultDurationMinutes}
         />
+      </div>
+
+      <div className="space-y-2">
+        <span className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          Capacity
+        </span>
+        <p className="text-xs text-zinc-500">
+          How this tour&apos;s bookable capacity is determined.
+        </p>
+        <div className="space-y-2">
+          <label className="flex items-start gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <input
+              type="radio"
+              name="capacityMode"
+              value="resource_based"
+              defaultChecked={values.capacityMode !== "fixed"}
+              className="mt-0.5 h-4 w-4 border-zinc-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                From resources
+              </span>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                Capacity is limited by this tour&apos;s resource pools (ATVs,
+                UTVs…) and what each customer type consumes — set on the tour&apos;s
+                Resources tab. Recommended for equipment-based tours.
+              </p>
+            </span>
+          </label>
+          <label className="flex items-start gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+            <input
+              type="radio"
+              name="capacityMode"
+              value="fixed"
+              defaultChecked={values.capacityMode === "fixed"}
+              className="mt-0.5 h-4 w-4 border-zinc-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-sm">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                Fixed number of spots
+              </span>
+              <p className="mt-0.5 text-xs text-zinc-500">
+                A flat capacity per time slot, entered on each schedule. Use for
+                tours not tied to a physical resource.
+              </p>
+            </span>
+          </label>
+        </div>
+        {errors.capacityMode && (
+          <p className="text-xs font-medium text-red-600 dark:text-red-400">
+            {errors.capacityMode}
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">

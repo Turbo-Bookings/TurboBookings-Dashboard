@@ -15,8 +15,14 @@ import {
 import { getLocationBySlug } from "@/lib/data/locations";
 
 type ItemFieldErrors = Partial<
-  Record<"name" | "defaultDurationMinutes" | "descriptionMd" | "form", string>
+  Record<
+    "name" | "defaultDurationMinutes" | "descriptionMd" | "capacityMode" | "form",
+    string
+  >
 >;
+
+const CAPACITY_MODES = ["resource_based", "fixed"] as const;
+type CapacityMode = (typeof CAPACITY_MODES)[number];
 
 export type ItemFormState = {
   ok: boolean;
@@ -25,6 +31,7 @@ export type ItemFormState = {
     name: string;
     descriptionMd: string;
     defaultDurationMinutes: string;
+    capacityMode: string;
     bookableOnline: boolean;
     listingVisible: boolean;
   };
@@ -40,6 +47,7 @@ function parseItemForm(formData: FormData): ItemFormState["values"] {
     defaultDurationMinutes: String(
       formData.get("defaultDurationMinutes") ?? "",
     ).trim(),
+    capacityMode: String(formData.get("capacityMode") ?? "resource_based"),
     bookableOnline: formData.get("bookableOnline") === "on",
     listingVisible: formData.get("listingVisible") === "on",
   };
@@ -50,6 +58,9 @@ function validateItem(values: ItemFormState["values"]): ItemFieldErrors {
   if (!values.name) errors.name = "Required";
   else if (values.name.length > MAX_NAME_LEN)
     errors.name = `Keep under ${MAX_NAME_LEN} characters`;
+
+  if (!CAPACITY_MODES.includes(values.capacityMode as CapacityMode))
+    errors.capacityMode = "Pick a capacity mode";
 
   const dur = Number(values.defaultDurationMinutes);
   if (!values.defaultDurationMinutes)
@@ -97,6 +108,7 @@ export async function createItem(
       name: values.name,
       descriptionMd: values.descriptionMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
+      capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,
       listingVisible: values.listingVisible,
       sortOrder,
@@ -143,6 +155,7 @@ export async function updateItem(
       name: values.name,
       descriptionMd: values.descriptionMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
+      capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,
       listingVisible: values.listingVisible,
       updatedAt: new Date(),

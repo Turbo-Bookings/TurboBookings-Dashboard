@@ -81,6 +81,13 @@ export const locations = pgTable("locations", {
   domainLocales: jsonb("domain_locales").$type<string[]>().default(["en"]),
   domainDefaultLocale: text("domain_default_locale").default("en"),
 
+  // IANA timezone for the location (e.g. "America/New_York", "America/Chicago").
+  // Availability schedules store wall-clock local times (starts_at_time_local);
+  // this is the zone those times are interpreted in when the booking system
+  // materializes concrete UTC availability slots (Sprint D). Nullable until set
+  // by the operator / seed.
+  timezone: text("timezone"),
+
   // Visual block — populated mostly from the logo color extraction flow.
   visualPrimaryColor: text("visual_primary_color"),
   visualAccentColor: text("visual_accent_color"),
@@ -522,6 +529,17 @@ export type NewCustomerType = typeof customerTypes.$inferInsert;
 
 // ---------- Items (booking-system tours, separate from the marketing tour_catalog) ----------
 
+// How a tour's bookable capacity is determined. One source of truth per tour:
+//   resource_based  capacity derived from the tour's resource pools + per-
+//                   customer-type consumption (FareHarbor's model; the default).
+//                   availability_schedules.capacity_per_slot is unused/null.
+//   fixed           a flat number of spots per slot, set on each schedule
+//                   (capacity_per_slot); resource_requirements don't cap it.
+export const capacityModeEnum = pgEnum("capacity_mode", [
+  "resource_based",
+  "fixed",
+]);
+
 export const items = pgTable(
   "items",
   {
@@ -535,6 +553,10 @@ export const items = pgTable(
     // Array of Blob URLs for the booking page hero / gallery.
     photoUrls: jsonb("photo_urls").$type<string[]>().notNull().default([]),
     defaultDurationMinutes: integer("default_duration_minutes").notNull(),
+    // How bookable capacity is computed for this tour. See capacityModeEnum.
+    capacityMode: capacityModeEnum("capacity_mode")
+      .notNull()
+      .default("resource_based"),
     // Online bookability toggle; operator can hide an item from public flow.
     bookableOnline: boolean("bookable_online").notNull().default(true),
     listingVisible: boolean("listing_visible").notNull().default(true),
@@ -761,11 +783,17 @@ export const availabilitySchedules = pgTable("availability_schedules", {
   itemId: uuid("item_id")
     .notNull()
     .references(() => items.id, { onDelete: "cascade" }),
-  // e.g. "RRULE:FREQ=WEEKLY;BYDAY=TU,WE,TH,FR,SA,SU;BYHOUR=10,11,12,13,14,15,16,17,18,19,20,21,22"
+  // Recurrence only (weekdays + season DTSTART/UNTIL); time-of-day lives in
+  // startTimesLocal. e.g. "DTSTART:…\nRRULE:FREQ=WEEKLY;BYDAY=TU,TH,SA;UNTIL=…"
   rruleText: text("rrule_text").notNull(),
-  startsAtTimeLocal: text("starts_at_time_local").notNull(), // "10:00"
+  // One or more wall-clock start times for each recurring day, e.g.
+  // ["10:00","11:00","12:00"]. Slot generation (Sprint D) produces one slot per
+  // (recurrence-date × start time). Interpreted in locations.timezone.
+  startTimesLocal: jsonb("start_times_local").$type<string[]>().notNull().default([]),
   durationMinutes: integer("duration_minutes").notNull(),
-  capacityPerSlot: integer("capacity_per_slot").notNull(),
+  // Per-slot capacity — used ONLY when the tour's capacity_mode is "fixed".
+  // Null for resource_based tours (capacity comes from resource pools).
+  capacityPerSlot: integer("capacity_per_slot"),
   defaultOnlineBookingStatus: onlineBookingStatusEnum(
     "default_online_booking_status",
   )

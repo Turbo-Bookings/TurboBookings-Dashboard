@@ -1,0 +1,1 @@
+ALTER TABLE "availability_schedules" DROP COLUMN "starts_at_time_local";

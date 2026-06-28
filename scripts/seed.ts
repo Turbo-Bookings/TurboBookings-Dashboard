@@ -8,6 +8,8 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   cancellationPolicies,
   cancellationPolicyRules,
+  customerTypes,
+  items,
   locations,
   type NewLocation,
 } from "../src/lib/db/schema";
@@ -27,6 +29,7 @@ const seed: NewLocation[] = [
     domainCanonical: "https://www.takeoversmiamiatvrentals.com",
     domainLocales: ["en", "es"],
     domainDefaultLocale: "en",
+    timezone: "America/New_York",
     // FL state sales tax = 7%
     taxRateBps: 700,
     fareharborShortname: "takeoversmiamiatvrentals",
@@ -60,6 +63,7 @@ const seed: NewLocation[] = [
     domainCanonical: "https://www.htownatvrentals.org",
     domainLocales: ["en"],
     domainDefaultLocale: "en",
+    timezone: "America/Chicago",
     fareharborShortname: "htownatvrentals",
     fareharborDefaultFlowId: "1618818",
     fareharborTourCatalog: [
@@ -81,7 +85,24 @@ const seed: NewLocation[] = [
     domainCanonical: "https://www.dtownatvrentals.com",
     domainLocales: ["en"],
     domainDefaultLocale: "en",
+    timezone: "America/Chicago",
   },
+];
+
+// Minimal catalog for the dtown (Dallas) draft location so the booking-system
+// build has tours + customer types to attach schedules to. Idempotent by
+// (locationId, name) since neither table has a unique name constraint.
+type SeedCustomerType = { singular: string; plural: string };
+type SeedItem = { name: string; defaultDurationMinutes: number };
+
+const DTOWN_CUSTOMER_TYPES: SeedCustomerType[] = [
+  { singular: "Single Rider ATV", plural: "Single Rider ATVs" },
+  { singular: "Double Rider ATV", plural: "Double Rider ATVs" },
+];
+
+const DTOWN_ITEMS: SeedItem[] = [
+  { name: "1-Hour ATV Tour", defaultDurationMinutes: 60 },
+  { name: "2-Hour ATV Tour", defaultDurationMinutes: 120 },
 ];
 
 async function main() {
@@ -107,7 +128,61 @@ async function main() {
   // HTown + DTown start with the same defaults; operator adjusts via UI.
   await seedDefaultCancellationPolicies(db);
 
+  // Test catalog for dtown so the booking-system build has data to work with.
+  await seedDtownCatalog(db);
+
   console.log("\nDone.");
+}
+
+async function seedDtownCatalog(
+  db: ReturnType<typeof drizzle>,
+): Promise<void> {
+  const dtownRows = await db
+    .select({ id: locations.id })
+    .from(locations)
+    .where(eq(locations.slug, "dtown"))
+    .limit(1);
+  const dtown = dtownRows[0];
+  if (!dtown) return;
+
+  for (let i = 0; i < DTOWN_CUSTOMER_TYPES.length; i++) {
+    const ct = DTOWN_CUSTOMER_TYPES[i];
+    const existing = await db
+      .select({ id: customerTypes.id })
+      .from(customerTypes)
+      .where(
+        and(
+          eq(customerTypes.locationId, dtown.id),
+          eq(customerTypes.singular, ct.singular),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) continue;
+    await db.insert(customerTypes).values({
+      locationId: dtown.id,
+      singular: ct.singular,
+      plural: ct.plural,
+      sortOrder: i,
+    });
+    console.log(`  ✓ dtown customer type "${ct.singular}"`);
+  }
+
+  for (let i = 0; i < DTOWN_ITEMS.length; i++) {
+    const it = DTOWN_ITEMS[i];
+    const existing = await db
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.locationId, dtown.id), eq(items.name, it.name)))
+      .limit(1);
+    if (existing[0]) continue;
+    await db.insert(items).values({
+      locationId: dtown.id,
+      name: it.name,
+      defaultDurationMinutes: it.defaultDurationMinutes,
+      sortOrder: i,
+    });
+    console.log(`  ✓ dtown tour "${it.name}"`);
+  }
 }
 
 async function seedDefaultCancellationPolicies(
