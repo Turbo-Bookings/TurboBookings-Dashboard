@@ -43,6 +43,13 @@ export const depositModeEnum = pgEnum("deposit_mode", [
   "percent",
 ]);
 
+// Light/dark theme the customer-facing booking flow renders in for this
+// location. Operator-set; defaults to light.
+export const bookingThemeModeEnum = pgEnum("booking_theme_mode", [
+  "light",
+  "dark",
+]);
+
 // Per-tour entry in a location's FareHarbor catalog. Mirrors the structure
 // used by `src/config/site.ts` on each location site so the Fork CLI can
 // translate one-to-one.
@@ -94,6 +101,10 @@ export const locations = pgTable("locations", {
   visualDisplayFont: text("visual_display_font").default("Anton"),
   visualBodyFont: text("visual_body_font").default("Inter"),
   visualLogoUrl: text("visual_logo_url"),
+  // Theme the customer-facing booking flow renders in (light default).
+  bookingThemeMode: bookingThemeModeEnum("booking_theme_mode")
+    .notNull()
+    .default("light"),
 
   // FareHarbor block
   fareharborShortname: text("fareharbor_shortname"),

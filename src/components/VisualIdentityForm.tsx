@@ -88,6 +88,9 @@ export function VisualIdentityForm({ location }: Props) {
   const [bodyFont, setBodyFont] = useState(
     location.visualBodyFont ?? TAKEOVERS_DEFAULT_BODY,
   );
+  const [bookingThemeMode, setBookingThemeMode] = useState<"light" | "dark">(
+    location.bookingThemeMode ?? "light",
+  );
 
   const saveErrors = "errors" in saveState ? saveState.errors : {};
 
@@ -194,6 +197,40 @@ export function VisualIdentityForm({ location }: Props) {
             onChange={setBodyFont}
             options={BODY_FONTS}
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Booking flow theme
+          </label>
+          <p className="mt-1 text-xs text-zinc-500">
+            The light or dark theme customers see in the booking funnel.
+          </p>
+          <div className="mt-2 flex gap-2">
+            {(["light", "dark"] as const).map((m) => {
+              const on = bookingThemeMode === m;
+              return (
+                <label
+                  key={m}
+                  className={`cursor-pointer rounded-md border px-4 py-1.5 text-sm font-medium ${
+                    on
+                      ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                      : "border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="bookingThemeMode"
+                    value={m}
+                    checked={on}
+                    onChange={() => setBookingThemeMode(m)}
+                    className="sr-only"
+                  />
+                  {m === "light" ? "Light" : "Dark"}
+                </label>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">

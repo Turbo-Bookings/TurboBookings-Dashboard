@@ -7,11 +7,13 @@
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
 > - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine. Sprint D (all of
->   A–D) committed. **Customer flow STARTED:** Sprint G **Slice 1 (branded shopping experience +
->   funnel tracking) built + committed 2026-06-28** (`1e7a4c7`). See
->   `~/bookingsystem/docs/embedding-and-tracking.md` for the rewrite/embedding + Railway-brain model.
-> - **▶ NEXT: customer flow Slice 2 (checkout: seat hold + info form + oversell-safe commit), then
->   Slice 3 (Stripe payment + webhook + confirmation + emit booking.created).**
+>   A–D) committed. **Customer flow STARTED:** Sprint G **Slice 1** (shopping funnel + tracking,
+>   `1e7a4c7`) + **Slice 1.5 UX foundation 2026-06-28** (branded hero + image tour cards + calendar
+>   date picker + detail layout w/ info sections + markdown + per-location light/dark theme set on the
+>   dashboard Visual Identity tab). See `~/bookingsystem/docs/embedding-and-tracking.md`.
+> - **▶ NEXT: per-tour photo upload in the dashboard (reuse MediaForm), then customer flow Slice 2
+>   (checkout: seat hold + info form + oversell-safe commit), then Slice 3 (Stripe payment + webhook +
+>   confirmation + emit booking.created).**
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is

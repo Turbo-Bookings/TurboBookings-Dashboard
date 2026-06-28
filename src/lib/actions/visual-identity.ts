@@ -117,6 +117,10 @@ export async function saveVisualIdentity(
   const accentColor = String(formData.get("accentColor") ?? "").trim().toLowerCase();
   const displayFont = String(formData.get("displayFont") ?? "").trim();
   const bodyFont = String(formData.get("bodyFont") ?? "").trim();
+  const bookingThemeMode =
+    String(formData.get("bookingThemeMode") ?? "light").trim() === "dark"
+      ? "dark"
+      : "light";
 
   const errors: Partial<Record<string, string>> = {};
   if (primaryColor && !HEX_RE.test(primaryColor))
@@ -134,6 +138,7 @@ export async function saveVisualIdentity(
       visualAccentColor: accentColor || null,
       visualDisplayFont: displayFont || null,
       visualBodyFont: bodyFont || null,
+      bookingThemeMode,
       updatedAt: sql`now()`,
     })
     .where(eq(locations.slug, slug));
