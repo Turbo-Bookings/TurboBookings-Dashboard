@@ -38,17 +38,21 @@ export function bookingTone(status: string): Tone {
   return "zinc"; // cancelled
 }
 
-export type CheckIn = "not_yet" | "checked_in" | "no_show" | "mixed";
+export type CheckIn = "not_yet" | "checked_in" | "no_show" | "partial";
 export function checkInTone(status: string): Tone {
   if (status === "checked_in") return "emerald";
   if (status === "no_show") return "red";
-  if (status === "mixed") return "amber";
+  if (status === "partial" || status === "mixed") return "amber";
   return "zinc"; // not_yet
 }
 export function checkInLabel(status: string): string {
   return (
-    { not_yet: "Not yet", checked_in: "Checked in", no_show: "No-show", mixed: "Mixed" }[
-      status
-    ] ?? status
+    {
+      not_yet: "Not yet",
+      checked_in: "All checked in",
+      no_show: "No-show",
+      partial: "Partially checked in",
+      mixed: "Partially checked in",
+    }[status] ?? status
   );
 }

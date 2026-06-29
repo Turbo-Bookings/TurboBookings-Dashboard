@@ -121,6 +121,8 @@ async function main() {
           customerTypeId: l.ctId,
           quantity: l.q,
           unitPriceCents: l.price,
+          checkedInUnits: rollup === "checked_in" ? l.q : 0,
+          noShowUnits: rollup === "no_show" ? l.q : 0,
           checkInStatus: rollup,
           checkedInAt: rollup === "checked_in" ? new Date() : null,
           sortOrder: i,

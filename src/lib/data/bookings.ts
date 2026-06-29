@@ -22,13 +22,22 @@ import {
 } from "@/lib/db";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 
-type CheckIn = "not_yet" | "checked_in" | "no_show";
+export type CheckInRollup = "not_yet" | "checked_in" | "no_show" | "partial";
 
-function rollup(statuses: CheckIn[]): "not_yet" | "checked_in" | "no_show" | "mixed" {
-  if (statuses.length === 0) return "not_yet";
-  const set = new Set(statuses);
-  if (set.size === 1) return [...set][0];
-  return "mixed";
+// Roll a booking's per-vehicle check-in counts up to one status.
+export function bookingRollup(
+  lines: { quantity: number; checkedInUnits: number; noShowUnits: number }[],
+): CheckInRollup {
+  let q = 0, c = 0, n = 0;
+  for (const l of lines) {
+    q += l.quantity;
+    c += l.checkedInUnits;
+    n += l.noShowUnits;
+  }
+  if (q === 0 || (c === 0 && n === 0)) return "not_yet";
+  if (c === q) return "checked_in";
+  if (n === q) return "no_show";
+  return "partial";
 }
 
 // ---------- Manifest (day-of view) ----------
@@ -37,7 +46,8 @@ export type ManifestLine = {
   id: string;
   ctName: string;
   quantity: number;
-  checkInStatus: CheckIn;
+  checkedInUnits: number;
+  noShowUnits: number;
 };
 export type ManifestBooking = {
   id: string;
@@ -48,7 +58,7 @@ export type ManifestBooking = {
   balanceDueCents: number;
   partySize: number;
   notes: string | null;
-  rollup: "not_yet" | "checked_in" | "no_show" | "mixed";
+  rollup: CheckInRollup;
   lines: ManifestLine[];
 };
 export type ManifestSlot = {
@@ -114,7 +124,8 @@ export async function manifestForDate(
       lineId: bookingLines.id,
       ctName: customerTypes.singular,
       quantity: bookingLines.quantity,
-      checkInStatus: bookingLines.checkInStatus,
+      checkedInUnits: bookingLines.checkedInUnits,
+      noShowUnits: bookingLines.noShowUnits,
     })
     .from(bookings)
     .innerJoin(customers, eq(bookings.customerId, customers.id))
@@ -151,12 +162,12 @@ export async function manifestForDate(
       id: r.lineId,
       ctName: r.ctName,
       quantity: r.quantity,
-      checkInStatus: r.checkInStatus as CheckIn,
+      checkedInUnits: r.checkedInUnits,
+      noShowUnits: r.noShowUnits,
     });
     b.partySize += r.quantity;
   }
-  for (const b of byBooking.values())
-    b.rollup = rollup(b.lines.map((l) => l.checkInStatus));
+  for (const b of byBooking.values()) b.rollup = bookingRollup(b.lines);
 
   return slots.map((s) => {
     const bs = [...byBooking.values()].filter(
@@ -401,10 +412,12 @@ export async function getBookingDetail(id: string, locationId: string) {
       db
         .select({
           id: bookingLines.id,
+          customerTypeId: bookingLines.customerTypeId,
           ctName: customerTypes.singular,
           quantity: bookingLines.quantity,
           unitPriceCents: bookingLines.unitPriceCents,
-          checkInStatus: bookingLines.checkInStatus,
+          checkedInUnits: bookingLines.checkedInUnits,
+          noShowUnits: bookingLines.noShowUnits,
         })
         .from(bookingLines)
         .innerJoin(customerTypes, eq(bookingLines.customerTypeId, customerTypes.id))

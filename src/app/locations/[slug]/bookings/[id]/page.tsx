@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { BookingActions } from "@/components/BookingActions";
-import { CheckInControls } from "@/components/CheckInControls";
+import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getCancellationRefund } from "@/lib/booking/refund";
@@ -96,25 +96,24 @@ export default async function BookingDetailPage({ params }: Props) {
         </p>
       </div>
 
-      {/* Riders + per-line check-in */}
+      {/* Riders + per-vehicle check-in */}
       <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Riders</h3>
-        <ul className="mt-2 space-y-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Vehicles</h3>
+        <div className="mt-2 space-y-3">
           {lines.map((l) => (
-            <li key={l.id} className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm">
-                {l.quantity} × {l.ctName}{" "}
-                <span className="text-zinc-400">@ {usd(l.unitPriceCents)}</span>
-              </span>
-              <CheckInControls
+            <div key={l.id}>
+              <p className="mb-1 text-xs text-zinc-400">{usd(l.unitPriceCents)} each</p>
+              <LineCheckIn
                 slug={slug}
                 lineId={l.id}
-                current={l.checkInStatus as "not_yet" | "checked_in" | "no_show"}
-                size="sm"
+                ctName={l.ctName}
+                quantity={l.quantity}
+                checkedInUnits={l.checkedInUnits}
+                noShowUnits={l.noShowUnits}
               />
-            </li>
+            </div>
           ))}
-        </ul>
+        </div>
       </div>
 
       {/* Pricing */}

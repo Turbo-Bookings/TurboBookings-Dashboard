@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -65,7 +65,7 @@ function revalidate(slug: string, bookingId?: string) {
   if (bookingId) revalidatePath(`/locations/${slug}/bookings/${bookingId}`);
 }
 
-// Set check-in for ALL rider lines on a booking.
+// Set check-in for ALL vehicles on a booking (every line's units).
 export async function setBookingCheckIn(
   slug: string,
   bookingId: string,
@@ -85,19 +85,18 @@ export async function setBookingCheckIn(
   )[0];
   if (!b) return { ok: false, error: "Booking not found" };
 
-  await db
-    .update(bookingLines)
-    .set({
-      checkInStatus: status as Check,
-      checkedInAt: status === "checked_in" ? new Date() : null,
-      updatedAt: new Date(),
-    })
-    .where(eq(bookingLines.bookingId, bookingId));
+  const set =
+    status === "checked_in"
+      ? { checkedInUnits: sql`${bookingLines.quantity}`, noShowUnits: 0, checkInStatus: "checked_in" as const, checkedInAt: new Date(), updatedAt: new Date() }
+      : status === "no_show"
+        ? { checkedInUnits: 0, noShowUnits: sql`${bookingLines.quantity}`, checkInStatus: "no_show" as const, checkedInAt: null, updatedAt: new Date() }
+        : { checkedInUnits: 0, noShowUnits: 0, checkInStatus: "not_yet" as const, checkedInAt: null, updatedAt: new Date() };
+  await db.update(bookingLines).set(set).where(eq(bookingLines.bookingId, bookingId));
 
   await recordAudit({
     slug,
     action: `catalog.booking.checkin`,
-    summary: `Set all riders to ${status.replace("_", " ")}`,
+    summary: `Set all vehicles to ${status.replace("_", " ")}`,
     payload: { bookingId, status },
   });
   if (status === "checked_in") await emitLifecycle(location, bookingId, "booking.checked_in");
@@ -106,32 +105,37 @@ export async function setBookingCheckIn(
   return { ok: true };
 }
 
-// Set check-in for a single rider line.
-export async function setLineCheckIn(
+// Set per-vehicle check-in counts on one line (checked-in + no-show ≤ quantity).
+export async function setLineCheckInCounts(
   slug: string,
   lineId: string,
-  status: string,
+  checkedIn: number,
+  noShow: number,
 ): Promise<Result> {
-  if (!CHECK.includes(status as Check))
-    return { ok: false, error: "Invalid status" };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();
   const ln = (
     await db
-      .select({ id: bookingLines.id, bookingId: bookingLines.bookingId })
+      .select({ id: bookingLines.id, bookingId: bookingLines.bookingId, quantity: bookingLines.quantity })
       .from(bookingLines)
       .innerJoin(bookings, eq(bookingLines.bookingId, bookings.id))
       .where(and(eq(bookingLines.id, lineId), eq(bookings.locationId, location.id)))
       .limit(1)
   )[0];
   if (!ln) return { ok: false, error: "Line not found" };
+  const c = Math.max(0, Math.floor(checkedIn));
+  const n = Math.max(0, Math.floor(noShow));
+  if (c + n > ln.quantity) return { ok: false, error: "Exceeds vehicles on this line" };
 
+  const derived = c === ln.quantity ? "checked_in" : n === ln.quantity ? "no_show" : "not_yet";
   await db
     .update(bookingLines)
     .set({
-      checkInStatus: status as Check,
-      checkedInAt: status === "checked_in" ? new Date() : null,
+      checkedInUnits: c,
+      noShowUnits: n,
+      checkInStatus: derived as Check,
+      checkedInAt: c > 0 ? new Date() : null,
       updatedAt: new Date(),
     })
     .where(eq(bookingLines.id, lineId));
@@ -139,9 +143,10 @@ export async function setLineCheckIn(
   await recordAudit({
     slug,
     action: `catalog.booking.line_checkin`,
-    summary: `Set a rider to ${status.replace("_", " ")}`,
-    payload: { bookingId: ln.bookingId, status },
+    summary: `Vehicles: ${c} checked in, ${n} no-show`,
+    payload: { bookingId: ln.bookingId, lineId, checkedIn: c, noShow: n },
   });
+  if (c > 0) await emitLifecycle(location, ln.bookingId, "booking.checked_in");
   revalidate(slug, ln.bookingId);
   return { ok: true };
 }

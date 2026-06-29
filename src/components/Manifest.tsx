@@ -13,13 +13,19 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
-import { CheckInControls } from "@/components/CheckInControls";
+import { CheckInControls, LineCheckIn } from "@/components/CheckInControls";
 import { OnlineStatusControl } from "@/components/OnlineStatusControl";
 import { TONE_DOT, itemColor } from "@/lib/ui/itemColor";
 import { checkInLabel, checkInTone } from "@/lib/ui/status";
 
-type CheckIn = "not_yet" | "checked_in" | "no_show";
-type Line = { id: string; ctName: string; quantity: number; checkInStatus: CheckIn };
+type CheckIn = "not_yet" | "checked_in" | "no_show" | "partial";
+type Line = {
+  id: string;
+  ctName: string;
+  quantity: number;
+  checkedInUnits: number;
+  noShowUnits: number;
+};
 type Booking = {
   id: string;
   displayNumber: string;
@@ -28,7 +34,7 @@ type Booking = {
   balanceDueCents: number;
   partySize: number;
   notes: string | null;
-  rollup: CheckIn | "mixed";
+  rollup: CheckIn;
   lines: Line[];
 };
 type Slot = {
@@ -322,16 +328,17 @@ export function Manifest({
                               <tr key={`${b.id}-x`} className="bg-zinc-50/60 dark:bg-zinc-800/20">
                                 <td />
                                 <td colSpan={5 + (cols.due ? 1 : 0) + (cols.notes ? 1 : 0)} className="px-3 py-3">
-                                  <div className="space-y-2">
+                                  <div className="space-y-3 print:hidden">
                                     {b.lines.map((l) => (
-                                      <div key={l.id} className="flex flex-wrap items-center justify-between gap-2">
-                                        <span className="text-sm">
-                                          {l.quantity} × {l.ctName}
-                                        </span>
-                                        <span className="print:hidden">
-                                          <CheckInControls slug={slug} lineId={l.id} current={l.checkInStatus} size="sm" />
-                                        </span>
-                                      </div>
+                                      <LineCheckIn
+                                        key={l.id}
+                                        slug={slug}
+                                        lineId={l.id}
+                                        ctName={l.ctName}
+                                        quantity={l.quantity}
+                                        checkedInUnits={l.checkedInUnits}
+                                        noShowUnits={l.noShowUnits}
+                                      />
                                     ))}
                                     <Link href={`${base}/bookings/${b.id}`} className="inline-block text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
                                       Open booking →

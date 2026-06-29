@@ -1019,8 +1019,11 @@ export const bookingLines = pgTable(
       .references(() => customerTypes.id, { onDelete: "restrict" }),
     quantity: integer("quantity").notNull(),
     unitPriceCents: integer("unit_price_cents").notNull(),
-    // Per-customer-type check-in. Each rider checks in individually for
-    // accuracy; bulk operations roll up multiple lines.
+    // Per-vehicle check-in counts (each ≤ quantity). The rest of the units are
+    // "not yet". Booking rolls up to all / partially / no-show / not-yet.
+    checkedInUnits: integer("checked_in_units").notNull().default(0),
+    noShowUnits: integer("no_show_units").notNull().default(0),
+    // Legacy single-status column — kept for back-compat, derived from counts.
     checkInStatus: checkInStatusEnum("check_in_status")
       .notNull()
       .default("not_yet"),
