@@ -10,6 +10,7 @@ import {
   Palette,
   Percent,
   Plug,
+  Receipt,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -41,6 +42,13 @@ export default async function SettingsPage({
         { label: "Custom Fields", desc: "Questions, acknowledgments, add-ons", href: `${b}/catalog/custom-fields`, icon: ListChecks, tone: "amber" },
         { label: "Discount Codes", desc: "Promo codes for checkout", href: `${b}/catalog/discounts`, icon: Percent, tone: "emerald" },
         { label: "Cancellation Policies", desc: "Refund rules & grace periods", href: `${b}/catalog/cancellation`, icon: CalendarX, tone: "red" },
+      ],
+    },
+    {
+      title: "Payments & pricing",
+      desc: "What you charge and collect.",
+      items: [
+        { label: "Taxes & Fees", desc: "Tax rate, processing fee, deposit", href: `${b}/settings/taxes-fees`, icon: Receipt, tone: "emerald" },
       ],
     },
     {

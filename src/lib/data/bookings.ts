@@ -175,7 +175,9 @@ export async function manifestForDate(
       booked: bs.reduce((n, b) => n + b.partySize, 0),
       bookings: bs,
     };
-  });
+  })
+    // Manifest only shows slots that actually have bookings.
+    .filter((slot) => slot.bookings.length > 0);
 }
 
 // ---------- Bookings grid (calendar) ----------

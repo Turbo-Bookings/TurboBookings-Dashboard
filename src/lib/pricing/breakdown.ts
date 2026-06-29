@@ -12,6 +12,9 @@ export type BreakdownInput = {
   taxMode: ChargeMode;
   platformFeeBps: number;
   platformFeeMode: ChargeMode;
+  // The platform processing fee is only collected when a card is charged
+  // through us. Walk-in / Groupon bookings carry no platform fee.
+  collectFee?: boolean;
 };
 
 export type Breakdown = {
@@ -28,10 +31,11 @@ export function priceBreakdown(i: BreakdownInput): Breakdown {
   const subtotal = Math.max(0, Math.round(i.baseSubtotalCents));
   const discount = Math.max(0, Math.min(Math.round(i.discountCents), subtotal));
   const adjusted = subtotal - discount;
+  const collectFee = i.collectFee !== false;
   const taxFull = Math.round(adjusted * (i.taxRateBps / 10000));
-  const feeFull = Math.round(adjusted * (i.platformFeeBps / 10000));
+  const feeFull = collectFee ? Math.round(adjusted * (i.platformFeeBps / 10000)) : 0;
   const taxCents = i.taxMode === "passed_to_customer" ? taxFull : 0;
-  const feeCents = i.platformFeeMode === "passed_to_customer" ? feeFull : 0;
+  const feeCents = collectFee && i.platformFeeMode === "passed_to_customer" ? feeFull : 0;
   return {
     subtotalCents: subtotal,
     discountCents: discount,

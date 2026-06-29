@@ -137,6 +137,7 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
     taxMode: location.taxMode,
     platformFeeBps: location.platformFeeBps,
     platformFeeMode: location.platformFeeMode,
+    collectFee: method === "card",
   });
   const total = bd.totalCents;
   const totalQty = activeLines.reduce((s, p) => s + qty[p.ct], 0);
@@ -151,8 +152,9 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   if (method === "walk_in") dueNow = 0;
   else if (method === "groupon_ota") dueNow = Math.max(0, Math.min(Math.round(Number(grouponStr || "0") * 100), total));
   else if (amountMode === "full") dueNow = total;
-  else if (amountMode === "deposit") dueNow = Math.min(deposit, total);
-  else dueNow = Math.max(0, Math.min(Math.round(Number(partialStr || "0") * 100), total));
+  // Card deposit/partial always add the full processing fee on top.
+  else if (amountMode === "deposit") dueNow = Math.min(deposit + bd.feeCents, total);
+  else dueNow = Math.min(Math.max(Math.round(Number(partialStr || "0") * 100), 0) + bd.feeCents, total);
   const payLater = total - dueNow;
 
   const requiredAcks = fields.filter((f) => f.kind === "checkbox" && f.required);
@@ -408,12 +410,12 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
               <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
                 Stripe isn&apos;t configured — add keys to charge cards, or use Walk-in / Groupon-OTA.
               </p>
-            ) : canSubmit && dueNow >= 50 ? (
+            ) : dueNow >= 50 ? (
               <Elements key={dueNow} stripe={stripePromise} options={{ mode: "payment", amount: dueNow, currency: "usd", setupFutureUsage: "off_session" }}>
-                <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
+                <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} disabled={!canSubmit} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
               </Elements>
             ) : (
-              <p className="text-sm text-zinc-500">Complete the booking details to charge a card{!ackOk ? " (acknowledgments required)" : ""}.</p>
+              <p className="text-sm text-zinc-500">Add riders to charge a card.</p>
             )
           ) : (
             <button type="button" disabled={!canSubmit || submitting} onClick={bookNonCard} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
@@ -430,12 +432,14 @@ function CardCheckout({
   slug,
   getPayload,
   amountCents,
+  disabled,
   onError,
   onDone,
 }: {
   slug: string;
   getPayload: () => Payload;
   amountCents: number;
+  disabled: boolean;
   onError: (e: string) => void;
   onDone: (bookingId: string) => void;
 }) {
@@ -482,9 +486,10 @@ function CardCheckout({
   return (
     <div className="space-y-3">
       <PaymentElement />
-      <button type="button" disabled={busy} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+      <button type="button" disabled={busy || disabled} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
         {busy ? "Charging…" : `Charge ${usd(amountCents)} & book`}
       </button>
+      {disabled && <p className="text-center text-xs text-zinc-500">Complete name, email &amp; required acknowledgments to enable.</p>}
     </div>
   );
 }

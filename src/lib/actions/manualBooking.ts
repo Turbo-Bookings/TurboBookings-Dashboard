@@ -232,6 +232,8 @@ async function computePricing(location: Location, payload: Payload) {
     taxMode: location.taxMode,
     platformFeeBps: location.platformFeeBps,
     platformFeeMode: location.platformFeeMode,
+    // Platform fee only on card-charged bookings.
+    collectFee: (payload.paymentMethod ?? "walk_in") === "card",
   });
   const totalQty = qlines.reduce((s, l) => s + l.q, 0);
   const deposit = depositForMode({
@@ -245,16 +247,23 @@ async function computePricing(location: Location, payload: Payload) {
   return { byCt, qlines, override, baseSubtotal, lineSubtotal, discount, discountError, breakdown, deposit };
 }
 
-// Amount to collect now, per payment method + amount mode.
-function dueNowCents(payload: Payload, total: number, deposit: number): number {
+// Amount to collect now. The processing fee is ALWAYS collected up-front on a
+// card charge (it can't be deferred); the chosen amount is added on top.
+function dueNowCents(
+  payload: Payload,
+  breakdown: { totalCents: number; feeCents: number },
+  deposit: number,
+): number {
+  const total = breakdown.totalCents;
   const method = payload.paymentMethod ?? "walk_in";
   if (method === "walk_in") return 0;
   if (method === "groupon_ota")
     return Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total));
+  const fee = breakdown.feeCents;
   const mode = payload.amountMode ?? "full"; // card
   if (mode === "full") return total;
-  if (mode === "deposit") return Math.min(deposit, total);
-  return Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total)); // partial
+  if (mode === "deposit") return Math.min(deposit + fee, total);
+  return Math.min(Math.max(Math.round(payload.amountCents ?? 0), 0) + fee, total); // partial
 }
 
 // Charge path — create a PaymentIntent the operator confirms via Elements.
@@ -270,7 +279,7 @@ export async function createOperatorIntent(
   const p = await computePricing(location, payload);
   if (p.qlines.length === 0) return { ok: false, error: "Select at least one rider" };
   if (p.discountError) return { ok: false, error: p.discountError };
-  const due = dueNowCents(payload, p.breakdown.totalCents, p.deposit);
+  const due = dueNowCents(payload, p.breakdown, p.deposit);
   if (due < 50) return { ok: false, error: "Amount too low to charge" };
   const connected = location.stripeAccountId || null;
   const appFee = connected ? Math.min(p.breakdown.applicationFeeCents, due) : undefined;
