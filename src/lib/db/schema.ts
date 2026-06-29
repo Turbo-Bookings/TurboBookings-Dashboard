@@ -967,6 +967,9 @@ export const bookings = pgTable(
 
     // Pricing snapshot at booking time. Doesn't update if item prices change.
     subtotalCents: integer("subtotal_cents").notNull(),
+    // Operator-entered subtotal override (custom rate); null = computed from
+    // line prices. When set, it became the base subtotal for this booking.
+    subtotalCentsOverride: integer("subtotal_cents_override"),
     taxCents: integer("tax_cents").notNull().default(0),
     platformFeeCents: integer("platform_fee_cents").notNull().default(0),
     discountCents: integer("discount_cents").notNull().default(0),
@@ -1108,6 +1111,17 @@ export const paymentStatusEnum = pgEnum("payment_status", [
   "partially_refunded",
 ]);
 
+// How the money was collected. "stripe" = an online/card charge with a real
+// PaymentIntent; the rest are operator-recorded (no Stripe), e.g. a Groupon/OTA
+// voucher or cash on arrival.
+export const paymentGatewayEnum = pgEnum("payment_gateway", [
+  "stripe",
+  "cash",
+  "groupon_ota",
+  "walk_in",
+  "other",
+]);
+
 export const payments = pgTable(
   "payments",
   {
@@ -1115,7 +1129,10 @@ export const payments = pgTable(
     bookingId: uuid("booking_id")
       .notNull()
       .references(() => bookings.id, { onDelete: "cascade" }),
-    stripePaymentIntentId: text("stripe_payment_intent_id").notNull().unique(),
+    paymentGateway: paymentGatewayEnum("payment_gateway").notNull().default("stripe"),
+    // Null for non-Stripe (cash / Groupon / walk-in) records. Unique among
+    // non-null values (Postgres allows many NULLs).
+    stripePaymentIntentId: text("stripe_payment_intent_id").unique(),
     // Captured = funds flowed. For manual-capture intents (security holds),
     // captured_at is set only after operator captures. See booking_holds for
     // the auth-only flow.

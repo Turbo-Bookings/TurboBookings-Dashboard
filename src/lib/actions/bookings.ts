@@ -178,7 +178,13 @@ export async function cancelBooking(
     for (const p of pays) {
       if (remaining <= 0) break;
       const refundable = p.amountCents - p.refundedAmountCents;
-      if (refundable <= 0 || (p.status !== "succeeded" && p.status !== "partially_refunded"))
+      // Only Stripe payments are refundable here; non-Stripe (Groupon/OTA, cash)
+      // are handled outside the platform.
+      if (
+        refundable <= 0 ||
+        !p.stripePaymentIntentId ||
+        (p.status !== "succeeded" && p.status !== "partially_refunded")
+      )
         continue;
       const amt = Math.min(remaining, refundable);
       try {

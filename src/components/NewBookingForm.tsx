@@ -5,15 +5,20 @@ import { useRouter } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import {
+  type AmountMode,
+  type PaymentMethod,
+  applyDiscountPreview,
   createDirectBooking,
   createOperatorIntent,
   getTourBookingData,
 } from "@/lib/actions/manualBooking";
-import { quote, type ChargeMode, type DepositMode } from "@/lib/pricing/quote";
+import { depositForMode, priceBreakdown } from "@/lib/pricing/breakdown";
+import type { ChargeMode, DepositMode } from "@/lib/pricing/quote";
 
 type ItemOpt = { id: string; name: string };
 type Slot = { id: string; startsAt: string; remaining: number };
 type Price = { ct: string; label: string; priceCents: number; taxBps: number | null };
+type Field = { id: string; kind: string; label: string; helpText: string | null; required: boolean };
 
 type LocationCfg = {
   depositMode: DepositMode;
@@ -25,6 +30,20 @@ type LocationCfg = {
   taxMode: ChargeMode;
 };
 
+type Payload = {
+  itemId: string;
+  availabilityId: string;
+  lines: { ct: string; q: number }[];
+  contact: { name: string; email: string; phone: string };
+  note: string;
+  subtotalOverrideCents: number | null;
+  discountCode?: string;
+  acknowledgments: { fieldId: string; checked: boolean }[];
+  paymentMethod: PaymentMethod;
+  amountMode: AmountMode;
+  amountCents?: number;
+};
+
 type Props = {
   slug: string;
   tz: string;
@@ -33,7 +52,6 @@ type Props = {
   publishableKey: string | null;
   stripeAccount: string | null;
   configured: boolean;
-  // When launched from a manifest/grid slot, the tour + time are pre-set + locked.
   lockedItem?: { id: string; name: string };
   lockedSlot?: { id: string; label: string };
 };
@@ -49,81 +67,134 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   const [itemId, setItemId] = useState(lockedItem?.id ?? "");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [pricing, setPricing] = useState<Price[]>([]);
+  const [fields, setFields] = useState<Field[]>([]);
   const [slotId, setSlotId] = useState(lockedSlot?.id ?? "");
   const [qty, setQty] = useState<Record<string, number>>({});
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [payMode, setPayMode] = useState<"venue" | "card">("venue");
+  const [note, setNote] = useState("");
+  const [overrideStr, setOverrideStr] = useState("");
+  const [codeInput, setCodeInput] = useState("");
+  const [discount, setDiscount] = useState<{ cents: number; label: string; code: string } | null>(null);
+  const [discountErr, setDiscountErr] = useState<string | null>(null);
+  const [acks, setAcks] = useState<Set<string>>(new Set());
+  const [amountMode, setAmountMode] = useState<AmountMode>("full");
+  const [partialStr, setPartialStr] = useState("");
+  const [method, setMethod] = useState<PaymentMethod>("card");
+  const [grouponStr, setGrouponStr] = useState("");
   const [loadingTour, setLoadingTour] = useState(!!lockedItem);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const fmtSlot = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-US", {
-        timeZone: tz,
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }),
+    () => new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
     [tz],
   );
 
-  async function onTour(id: string) {
-    setItemId(id);
-    setSlotId("");
-    setQty({});
-    if (!id) {
-      setSlots([]);
-      setPricing([]);
-      return;
-    }
-    setLoadingTour(true);
+  async function loadData(id: string) {
     const r = await getTourBookingData(slug, id);
     setLoadingTour(false);
     if (r.ok) {
       setSlots(r.slots);
       setPricing(r.pricing);
+      setFields(r.customFields);
     } else setError(r.error);
   }
-
-  // Locked mode (launched from a slot): load pricing on mount, keep the preset slot.
+  function onTour(id: string) {
+    setItemId(id);
+    setSlotId("");
+    setQty({});
+    setDiscount(null);
+    setAcks(new Set());
+    if (!id) {
+      setSlots([]);
+      setPricing([]);
+      setFields([]);
+      return;
+    }
+    setLoadingTour(true);
+    loadData(id);
+  }
   useEffect(() => {
-    if (!lockedItem) return;
-    let active = true;
-    getTourBookingData(slug, lockedItem.id).then((r) => {
-      if (!active) return;
-      setLoadingTour(false);
-      if (r.ok) {
-        setSlots(r.slots);
-        setPricing(r.pricing);
-      } else setError(r.error);
-    });
-    return () => {
-      active = false;
-    };
-  }, [lockedItem, slug]);
+    // Locked mode: load the tour's pricing + fields on mount (async fetch).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (lockedItem) loadData(lockedItem.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockedItem?.id]);
 
-  const lines = pricing
-    .filter((p) => (qty[p.ct] ?? 0) > 0)
-    .map((p) => ({ ct: p.ct, q: qty[p.ct] }));
-  const q = quote({
-    lines: pricing
-      .filter((p) => (qty[p.ct] ?? 0) > 0)
-      .map((p) => ({ quantity: qty[p.ct], unitPriceCents: p.priceCents, taxRateBpsOverride: p.taxBps })),
-    ...location,
+  // ---- computed pricing ----
+  const activeLines = pricing.filter((p) => (qty[p.ct] ?? 0) > 0);
+  const lineSubtotal = activeLines.reduce((s, p) => s + qty[p.ct] * p.priceCents, 0);
+  const overrideCents =
+    overrideStr.trim() !== "" && Number(overrideStr) >= 0 ? Math.round(Number(overrideStr) * 100) : null;
+  const baseSubtotal = overrideCents ?? lineSubtotal;
+  const discountCents = discount ? Math.min(discount.cents, baseSubtotal) : 0;
+  const bd = priceBreakdown({
+    baseSubtotalCents: baseSubtotal,
+    discountCents,
+    taxRateBps: location.taxRateBps,
+    taxMode: location.taxMode,
+    platformFeeBps: location.platformFeeBps,
+    platformFeeMode: location.platformFeeMode,
   });
-  const totalQty = lines.reduce((s, l) => s + l.q, 0);
-  const canSubmit = Boolean(itemId && slotId && totalQty > 0 && name.trim() && email.includes("@"));
-  const payload = { itemId, availabilityId: slotId, lines, contact: { name, email, phone } };
+  const total = bd.totalCents;
+  const totalQty = activeLines.reduce((s, p) => s + qty[p.ct], 0);
+  const deposit = depositForMode({
+    adjustedSubtotalCents: bd.adjustedSubtotalCents,
+    depositMode: location.depositMode,
+    depositAmountCents: location.depositAmountCents,
+    depositPercentBps: location.depositPercentBps,
+    totalQty,
+  });
+  let dueNow: number;
+  if (method === "walk_in") dueNow = 0;
+  else if (method === "groupon_ota") dueNow = Math.max(0, Math.min(Math.round(Number(grouponStr || "0") * 100), total));
+  else if (amountMode === "full") dueNow = total;
+  else if (amountMode === "deposit") dueNow = Math.min(deposit, total);
+  else dueNow = Math.max(0, Math.min(Math.round(Number(partialStr || "0") * 100), total));
+  const payLater = total - dueNow;
 
-  async function bookAtVenue() {
+  const requiredAcks = fields.filter((f) => f.kind === "checkbox" && f.required);
+  const ackOk = requiredAcks.every((f) => acks.has(f.id));
+  const checkboxFields = fields.filter((f) => f.kind === "checkbox");
+  const canSubmit = Boolean(itemId && slotId && totalQty > 0 && name.trim() && email.includes("@") && ackOk);
+
+  function buildPayload(): Payload {
+    return {
+      itemId,
+      availabilityId: slotId,
+      lines: activeLines.map((p) => ({ ct: p.ct, q: qty[p.ct] })),
+      contact: { name, email, phone },
+      note,
+      subtotalOverrideCents: overrideCents,
+      discountCode: discount?.code,
+      acknowledgments: checkboxFields.map((f) => ({ fieldId: f.id, checked: acks.has(f.id) })),
+      paymentMethod: method,
+      amountMode,
+      amountCents:
+        method === "groupon_ota"
+          ? Math.round(Number(grouponStr || "0") * 100)
+          : amountMode === "partial"
+            ? Math.round(Number(partialStr || "0") * 100)
+            : undefined,
+    };
+  }
+
+  async function applyCode() {
+    setDiscountErr(null);
+    const r = await applyDiscountPreview(slug, itemId, activeLines.map((p) => p.ct), baseSubtotal, codeInput);
+    if (r.ok) setDiscount({ cents: r.appliedAmountCents, label: r.label, code: r.code });
+    else {
+      setDiscount(null);
+      setDiscountErr(r.error);
+    }
+  }
+
+  async function bookNonCard() {
     setError(null);
     setSubmitting(true);
-    const r = await createDirectBooking(slug, payload);
+    const r = await createDirectBooking(slug, buildPayload());
     if (!r.ok) {
       setError(r.error);
       setSubmitting(false);
@@ -137,12 +208,20 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
     return loadStripe(publishableKey, stripeAccount ? { stripeAccount } : undefined);
   }, [configured, publishableKey, stripeAccount]);
 
+  const ready = itemId && !loadingTour;
+
   return (
-    <div className="max-w-xl space-y-5">
+    <div className="max-w-2xl space-y-5">
+      {/* Tour + time */}
       {lockedItem ? (
         <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <span className="text-zinc-500">Tour:</span>{" "}
-          <span className="font-medium">{lockedItem.name}</span>
+          <span className="text-zinc-500">Tour:</span> <span className="font-medium">{lockedItem.name}</span>
+          {lockedSlot && (
+            <>
+              {" · "}
+              <span className="text-zinc-500">Time:</span> <span className="font-medium">{lockedSlot.label}</span>
+            </>
+          )}
         </div>
       ) : (
         <div>
@@ -150,24 +229,17 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
           <select className={`mt-1 ${input}`} value={itemId} onChange={(e) => onTour(e.target.value)}>
             <option value="">Select a tour…</option>
             {items.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+              <option key={i.id} value={i.id}>{i.name}</option>
             ))}
           </select>
         </div>
       )}
 
-      {loadingTour && <p className="text-sm text-zinc-500">Loading availability…</p>}
+      {loadingTour && <p className="text-sm text-zinc-500">Loading…</p>}
 
-      {itemId && !loadingTour && (
+      {ready && (
         <>
-          {lockedSlot ? (
-            <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <span className="text-zinc-500">Time:</span>{" "}
-              <span className="font-medium">{lockedSlot.label}</span>
-            </div>
-          ) : (
+          {!lockedSlot && (
             <div>
               <label className="block text-sm font-medium">Date &amp; time</label>
               <select className={`mt-1 ${input}`} value={slotId} onChange={(e) => setSlotId(e.target.value)}>
@@ -181,75 +253,172 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
             </div>
           )}
 
+          {/* Riders */}
           <div>
             <label className="block text-sm font-medium">Riders</label>
             <div className="mt-1 space-y-2">
               {pricing.map((p) => (
                 <div key={p.ct} className="flex items-center justify-between">
-                  <span className="text-sm">
-                    {p.label} <span className="text-zinc-400">{usd(p.priceCents)}</span>
-                  </span>
+                  <span className="text-sm">{p.label} <span className="text-zinc-400">{usd(p.priceCents)}</span></span>
                   <div className="flex items-center gap-2">
-                    <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: Math.max(0, (x[p.ct] ?? 0) - 1) }))}>
-                      −
-                    </button>
+                    <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: Math.max(0, (x[p.ct] ?? 0) - 1) }))}>−</button>
                     <span className="w-6 text-center text-sm">{qty[p.ct] ?? 0}</span>
-                    <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: (x[p.ct] ?? 0) + 1 }))}>
-                      +
-                    </button>
+                    <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: (x[p.ct] ?? 0) + 1 }))}>+</button>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
+          {/* Customer */}
           <div className="grid grid-cols-1 gap-2">
-            <input className={input} placeholder="Customer name" value={name} onChange={(e) => setName(e.target.value)} />
+            <label className="block text-sm font-medium">Customer</label>
+            <input className={input} placeholder="Full name" value={name} onChange={(e) => setName(e.target.value)} />
             <input className={input} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
             <input className={input} type="tel" placeholder="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <textarea className={input} rows={2} placeholder="Booking note (staff-only — shows on the manifest)" value={note} onChange={(e) => setNote(e.target.value)} />
           </div>
 
-          {totalQty > 0 && (
-            <div className="rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-800">
-              <div className="flex justify-between"><span>Total</span><span className="font-semibold">{usd(q.subtotalCents + q.taxCents + q.feeCents)}</span></div>
-              <div className="flex justify-between text-zinc-500"><span>Due online (if charged)</span><span>{usd(q.totalDueOnlineCents)}</span></div>
+          {/* Acknowledgments */}
+          {checkboxFields.length > 0 && (
+            <div className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
+              <p className="mb-2 text-sm font-medium">Acknowledgments</p>
+              <div className="space-y-2">
+                {checkboxFields.map((f) => (
+                  <label key={f.id} className="flex items-start gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={acks.has(f.id)}
+                      onChange={(e) =>
+                        setAcks((s) => {
+                          const n = new Set(s);
+                          if (e.target.checked) n.add(f.id);
+                          else n.delete(f.id);
+                          return n;
+                        })
+                      }
+                      className="mt-0.5 h-4 w-4"
+                    />
+                    <span>
+                      {f.label}
+                      {f.required && <span className="text-red-500"> *</span>}
+                      {f.helpText && <span className="block text-xs text-zinc-500">{f.helpText}</span>}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
 
-          <div className="flex gap-2">
-            {(["venue", "card"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setPayMode(m)}
-                className={`rounded-md border px-3 py-1.5 text-sm font-medium ${payMode === m ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "border-zinc-300 dark:border-zinc-700"}`}
-              >
-                {m === "venue" ? "Pay at venue" : "Charge card now"}
-              </button>
-            ))}
+          {/* Pricing breakdown */}
+          {totalQty > 0 && (
+            <div className="rounded-lg border border-zinc-200 p-3 text-sm dark:border-zinc-800">
+              <div className="flex items-center justify-between">
+                <span>Subtotal</span>
+                <span className="flex items-center gap-1">
+                  <span className="text-zinc-400">$</span>
+                  <input
+                    inputMode="decimal"
+                    value={overrideStr}
+                    onChange={(e) => setOverrideStr(e.target.value)}
+                    placeholder={(lineSubtotal / 100).toFixed(2)}
+                    className="w-20 rounded-md border border-zinc-300 px-2 py-0.5 text-right text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    title="Override the subtotal for a custom rate"
+                  />
+                </span>
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <input className="flex-1 rounded-md border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" placeholder="Discount code" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} />
+                <button type="button" onClick={applyCode} className="rounded-md border border-zinc-300 px-3 py-1 text-sm font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800">Apply</button>
+              </div>
+              {discount && (
+                <div className="mt-1 flex items-center justify-between text-emerald-700 dark:text-emerald-400">
+                  <span>{discount.code} ({discount.label})</span>
+                  <span className="flex items-center gap-2">−{usd(discountCents)}
+                    <button type="button" onClick={() => setDiscount(null)} className="text-xs text-zinc-400 hover:underline">remove</button>
+                  </span>
+                </div>
+              )}
+              {discountErr && <p className="mt-1 text-xs text-red-600">{discountErr}</p>}
+
+              {bd.feeCents > 0 && (
+                <div className="mt-2 flex justify-between text-zinc-500"><span>Processing fee</span><span>{usd(bd.feeCents)}</span></div>
+              )}
+              {bd.taxCents > 0 && (
+                <div className="flex justify-between text-zinc-500"><span>Taxes</span><span>{usd(bd.taxCents)}</span></div>
+              )}
+              <div className="mt-1 flex justify-between border-t border-zinc-100 pt-1 font-semibold dark:border-zinc-800"><span>Total</span><span>{usd(total)}</span></div>
+              {dueNow !== total && (
+                <>
+                  <div className="mt-1 flex justify-between"><span>Due now</span><span className="font-medium">{usd(dueNow)}</span></div>
+                  <div className="flex justify-between text-zinc-500"><span>Pay later</span><span>{usd(payLater)}</span></div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Payment method */}
+          <div>
+            <label className="block text-sm font-medium">Payment</label>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {([
+                ["card", "Charge card"],
+                ["groupon_ota", "Groupon / OTA"],
+                ["walk_in", "Walk-in (pay at venue)"],
+              ] as [PaymentMethod, string][]).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setMethod(m)} className={`rounded-md border px-3 py-1.5 text-sm font-medium ${method === m ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "border-zinc-300 dark:border-zinc-700"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Amount mode (card only) */}
+          {method === "card" && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              {([
+                ["full", "Pay in full"],
+                ["deposit", `Pay deposit (${usd(Math.min(deposit, total))})`],
+                ["partial", "Partial"],
+              ] as [AmountMode, string][]).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => setAmountMode(m)} className={`rounded-md border px-3 py-1 text-sm font-medium ${amountMode === m ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "border-zinc-300 dark:border-zinc-700"}`}>
+                  {label}
+                </button>
+              ))}
+              {amountMode === "partial" && (
+                <span className="flex items-center gap-1">$<input inputMode="decimal" value={partialStr} onChange={(e) => setPartialStr(e.target.value)} className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" /></span>
+              )}
+            </div>
+          )}
+
+          {method === "groupon_ota" && (
+            <div className="flex items-center gap-2 text-sm">
+              <span>Prepaid amount</span>
+              <span className="flex items-center gap-1">$<input inputMode="decimal" value={grouponStr} onChange={(e) => setGrouponStr(e.target.value)} placeholder="0.00" className="w-24 rounded-md border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900" /></span>
+              <span className="text-xs text-zinc-500">Remainder becomes balance due.</span>
+            </div>
+          )}
 
           {error && <p className="text-sm font-medium text-red-600">{error}</p>}
 
-          {payMode === "venue" ? (
-            <button
-              type="button"
-              disabled={!canSubmit || submitting}
-              onClick={bookAtVenue}
-              className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              {submitting ? "Booking…" : "Book (balance due at venue)"}
-            </button>
-          ) : !stripePromise ? (
-            <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-              Stripe isn&apos;t configured — add keys to charge cards. Use &ldquo;Pay at venue&rdquo; for now.
-            </p>
-          ) : canSubmit && q.totalDueOnlineCents >= 50 ? (
-            <Elements key={q.totalDueOnlineCents} stripe={stripePromise} options={{ mode: "payment", amount: q.totalDueOnlineCents, currency: "usd", setupFutureUsage: "off_session" }}>
-              <CardCheckout slug={slug} payload={payload} amountCents={q.totalDueOnlineCents} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
-            </Elements>
+          {/* Submit */}
+          {method === "card" ? (
+            !stripePromise ? (
+              <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                Stripe isn&apos;t configured — add keys to charge cards, or use Walk-in / Groupon-OTA.
+              </p>
+            ) : canSubmit && dueNow >= 50 ? (
+              <Elements key={dueNow} stripe={stripePromise} options={{ mode: "payment", amount: dueNow, currency: "usd", setupFutureUsage: "off_session" }}>
+                <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
+              </Elements>
+            ) : (
+              <p className="text-sm text-zinc-500">Complete the booking details to charge a card{!ackOk ? " (acknowledgments required)" : ""}.</p>
+            )
           ) : (
-            <p className="text-sm text-zinc-500">Complete the booking details to charge a card.</p>
+            <button type="button" disabled={!canSubmit || submitting} onClick={bookNonCard} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+              {submitting ? "Booking…" : method === "groupon_ota" ? "Record Groupon/OTA booking" : "Book (pay at venue)"}
+            </button>
           )}
         </>
       )}
@@ -259,13 +428,13 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
 
 function CardCheckout({
   slug,
-  payload,
+  getPayload,
   amountCents,
   onError,
   onDone,
 }: {
   slug: string;
-  payload: { itemId: string; availabilityId: string; lines: { ct: string; q: number }[]; contact: { name: string; email: string; phone: string } };
+  getPayload: () => Payload;
   amountCents: number;
   onError: (e: string) => void;
   onDone: (bookingId: string) => void;
@@ -278,6 +447,7 @@ function CardCheckout({
     if (!stripe || !elements) return;
     onError("");
     setBusy(true);
+    const payload = getPayload();
     const { error: subErr } = await elements.submit();
     if (subErr) {
       onError(subErr.message ?? "Check card details");
@@ -312,12 +482,7 @@ function CardCheckout({
   return (
     <div className="space-y-3">
       <PaymentElement />
-      <button
-        type="button"
-        disabled={busy}
-        onClick={charge}
-        className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
-      >
+      <button type="button" disabled={busy} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
         {busy ? "Charging…" : `Charge ${usd(amountCents)} & book`}
       </button>
     </div>

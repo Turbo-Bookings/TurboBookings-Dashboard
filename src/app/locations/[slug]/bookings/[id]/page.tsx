@@ -145,7 +145,9 @@ export default async function BookingDetailPage({ params }: Props) {
                   {p.refundedAmountCents > 0 ? ` · refunded ${usd(p.refundedAmountCents)}` : ""}
                 </span>
                 <span className="font-mono text-xs text-zinc-400">
-                  {p.stripePaymentIntentId.slice(0, 16)}…
+                  {p.stripePaymentIntentId
+                    ? `${p.stripePaymentIntentId.slice(0, 16)}…`
+                    : p.paymentGateway}
                 </span>
               </li>
             ))}

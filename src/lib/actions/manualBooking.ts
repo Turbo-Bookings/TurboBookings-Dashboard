@@ -1,14 +1,17 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, asc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { recordAudit } from "@/lib/audit";
 import {
   availabilities,
   availabilitySchedules,
+  bookingCustomFieldValues,
   bookingLines,
   bookings,
   customers,
+  discountCodes,
+  discountRedemptions,
   getDb,
   items,
   paymentMethodsOnFile,
@@ -17,23 +20,34 @@ import {
   resources,
 } from "@/lib/db";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { validateDiscountForBooking } from "@/lib/booking/discount";
 import { getItemPricing } from "@/lib/data/items";
+import { getWholeBookingFieldsForItem } from "@/lib/data/customFields";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
 import { emitEvent } from "@/lib/events/emit";
-import { quote } from "@/lib/pricing/quote";
+import { depositForMode, priceBreakdown } from "@/lib/pricing/breakdown";
 import { getStripe, stripeConfigured } from "@/lib/stripe/client";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type Line = { ct: string; q: number };
 type Contact = { name: string; email: string; phone: string };
+export type PaymentMethod = "card" | "groupon_ota" | "walk_in";
+export type AmountMode = "full" | "deposit" | "partial";
 type Payload = {
   itemId: string;
   availabilityId: string;
   lines: Line[];
   contact: Contact;
+  note?: string;
+  subtotalOverrideCents?: number | null;
+  discountCode?: string;
+  acknowledgments?: { fieldId: string; checked: boolean }[];
+  paymentMethod?: PaymentMethod;
+  amountMode?: AmountMode;
+  amountCents?: number; // partial charge amount, or Groupon/OTA prepaid amount
 };
 
 // ---- capacity-aware upcoming slots for one tour ----
@@ -110,11 +124,19 @@ async function openSlotsForItem(
   });
 }
 
+export type TourField = {
+  id: string;
+  kind: string;
+  label: string;
+  helpText: string | null;
+  required: boolean;
+};
 export type TourBookingData =
   | {
       ok: true;
       slots: { id: string; startsAt: string; remaining: number }[];
       pricing: { ct: string; label: string; priceCents: number; taxBps: number | null }[];
+      customFields: TourField[];
     }
   | { ok: false; error: string };
 
@@ -124,9 +146,10 @@ export async function getTourBookingData(
 ): Promise<TourBookingData> {
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
-  const [slots, pricing] = await Promise.all([
+  const [slots, pricing, fields] = await Promise.all([
     openSlotsForItem(location.id, itemId),
     getItemPricing(itemId),
+    getWholeBookingFieldsForItem(itemId),
   ]);
   return {
     ok: true,
@@ -137,28 +160,101 @@ export async function getTourBookingData(
       priceCents: p.priceCents,
       taxBps: p.taxRateBpsOverride,
     })),
+    customFields: fields.map((f) => ({
+      id: f.id,
+      kind: f.kind,
+      label: f.label,
+      helpText: f.helpText,
+      required: f.required,
+    })),
   };
 }
 
-async function buildQuote(location: Awaited<ReturnType<typeof getLocationBySlug>>, itemId: string, lines: Line[]) {
-  const pricing = await getItemPricing(itemId);
+// Validate a discount code from the booking form (live preview).
+export async function applyDiscountPreview(
+  slug: string,
+  itemId: string,
+  ctIds: string[],
+  subtotalCents: number,
+  code: string,
+): Promise<
+  | { ok: true; appliedAmountCents: number; label: string; code: string }
+  | { ok: false; error: string }
+> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const r = await validateDiscountForBooking(
+    location.id,
+    code,
+    itemId,
+    ctIds,
+    Math.max(0, Math.round(subtotalCents)),
+  );
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, appliedAmountCents: r.appliedAmountCents, label: r.label, code: code.trim() };
+}
+
+type Location = NonNullable<Awaited<ReturnType<typeof getLocationBySlug>>>;
+
+// Authoritative server-side pricing: line subtotal → override → discount →
+// tax/fee → deposit. Never trust client amounts.
+async function computePricing(location: Location, payload: Payload) {
+  const pricing = await getItemPricing(payload.itemId);
   const byCt = new Map(pricing.map((p) => [p.customerTypeId, p]));
-  const qlines = lines.filter((l) => l.q > 0 && byCt.has(l.ct));
-  const q = quote({
-    lines: qlines.map((l) => ({
-      quantity: l.q,
-      unitPriceCents: byCt.get(l.ct)!.priceCents,
-      taxRateBpsOverride: byCt.get(l.ct)!.taxRateBpsOverride,
-    })),
-    depositMode: location!.depositMode,
-    depositAmountCents: location!.depositAmountCents,
-    depositPercentBps: location!.depositPercentBps,
-    platformFeeBps: location!.platformFeeBps,
-    platformFeeMode: location!.platformFeeMode,
-    taxRateBps: location!.taxRateBps,
-    taxMode: location!.taxMode,
+  const qlines = payload.lines.filter((l) => l.q > 0 && byCt.has(l.ct));
+  const lineSubtotal = qlines.reduce((s, l) => s + l.q * byCt.get(l.ct)!.priceCents, 0);
+  const override =
+    payload.subtotalOverrideCents != null && payload.subtotalOverrideCents >= 0
+      ? Math.round(payload.subtotalOverrideCents)
+      : null;
+  const baseSubtotal = override ?? lineSubtotal;
+
+  let discount: { discountCodeId: string; appliedAmountCents: number } | null = null;
+  let discountError: string | null = null;
+  if (payload.discountCode && payload.discountCode.trim()) {
+    const r = await validateDiscountForBooking(
+      location.id,
+      payload.discountCode,
+      payload.itemId,
+      qlines.map((l) => l.ct),
+      baseSubtotal,
+    );
+    if (r.ok) discount = { discountCodeId: r.discountCodeId, appliedAmountCents: r.appliedAmountCents };
+    else discountError = r.error;
+  }
+
+  const breakdown = priceBreakdown({
+    baseSubtotalCents: baseSubtotal,
+    discountCents: discount?.appliedAmountCents ?? 0,
+    taxRateBps: location.taxRateBps,
+    taxMode: location.taxMode,
+    platformFeeBps: location.platformFeeBps,
+    platformFeeMode: location.platformFeeMode,
   });
-  return { q, qlines, byCt };
+  const totalQty = qlines.reduce((s, l) => s + l.q, 0);
+  const deposit = depositForMode({
+    adjustedSubtotalCents: breakdown.adjustedSubtotalCents,
+    depositMode: location.depositMode,
+    depositAmountCents: location.depositAmountCents,
+    depositPercentBps: location.depositPercentBps,
+    totalQty,
+  });
+
+  return { byCt, qlines, override, baseSubtotal, lineSubtotal, discount, discountError, breakdown, deposit };
+}
+
+// Amount to collect now, per payment method + amount mode.
+function dueNowCents(payload: Payload, total: number, deposit: number): number {
+  const method = payload.paymentMethod ?? "walk_in";
+  if (method === "walk_in") return 0;
+  if (method === "groupon_ota")
+    return Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total));
+  const mode = payload.amountMode ?? "full"; // card
+  if (mode === "full") return total;
+  if (mode === "deposit") return Math.min(deposit, total);
+  return Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total)); // partial
 }
 
 // Charge path — create a PaymentIntent the operator confirms via Elements.
@@ -171,19 +267,22 @@ export async function createOperatorIntent(
   if (!stripeConfigured()) return { ok: false, error: "Payments not configured" };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
-  const { q, qlines } = await buildQuote(location, payload.itemId, payload.lines);
-  if (qlines.length === 0) return { ok: false, error: "Select at least one rider" };
-  if (q.totalDueOnlineCents < 50) return { ok: false, error: "Amount too low to charge" };
+  const p = await computePricing(location, payload);
+  if (p.qlines.length === 0) return { ok: false, error: "Select at least one rider" };
+  if (p.discountError) return { ok: false, error: p.discountError };
+  const due = dueNowCents(payload, p.breakdown.totalCents, p.deposit);
+  if (due < 50) return { ok: false, error: "Amount too low to charge" };
   const connected = location.stripeAccountId || null;
+  const appFee = connected ? Math.min(p.breakdown.applicationFeeCents, due) : undefined;
   try {
     const pi = await getStripe().paymentIntents.create(
       {
-        amount: q.totalDueOnlineCents,
+        amount: due,
         currency: "usd",
         automatic_payment_methods: { enabled: true },
         setup_future_usage: "off_session",
         metadata: { location_id: location.id, item_id: payload.itemId, availability_id: payload.availabilityId, source: "direct" },
-        ...(connected ? { application_fee_amount: q.applicationFeeCents } : {}),
+        ...(appFee != null ? { application_fee_amount: appFee } : {}),
       },
       connected ? { stripeAccount: connected } : undefined,
     );
@@ -216,15 +315,27 @@ export async function createDirectBooking(
   )[0];
   if (!item) return { ok: false, error: "Tour not found" };
 
-  const { q, qlines, byCt } = await buildQuote(location, payload.itemId, payload.lines);
-  if (qlines.length === 0) return { ok: false, error: "Select at least one rider" };
+  const p = await computePricing(location, payload);
+  if (p.qlines.length === 0) return { ok: false, error: "Select at least one rider" };
+  if (p.discountError) return { ok: false, error: p.discountError };
 
-  // Resolve payment (charge path)
+  // Required acknowledgments must be checked.
+  const fields = await getWholeBookingFieldsForItem(payload.itemId);
+  const ackMap = new Map((payload.acknowledgments ?? []).map((a) => [a.fieldId, a.checked]));
+  for (const f of fields) {
+    if (f.kind === "checkbox" && f.required && !ackMap.get(f.id))
+      return { ok: false, error: `Please acknowledge: ${f.label}` };
+  }
+
+  const total = p.breakdown.totalCents;
+  const method: PaymentMethod = payload.paymentMethod ?? "walk_in";
+
+  // Resolve payment
   let paid = 0;
   let pmCard: { id: string; brand: string | null; last4: string | null; expMonth: number | null; expYear: number | null } | null = null;
   let piId: string | null = null;
   let last4: string | null = null;
-  if (paymentIntentId) {
+  if (method === "card" && paymentIntentId) {
     const pi = await getStripe().paymentIntents.retrieve(
       paymentIntentId,
       { expand: ["payment_method"] },
@@ -236,9 +347,10 @@ export async function createDirectBooking(
     const pm = pi.payment_method && typeof pi.payment_method !== "string" ? pi.payment_method : null;
     last4 = pm?.card?.last4 ?? null;
     if (pm?.card) pmCard = { id: pm.id, brand: pm.card.brand, last4: pm.card.last4, expMonth: pm.card.exp_month, expYear: pm.card.exp_year };
+  } else if (method === "groupon_ota") {
+    paid = Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total));
   }
 
-  const total = q.subtotalCents + q.taxCents + q.feeCents;
   const balanceDue = total - paid;
   let createdBy: string | null = null;
   try {
@@ -260,7 +372,7 @@ export async function createDirectBooking(
         .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
         .where(and(eq(bookings.availabilityId, payload.availabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
-      const requested = qlines.reduce((s, l) => s + l.q, 0);
+      const requested = p.qlines.reduce((s, l) => s + l.q, 0);
       let remaining: number;
       if (item.capacityMode === "fixed") {
         let base = slot.capacityOverride;
@@ -323,34 +435,63 @@ export async function createDirectBooking(
             source: "direct",
             status: "active",
             createdByUserId: createdBy,
-            subtotalCents: q.subtotalCents,
-            taxCents: q.taxCents,
-            platformFeeCents: q.applicationFeeCents,
+            subtotalCents: p.lineSubtotal,
+            subtotalCentsOverride: p.override,
+            taxCents: p.breakdown.taxCents,
+            platformFeeCents: p.breakdown.feeCents,
+            discountCents: p.breakdown.discountCents,
             totalCents: total,
             depositPaidCents: paid,
             balanceDueCents: balanceDue,
+            notes: payload.note?.trim() || null,
           })
           .returning()
       )[0];
 
       await tx.insert(bookingLines).values(
-        qlines.map((l, i) => ({
+        p.qlines.map((l, i) => ({
           bookingId: booking.id,
           customerTypeId: l.ct,
           quantity: l.q,
-          unitPriceCents: byCt.get(l.ct)!.priceCents,
+          unitPriceCents: p.byCt.get(l.ct)!.priceCents,
           sortOrder: i,
         })),
       );
 
-      if (piId) {
+      // Whole-booking custom field responses (acknowledgments).
+      const ackRows = fields
+        .filter((f) => ackMap.has(f.id))
+        .map((f) => ({
+          bookingId: booking.id,
+          customFieldId: f.id,
+          valueChecked: f.kind === "checkbox" ? !!ackMap.get(f.id) : null,
+        }));
+      if (ackRows.length) await tx.insert(bookingCustomFieldValues).values(ackRows);
+
+      // Discount redemption.
+      if (p.discount) {
+        await tx.insert(discountRedemptions).values({
+          bookingId: booking.id,
+          discountCodeId: p.discount.discountCodeId,
+          appliedAmountCents: p.discount.appliedAmountCents,
+        });
+        await tx
+          .update(discountCodes)
+          .set({ usedCount: sql`${discountCodes.usedCount} + 1`, updatedAt: new Date() })
+          .where(eq(discountCodes.id, p.discount.discountCodeId));
+      }
+
+      // Payment record (Stripe card, or non-Stripe Groupon/OTA).
+      if (method === "card" && piId) {
         await tx.insert(payments).values({
           bookingId: booking.id,
+          paymentGateway: "stripe",
           stripePaymentIntentId: piId,
           amountCents: paid,
-          applicationFeeCents: q.applicationFeeCents,
+          applicationFeeCents: p.breakdown.applicationFeeCents,
           status: "succeeded",
           capturedAt: new Date(),
+          paymentMethodType: "card",
           last4,
         });
         if (pmCard) {
@@ -359,15 +500,31 @@ export async function createDirectBooking(
             .values({ customerId: cust.id, addedFromBookingId: booking.id, stripePaymentMethodId: pmCard.id, brand: pmCard.brand, last4: pmCard.last4, expMonth: pmCard.expMonth, expYear: pmCard.expYear })
             .onConflictDoNothing();
         }
+      } else if (method === "groupon_ota" && paid > 0) {
+        await tx.insert(payments).values({
+          bookingId: booking.id,
+          paymentGateway: "groupon_ota",
+          stripePaymentIntentId: null,
+          amountCents: paid,
+          status: "succeeded",
+          capturedAt: new Date(),
+          paymentMethodType: "groupon_ota",
+        });
       }
       return booking.id;
     });
 
+    const methodLabel =
+      method === "card"
+        ? `charged $${(paid / 100).toFixed(2)}`
+        : method === "groupon_ota"
+          ? `Groupon/OTA $${(paid / 100).toFixed(2)}`
+          : "walk-in (pay at venue)";
     await recordAudit({
       slug,
       action: "catalog.booking.create_direct",
-      summary: `Operator booking for "${item.name}"${paid > 0 ? ` · charged $${(paid / 100).toFixed(2)}` : " · pay at venue"}`,
-      payload: { bookingId, paid },
+      summary: `Operator booking for "${item.name}" · ${methodLabel}`,
+      payload: { bookingId, paid, method },
     });
     await emitEvent({
       event_type: "booking.created",

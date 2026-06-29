@@ -14,6 +14,27 @@ export async function listCustomFields(
     .orderBy(asc(customFields.sortOrder), asc(customFields.label));
 }
 
+// Whole-booking custom fields attached to a tour (acknowledgments, add-ons,
+// notes) — shown once per booking on the operator + customer booking forms.
+export async function getWholeBookingFieldsForItem(
+  itemId: string,
+): Promise<CustomField[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ f: customFields })
+    .from(itemCustomFields)
+    .innerJoin(customFields, eq(itemCustomFields.customFieldId, customFields.id))
+    .where(
+      and(
+        eq(itemCustomFields.itemId, itemId),
+        eq(itemCustomFields.attachLevel, "whole_booking"),
+        eq(customFields.archived, false),
+      ),
+    )
+    .orderBy(asc(itemCustomFields.sortOrder), asc(customFields.label));
+  return rows.map((r) => r.f);
+}
+
 export async function getCustomField(
   id: string,
   locationId: string,
