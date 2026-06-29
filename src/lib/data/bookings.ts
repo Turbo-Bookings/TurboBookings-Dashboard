@@ -190,6 +190,7 @@ export type GridSlot = {
   booked: number;
   available: number | null;
   full: boolean;
+  riderCounts: { ctName: string; booked: number }[];
 };
 
 export async function gridForDate(
@@ -226,13 +227,26 @@ export async function gridForDate(
 
   const slotIds = slots.map((s) => s.a.id);
   const bookedRows = await db
-    .select({ availabilityId: bookings.availabilityId, qty: bookingLines.quantity })
+    .select({
+      availabilityId: bookings.availabilityId,
+      qty: bookingLines.quantity,
+      ctName: customerTypes.singular,
+    })
     .from(bookings)
     .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+    .innerJoin(customerTypes, eq(bookingLines.customerTypeId, customerTypes.id))
     .where(and(inArray(bookings.availabilityId, slotIds), eq(bookings.status, "active")));
   const bookedBySlot = new Map<string, number>();
-  for (const r of bookedRows)
+  const typeBySlot = new Map<string, Map<string, number>>();
+  for (const r of bookedRows) {
     bookedBySlot.set(r.availabilityId, (bookedBySlot.get(r.availabilityId) ?? 0) + r.qty);
+    let m = typeBySlot.get(r.availabilityId);
+    if (!m) {
+      m = new Map();
+      typeBySlot.set(r.availabilityId, m);
+    }
+    m.set(r.ctName, (m.get(r.ctName) ?? 0) + r.qty);
+  }
 
   // Resource pools per resource-based item (for available counts).
   const resourceItemIds = [
@@ -289,6 +303,10 @@ export async function gridForDate(
       booked,
       available,
       full: available != null && available <= 0,
+      riderCounts: [...(typeBySlot.get(s.a.id)?.entries() ?? [])].map(([ctName, b]) => ({
+        ctName,
+        booked: b,
+      })),
     };
   });
 }

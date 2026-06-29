@@ -1,13 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
-import { ChevronLeft, ChevronRight, Lock, Plus } from "lucide-react";
-import { Badge } from "@/components/ui/Badge";
+import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { SlotPopover } from "@/components/SlotPopover";
 import { ViewToggle } from "@/app/locations/[slug]/bookings/list/page";
 import { gridForDate, type GridSlot } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
-import { TONE_DOT, itemColor } from "@/lib/ui/itemColor";
 
 export const dynamic = "force-dynamic";
 
@@ -15,27 +14,116 @@ const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; view?: string; booked?: string }>;
 };
 
 export default async function BookingsGridPage({ params, searchParams }: Props) {
   const { slug } = await params;
-  const { date } = await searchParams;
+  const sp = await searchParams;
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 
   const tz = loc.timezone ?? "America/Chicago";
   const dateKey =
-    date && DAY_RE.test(date) ? date : DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
+    sp.date && DAY_RE.test(sp.date) ? sp.date : DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
   const day = DateTime.fromISO(dateKey, { zone: tz });
-  const prev = day.minus({ days: 1 }).toFormat("yyyy-LL-dd");
-  const next = day.plus({ days: 1 }).toFormat("yyyy-LL-dd");
-  const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
-
-  const slots = await gridForDate(loc.id, dateKey, tz);
+  const view = sp.view === "week" ? "week" : "day";
+  const bookedOnly = sp.booked === "1";
   const fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
 
-  // Group slots by start time (already sorted by startsAt).
+  const base = `/locations/${slug}/bookings`;
+  const mk = (o: Partial<{ date: string; view: string; booked: string }>) => {
+    const q = new URLSearchParams();
+    const date = o.date ?? dateKey;
+    if (date) q.set("date", date);
+    const v = o.view ?? view;
+    if (v === "week") q.set("view", "week");
+    const b = o.booked ?? (bookedOnly ? "1" : "");
+    if (b === "1") q.set("booked", "1");
+    return `${base}?${q.toString()}`;
+  };
+  const filt = (arr: GridSlot[]) => (bookedOnly ? arr.filter((s) => s.booked > 0) : arr);
+
+  // Date navigation steps by day or week.
+  const step = view === "week" ? { weeks: 1 } : { days: 1 };
+  const prev = day.minus(step).toFormat("yyyy-LL-dd");
+  const next = day.plus(step).toFormat("yyyy-LL-dd");
+  const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
+
+  const navCls =
+    "inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
+  const segOn = "bg-blue-600 text-white";
+  const segOff = "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800";
+
+  return (
+    <section>
+      <PageHeader
+        title="Bookings"
+        description={view === "week" ? `Week of ${day.startOf("week").toFormat("LLL d")}` : day.toFormat("cccc, LLL d")}
+        actions={
+          <div className="flex items-center gap-2">
+            <Link href={mk({ date: prev })} className={navCls} aria-label="Previous">
+              <ChevronLeft className="h-4 w-4" />
+            </Link>
+            {dateKey !== today && (
+              <Link href={mk({ date: today })} className={navCls}>
+                Today
+              </Link>
+            )}
+            <Link href={mk({ date: next })} className={navCls} aria-label="Next">
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+            <Link href={`${base}/new`} className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+              <Plus className="h-4 w-4" /> New booking
+            </Link>
+          </div>
+        }
+      />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <ViewToggle base={base} active="grid" />
+        {/* Day / Week */}
+        <div className="inline-flex overflow-hidden rounded-md border border-zinc-300 dark:border-zinc-700">
+          <Link href={mk({ view: "day" })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${view === "day" ? segOn : segOff}`}>
+            <CalendarDays className="h-4 w-4" /> Day
+          </Link>
+          <Link href={mk({ view: "week" })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${view === "week" ? segOn : segOff}`}>
+            <CalendarRange className="h-4 w-4" /> Week
+          </Link>
+        </div>
+        {/* Booked only */}
+        <Link
+          href={mk({ booked: bookedOnly ? "" : "1" })}
+          className={`rounded-md border px-3 py-1.5 text-sm font-medium ${
+            bookedOnly
+              ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              : "border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          }`}
+        >
+          Booked only
+        </Link>
+      </div>
+
+      {view === "week" ? (
+        <WeekGrid slug={slug} loc={{ id: loc.id, tz }} day={day} fmtTime={fmtTime} filt={filt} />
+      ) : (
+        <DayGrid slug={slug} dateKey={dateKey} slots={filt(await gridForDate(loc.id, dateKey, tz))} fmtTime={fmtTime} />
+      )}
+    </section>
+  );
+}
+
+function DayGrid({
+  slug,
+  dateKey,
+  slots,
+  fmtTime,
+}: {
+  slug: string;
+  dateKey: string;
+  slots: GridSlot[];
+  fmtTime: Intl.DateTimeFormat;
+}) {
   const groups: { time: string; slots: GridSlot[] }[] = [];
   for (const s of slots) {
     const time = fmtTime.format(s.startsAt);
@@ -43,112 +131,72 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
     if (last && last.time === time) last.slots.push(s);
     else groups.push({ time, slots: [s] });
   }
-
-  const base = `/locations/${slug}/bookings`;
-  const navCls =
-    "inline-flex items-center gap-1 rounded-md border border-zinc-300 px-2.5 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
-
+  if (groups.length === 0) {
+    return (
+      <div className="rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-12 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
+        <p className="text-sm text-zinc-500">No slots to show.</p>
+      </div>
+    );
+  }
   return (
-    <section>
-      <PageHeader
-        title="Bookings"
-        description={day.toFormat("cccc, LLL d")}
-        actions={
-          <div className="flex items-center gap-2">
-            <Link href={`${base}?date=${prev}`} className={navCls} aria-label="Previous day">
-              <ChevronLeft className="h-4 w-4" />
-            </Link>
-            {dateKey !== today && (
-              <Link href={`${base}?date=${today}`} className={navCls}>
-                Today
-              </Link>
-            )}
-            <Link href={`${base}?date=${next}`} className={navCls} aria-label="Next day">
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-            <Link
-              href={`${base}/new`}
-              className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
-            >
-              <Plus className="h-4 w-4" /> New booking
-            </Link>
+    <div className="space-y-2">
+      {groups.map((g) => (
+        <div key={g.time} className="flex gap-3">
+          <div className="w-20 shrink-0 pt-2 text-right text-sm font-medium text-zinc-500">{g.time}</div>
+          <div className="flex-1 space-y-2">
+            {g.slots.map((s) => (
+              <SlotPopover key={s.availabilityId} slug={slug} dateKey={dateKey} slot={s} timeLabel={fmtTime.format(s.startsAt)} />
+            ))}
           </div>
-        }
-      />
-
-      <ViewToggle base={base} active="grid" />
-
-      {groups.length === 0 ? (
-        <div className="rounded-xl border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-12 text-center dark:border-zinc-800 dark:bg-zinc-900/30">
-          <p className="text-sm text-zinc-500">No availability on this day.</p>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {groups.map((g) => (
-            <div key={g.time} className="flex gap-3">
-              <div className="w-20 shrink-0 pt-2 text-right text-sm font-medium text-zinc-500">
-                {g.time}
-              </div>
-              <div className="flex-1 space-y-2">
-                {g.slots.map((s) => (
-                  <SlotBlock key={s.availabilityId} slug={slug} dateKey={dateKey} slot={s} fmtTime={fmtTime} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+      ))}
+    </div>
   );
 }
 
-function SlotBlock({
+async function WeekGrid({
   slug,
-  dateKey,
-  slot,
+  loc,
+  day,
   fmtTime,
+  filt,
 }: {
   slug: string;
-  dateKey: string;
-  slot: GridSlot;
+  loc: { id: string; tz: string };
+  day: DateTime;
   fmtTime: Intl.DateTimeFormat;
+  filt: (arr: GridSlot[]) => GridSlot[];
 }) {
-  const tone = itemColor(slot.itemId);
-  const total = slot.available != null ? slot.booked + slot.available : null;
-  const pct = total && total > 0 ? Math.min(100, Math.round((slot.booked / total) * 100)) : 0;
-  const closed = slot.onlineStatus === "off";
+  const weekStart = day.startOf("week");
+  const days = Array.from({ length: 7 }, (_, i) => weekStart.plus({ days: i }));
+  const slotsByDay = await Promise.all(
+    days.map((d) => gridForDate(loc.id, d.toFormat("yyyy-LL-dd"), loc.tz)),
+  );
 
   return (
-    <Link
-      href={`/locations/${slug}/manifest?date=${dateKey}#slot-${slot.availabilityId}`}
-      className="relative block overflow-hidden rounded-lg border border-zinc-200 bg-white pl-3 pr-3 py-2 transition-shadow hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-    >
-      <span className={`absolute left-0 top-0 h-full w-1.5 ${TONE_DOT[tone]}`} />
-      <div className="ml-1.5">
-        <div className="flex items-center gap-1.5 text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          {closed && <Lock className="h-3.5 w-3.5 text-zinc-400" />}
-          <span>{fmtTime.format(slot.startsAt)}</span>
-          <span className="text-zinc-600 dark:text-zinc-300">{slot.itemName}</span>
-          {slot.full && <Badge tone="red">Full</Badge>}
-        </div>
-        <div className="mt-1 flex items-center gap-3 text-xs text-zinc-500">
-          <span className="inline-flex items-center gap-1">
-            <span className={`h-2.5 w-2.5 rounded-sm ${TONE_DOT[tone]}`} />
-            {slot.booked} booked
-          </span>
-          {slot.available != null && (
-            <span className="inline-flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm border border-zinc-300 dark:border-zinc-600" />
-              {slot.available} available
-            </span>
-          )}
-        </div>
-      </div>
-      {total != null && (
-        <span className="absolute bottom-0 left-0 h-1 w-full bg-zinc-100 dark:bg-zinc-800">
-          <span className={`block h-full ${TONE_DOT[tone]}`} style={{ width: `${pct}%` }} />
-        </span>
-      )}
-    </Link>
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      {days.map((d, i) => {
+        const dk = d.toFormat("yyyy-LL-dd");
+        const slots = filt(slotsByDay[i]);
+        return (
+          <div key={dk} className="min-w-0">
+            <div className="mb-2 text-center text-xs font-semibold text-zinc-600 dark:text-zinc-300">
+              {d.toFormat("ccc")} <span className="text-zinc-400">{d.toFormat("M/d")}</span>
+            </div>
+            <div className="space-y-1.5">
+              {slots.length === 0 ? (
+                <p className="rounded-md border border-dashed border-zinc-200 py-3 text-center text-[10px] text-zinc-400 dark:border-zinc-800">
+                  —
+                </p>
+              ) : (
+                slots.map((s) => (
+                  <SlotPopover key={s.availabilityId} slug={slug} dateKey={dk} slot={s} timeLabel={fmtTime.format(s.startsAt)} />
+                ))
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
