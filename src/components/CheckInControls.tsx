@@ -30,11 +30,13 @@ export function CheckInControls({
   bookingId,
   current,
   size = "md",
+  onChanged,
 }: {
   slug: string;
   bookingId: string;
   current: string;
   size?: "sm" | "md";
+  onChanged?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +54,10 @@ export function CheckInControls({
             startTransition(async () => {
               const r = await setBookingCheckIn(slug, bookingId, o.value);
               if (!r.ok) setError(r.error ?? "Failed");
-              else router.refresh();
+              else {
+                router.refresh();
+                onChanged?.();
+              }
             });
           }}
           className={`disabled:opacity-50 ${btnCls(current === o.value, o.value, size)}`}
@@ -74,6 +79,7 @@ export function LineCheckIn({
   quantity,
   checkedInUnits,
   noShowUnits,
+  onChanged,
 }: {
   slug: string;
   lineId: string;
@@ -81,6 +87,7 @@ export function LineCheckIn({
   quantity: number;
   checkedInUnits: number;
   noShowUnits: number;
+  onChanged?: () => void;
 }) {
   const initial: UnitStatus[] = Array.from({ length: quantity }, (_, i) =>
     i < checkedInUnits ? "checked_in" : i < checkedInUnits + noShowUnits ? "no_show" : "not_yet",
@@ -101,7 +108,10 @@ export function LineCheckIn({
       if (!r.ok) {
         setError(r.error ?? "Failed");
         setUnits(initial);
-      } else router.refresh();
+      } else {
+        router.refresh();
+        onChanged?.();
+      }
     });
   }
 

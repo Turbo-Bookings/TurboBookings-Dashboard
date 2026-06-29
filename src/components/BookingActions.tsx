@@ -22,6 +22,7 @@ type Props = {
   refundCents: number;
   hasCardOnFile: boolean;
   holds: Hold[];
+  onChanged?: () => void;
 };
 
 export function BookingActions({
@@ -32,6 +33,7 @@ export function BookingActions({
   refundCents,
   hasCardOnFile,
   holds,
+  onChanged,
 }: Props) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,7 @@ export function BookingActions({
     startTransition(async () => {
       const r = await fn();
       if (!r.ok) setError(r.error ?? "Failed");
+      else onChanged?.();
     });
   }
 

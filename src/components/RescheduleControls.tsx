@@ -12,12 +12,14 @@ export function RescheduleControls({
   currentId,
   slots,
   tz,
+  onChanged,
 }: {
   slug: string;
   bookingId: string;
   currentId: string;
   slots: Slot[];
   tz: string;
+  onChanged?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -56,6 +58,7 @@ export function RescheduleControls({
       else {
         setTo("");
         router.refresh();
+        onChanged?.();
       }
     });
   }

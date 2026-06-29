@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CheckInControls, LineCheckIn } from "@/components/CheckInControls";
-import { OnlineStatusControl } from "@/components/OnlineStatusControl";
+import { BookingModal } from "@/components/BookingModal";
 import { TONE_DOT, itemColor } from "@/lib/ui/itemColor";
 import { checkInLabel, checkInTone } from "@/lib/ui/status";
 
@@ -87,6 +87,7 @@ export function Manifest({
   const [cols, setCols] = useState<Cols>(DEFAULT_COLS);
   const [colsOpen, setColsOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [openId, setOpenId] = useState<string | null>(null);
 
   useEffect(() => {
     const s = localStorage.getItem("tb_manifest_cols");
@@ -236,9 +237,6 @@ export function Manifest({
 
                 {/* Sub-row */}
                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-xs text-zinc-500">
-                  <span className="print:hidden">
-                    <OnlineStatusControl slug={slug} slotId={s.availabilityId} status={s.onlineStatus} />
-                  </span>
                   <span className="flex items-center gap-2">
                     <span className="font-medium text-zinc-700 dark:text-zinc-200">{s.booked} booked</span>
                     {available != null && <span>· {available} available</span>}
@@ -289,12 +287,12 @@ export function Manifest({
                                 </button>
                               </td>
                               <td className="px-3 py-2">
-                                <Link href={`${base}/bookings/${b.id}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100">
+                                <button type="button" onClick={() => setOpenId(b.id)} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100">
                                   #{b.displayNumber}
-                                </Link>
+                                </button>
                               </td>
                               <td className="px-3 py-2">
-                                <div className="font-medium text-zinc-900 dark:text-zinc-100">{b.customerName}</div>
+                                <button type="button" onClick={() => setOpenId(b.id)} className="text-left font-medium text-zinc-900 hover:underline dark:text-zinc-100">{b.customerName}</button>
                                 {cols.phone && b.customerPhone && (
                                   <div className="text-xs text-zinc-500">{b.customerPhone}</div>
                                 )}
@@ -358,6 +356,7 @@ export function Manifest({
           })}
         </div>
       )}
+      {openId && <BookingModal slug={slug} bookingId={openId} onClose={() => setOpenId(null)} />}
     </section>
   );
 }
