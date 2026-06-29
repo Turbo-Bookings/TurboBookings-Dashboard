@@ -83,7 +83,7 @@ function parseFormData(formData: FormData): ScheduleFormState["values"] {
     seasonStart: String(formData.get("seasonStart") ?? "").trim(),
     seasonEnd: String(formData.get("seasonEnd") ?? "").trim(),
     materializeDaysAhead: String(
-      formData.get("materializeDaysAhead") ?? "90",
+      formData.get("materializeDaysAhead") ?? "540",
     ).trim(),
     active: formData.get("active") != null,
   };
@@ -124,8 +124,8 @@ function validateBase(values: ScheduleFormState["values"]): FieldErrors {
   }
 
   const horizon = Number(values.materializeDaysAhead);
-  if (!Number.isInteger(horizon) || horizon < 1 || horizon > 365)
-    errors.materializeDaysAhead = "Days between 1 and 365";
+  if (!Number.isInteger(horizon) || horizon < 1 || horizon > 1095)
+    errors.materializeDaysAhead = "Days between 1 and 1095";
 
   return errors;
 }

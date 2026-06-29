@@ -1,0 +1,2 @@
+ALTER TABLE "availability_schedules" ALTER COLUMN "materialize_days_ahead" SET DEFAULT 540;--> statement-breakpoint
+UPDATE "availability_schedules" SET "materialize_days_ahead" = 540 WHERE "materialize_days_ahead" < 540;

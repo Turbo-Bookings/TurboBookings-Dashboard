@@ -818,10 +818,13 @@ export const availabilitySchedules = pgTable("availability_schedules", {
     .notNull()
     .default("auto"),
   // Materialization horizon — how many days ahead to keep availabilities
-  // populated. Background job runs nightly to roll the window forward.
+  // populated. Background job runs nightly to roll the window forward, so this
+  // is effectively "always keep this many days open." Default 540 (~18 months)
+  // so customers can book a year-plus ahead; bounded by season end (RRULE
+  // UNTIL) + blackout dates.
   materializeDaysAhead: integer("materialize_days_ahead")
     .notNull()
-    .default(90),
+    .default(540),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

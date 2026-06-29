@@ -61,7 +61,7 @@ export default async function NewSchedulePage({ params }: Props) {
           defaultOnlineBookingStatus: "auto",
           seasonStart: todayYmd(),
           seasonEnd: "",
-          materializeDaysAhead: "90",
+          materializeDaysAhead: "540",
           active: true,
         }}
         cancelHref={base}

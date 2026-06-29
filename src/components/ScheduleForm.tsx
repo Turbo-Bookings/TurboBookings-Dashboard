@@ -453,20 +453,23 @@ export function ScheduleForm({
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div>
           <label htmlFor="materializeDaysAhead" className={labelCls}>
-            Generate days ahead
+            Pre-open slots (days ahead)
           </label>
           <input
             id="materializeDaysAhead"
             name="materializeDaysAhead"
             type="number"
             min={1}
-            max={365}
+            max={1095}
             value={materializeDaysAhead}
             onChange={(e) => setHorizon(e.target.value)}
             className={`mt-1.5 ${inputCls(errors.materializeDaysAhead)}`}
           />
           <p className={hintCls}>
-            How far ahead concrete slots get generated (Sprint D).
+            Slots roll forward automatically — the default (540 ≈ 18 months)
+            keeps a year-plus of bookable times open. To stop a tour, set a
+            season end above or add a blackout. Leave as-is unless you have a
+            reason to shorten it.
           </p>
           {errors.materializeDaysAhead && (
             <p className={errCls}>{errors.materializeDaysAhead}</p>

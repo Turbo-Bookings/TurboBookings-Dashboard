@@ -1,4 +1,4 @@
-import { and, eq, gte, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, notInArray } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { rrulestr } from "rrule";
 import {
@@ -153,12 +153,17 @@ export async function materializeScheduleRow(
       ? expandScheduleToSlots(schedule, timezone, now, blackoutKeys)
       : [];
 
+  // Chunk DB writes — an 18-month horizon × multiple start times can be
+  // thousands of rows, which overflows a single neon-http query.
+  const CHUNK = 800;
+
   let inserted = 0;
-  if (slots.length > 0) {
+  for (let i = 0; i < slots.length; i += CHUNK) {
+    const part = slots.slice(i, i + CHUNK);
     const ins = await db
       .insert(availabilities)
       .values(
-        slots.map((s) => ({
+        part.map((s) => ({
           itemId: schedule.itemId,
           scheduleId: schedule.id,
           startsAt: s.startsAt,
@@ -171,25 +176,38 @@ export async function materializeScheduleRow(
         target: [availabilities.scheduleId, availabilities.startsAt],
       })
       .returning({ id: availabilities.id });
-    inserted = ins.length;
+    inserted += ins.length;
   }
 
   // Prune stale future slots (removed times/days, shrunk season, blackout,
-  // paused) — but never a booked slot.
-  const keep = slots.map((s) => s.startsAt);
-  const del = await db
-    .delete(availabilities)
+  // paused) — but never a booked slot. Diff in JS to avoid a giant
+  // NOT-IN(timestamps) query, then delete the ids in chunks.
+  const keepSet = new Set(slots.map((s) => s.startsAt.getTime()));
+  const existing = await db
+    .select({ id: availabilities.id, startsAt: availabilities.startsAt })
+    .from(availabilities)
     .where(
       and(
         eq(availabilities.scheduleId, schedule.id),
         gte(availabilities.startsAt, floor),
         notInArray(availabilities.id, bookedSlotIds()),
-        keep.length > 0 ? notInArray(availabilities.startsAt, keep) : undefined,
       ),
-    )
-    .returning({ id: availabilities.id });
+    );
+  const toDelete = existing
+    .filter((e) => !keepSet.has(e.startsAt.getTime()))
+    .map((e) => e.id);
 
-  return { inserted, deleted: del.length };
+  let deleted = 0;
+  for (let i = 0; i < toDelete.length; i += CHUNK) {
+    const part = toDelete.slice(i, i + CHUNK);
+    const del = await db
+      .delete(availabilities)
+      .where(inArray(availabilities.id, part))
+      .returning({ id: availabilities.id });
+    deleted += del.length;
+  }
+
+  return { inserted, deleted };
 }
 
 // Re-materialize every active schedule for one location (used after a blackout

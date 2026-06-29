@@ -101,6 +101,12 @@ export default async function SchedulePage({ params }: Props) {
           >
             Generated slots →
           </Link>
+          <Link
+            href={`${base}/blackouts`}
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            Blackouts →
+          </Link>
           {items.length > 0 && (
             <Link
               href={`${base}/new`}
