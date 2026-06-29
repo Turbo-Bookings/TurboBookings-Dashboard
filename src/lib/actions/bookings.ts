@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -11,6 +11,7 @@ import {
   bookingLines,
   bookingReschedules,
   bookings,
+  customers,
   getDb,
   items,
   paymentMethodsOnFile,
@@ -738,4 +739,58 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     tz: location.timezone ?? "America/Chicago",
     hasCardOnFile: !!detail.cardOnFile,
   };
+}
+
+// Global booking lookup — by booking #, customer name, email, or phone.
+export type BookingSearchHit = {
+  id: string;
+  displayNumber: string;
+  customerName: string;
+  itemName: string;
+  startsAt: Date;
+  status: string;
+};
+export async function searchBookings(slug: string, q: string): Promise<BookingSearchHit[]> {
+  const term = q.trim();
+  if (term.length < 2) return [];
+  const location = await getLocationBySlug(slug);
+  if (!location) return [];
+  const like = `%${term}%`;
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: bookings.id,
+      displayNumber: bookings.displayNumber,
+      first: customers.firstName,
+      last: customers.lastName,
+      itemName: items.name,
+      startsAt: availabilities.startsAt,
+      status: bookings.status,
+    })
+    .from(bookings)
+    .innerJoin(customers, eq(bookings.customerId, customers.id))
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .where(
+      and(
+        eq(bookings.locationId, location.id),
+        or(
+          ilike(bookings.displayNumber, like),
+          ilike(customers.firstName, like),
+          ilike(customers.lastName, like),
+          ilike(customers.emailLower, like),
+          ilike(customers.phoneE164, like),
+        ),
+      ),
+    )
+    .orderBy(desc(availabilities.startsAt))
+    .limit(10);
+  return rows.map((r) => ({
+    id: r.id,
+    displayNumber: r.displayNumber,
+    customerName: [r.first, r.last].filter(Boolean).join(" ") || "—",
+    itemName: r.itemName,
+    startsAt: r.startsAt,
+    status: r.status,
+  }));
 }

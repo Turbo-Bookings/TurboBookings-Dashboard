@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
+import { SearchBookings } from "@/components/SearchBookings";
 import {
   BarChart3,
   ClipboardList,
@@ -232,7 +233,8 @@ export function LocationShell({ slug, brandName, status, locations, children }: 
             <span className="truncate text-sm font-semibold tracking-tight">{brandName}</span>
             <StatusBadge status={status} />
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-3">
+            <SearchBookings slug={slug} />
             <UserButton appearance={{ elements: { avatarBox: "h-8 w-8" } }} />
           </div>
         </header>
