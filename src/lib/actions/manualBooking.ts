@@ -27,15 +27,14 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
 import { emitEvent } from "@/lib/events/emit";
-import { depositForMode, priceBreakdown } from "@/lib/pricing/breakdown";
+import { computeBooking, type AmountMode, type PaymentMethod } from "@/lib/pricing/breakdown";
 import { getStripe, stripeConfigured } from "@/lib/stripe/client";
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type Line = { ct: string; q: number };
 type Contact = { name: string; email: string; phone: string };
-export type PaymentMethod = "card" | "groupon_ota" | "walk_in";
-export type AmountMode = "full" | "deposit" | "partial";
+export type { AmountMode, PaymentMethod } from "@/lib/pricing/breakdown";
 type Payload = {
   itemId: string;
   availabilityId: string;
@@ -225,45 +224,24 @@ async function computePricing(location: Location, payload: Payload) {
     else discountError = r.error;
   }
 
-  const breakdown = priceBreakdown({
+  const totalQty = qlines.reduce((s, l) => s + l.q, 0);
+  const c = computeBooking({
     baseSubtotalCents: baseSubtotal,
     discountCents: discount?.appliedAmountCents ?? 0,
     taxRateBps: location.taxRateBps,
     taxMode: location.taxMode,
     platformFeeBps: location.platformFeeBps,
     platformFeeMode: location.platformFeeMode,
-    // Platform fee only on card-charged bookings.
-    collectFee: (payload.paymentMethod ?? "walk_in") === "card",
-  });
-  const totalQty = qlines.reduce((s, l) => s + l.q, 0);
-  const deposit = depositForMode({
-    adjustedSubtotalCents: breakdown.adjustedSubtotalCents,
     depositMode: location.depositMode,
     depositAmountCents: location.depositAmountCents,
     depositPercentBps: location.depositPercentBps,
     totalQty,
+    paymentMethod: payload.paymentMethod ?? "walk_in",
+    amountMode: payload.amountMode ?? "full",
+    amountCents: payload.amountCents,
   });
 
-  return { byCt, qlines, override, baseSubtotal, lineSubtotal, discount, discountError, breakdown, deposit };
-}
-
-// Amount to collect now. The processing fee is ALWAYS collected up-front on a
-// card charge (it can't be deferred); the chosen amount is added on top.
-function dueNowCents(
-  payload: Payload,
-  breakdown: { totalCents: number; feeCents: number },
-  deposit: number,
-): number {
-  const total = breakdown.totalCents;
-  const method = payload.paymentMethod ?? "walk_in";
-  if (method === "walk_in") return 0;
-  if (method === "groupon_ota")
-    return Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total));
-  const fee = breakdown.feeCents;
-  const mode = payload.amountMode ?? "full"; // card
-  if (mode === "full") return total;
-  if (mode === "deposit") return Math.min(deposit + fee, total);
-  return Math.min(Math.max(Math.round(payload.amountCents ?? 0), 0) + fee, total); // partial
+  return { byCt, qlines, override, lineSubtotal, discount, discountError, c };
 }
 
 // Charge path — create a PaymentIntent the operator confirms via Elements.
@@ -279,10 +257,10 @@ export async function createOperatorIntent(
   const p = await computePricing(location, payload);
   if (p.qlines.length === 0) return { ok: false, error: "Select at least one rider" };
   if (p.discountError) return { ok: false, error: p.discountError };
-  const due = dueNowCents(payload, p.breakdown, p.deposit);
+  const due = p.c.dueNowCents;
   if (due < 50) return { ok: false, error: "Amount too low to charge" };
   const connected = location.stripeAccountId || null;
-  const appFee = connected ? Math.min(p.breakdown.applicationFeeCents, due) : undefined;
+  const appFee = connected ? Math.min(p.c.applicationFeeCents, due) : undefined;
   try {
     const pi = await getStripe().paymentIntents.create(
       {
@@ -336,7 +314,7 @@ export async function createDirectBooking(
       return { ok: false, error: `Please acknowledge: ${f.label}` };
   }
 
-  const total = p.breakdown.totalCents;
+  const total = p.c.totalCents;
   const method: PaymentMethod = payload.paymentMethod ?? "walk_in";
 
   // Resolve payment
@@ -357,7 +335,7 @@ export async function createDirectBooking(
     last4 = pm?.card?.last4 ?? null;
     if (pm?.card) pmCard = { id: pm.id, brand: pm.card.brand, last4: pm.card.last4, expMonth: pm.card.exp_month, expYear: pm.card.exp_year };
   } else if (method === "groupon_ota") {
-    paid = Math.max(0, Math.min(Math.round(payload.amountCents ?? 0), total));
+    paid = p.c.onlineBaseCents; // entered prepaid (clamped), no online fee/tax
   }
 
   const balanceDue = total - paid;
@@ -446,9 +424,9 @@ export async function createDirectBooking(
             createdByUserId: createdBy,
             subtotalCents: p.lineSubtotal,
             subtotalCentsOverride: p.override,
-            taxCents: p.breakdown.taxCents,
-            platformFeeCents: p.breakdown.feeCents,
-            discountCents: p.breakdown.discountCents,
+            taxCents: p.c.onlineTaxCents,
+            platformFeeCents: p.c.feeCents,
+            discountCents: p.c.discountCents,
             totalCents: total,
             depositPaidCents: paid,
             balanceDueCents: balanceDue,
@@ -497,7 +475,7 @@ export async function createDirectBooking(
           paymentGateway: "stripe",
           stripePaymentIntentId: piId,
           amountCents: paid,
-          applicationFeeCents: p.breakdown.applicationFeeCents,
+          applicationFeeCents: p.c.applicationFeeCents,
           status: "succeeded",
           capturedAt: new Date(),
           paymentMethodType: "card",

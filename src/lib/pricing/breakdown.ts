@@ -1,54 +1,46 @@
 import type { ChargeMode, DepositMode } from "@/lib/pricing/quote";
 
-// Operator-booking pricing: a base subtotal (line total or manual override),
-// minus a discount, with taxes + processing fee recomputed off the adjusted
-// subtotal. Kept separate from the customer-flow quote() (which has no override
-// / discount) so each stays simple.
+// Operator-booking pricing. Key rules (operator-confirmed):
+//  - The processing (platform) fee is computed on the FULL subtotal and is
+//    ALWAYS collected up-front — but only when a card is charged through us
+//    (walk-in / Groupon carry no platform fee).
+//  - Tax is charged only on the amount actually paid ONLINE (deposit / partial /
+//    full). The remaining tour cost + its tax is collected at the venue POS.
+//  - Due now = online amount + tax-on-that-amount + full fee.
 
-export type BreakdownInput = {
+export type PaymentMethod = "card" | "groupon_ota" | "walk_in";
+export type AmountMode = "full" | "deposit" | "partial";
+
+export type ComputeInput = {
   baseSubtotalCents: number; // override ?? sum(line qty × price)
   discountCents: number;
   taxRateBps: number;
   taxMode: ChargeMode;
   platformFeeBps: number;
   platformFeeMode: ChargeMode;
-  // The platform processing fee is only collected when a card is charged
-  // through us. Walk-in / Groupon bookings carry no platform fee.
-  collectFee?: boolean;
+  depositMode: DepositMode;
+  depositAmountCents: number | null;
+  depositPercentBps: number | null;
+  totalQty: number;
+  paymentMethod: PaymentMethod;
+  amountMode: AmountMode; // card only
+  amountCents?: number; // partial charge (card) or Groupon prepaid
 };
 
-export type Breakdown = {
+export type Computed = {
   subtotalCents: number;
   discountCents: number;
-  adjustedSubtotalCents: number; // subtotal − discount (≥ 0)
-  taxCents: number;
-  feeCents: number;
-  applicationFeeCents: number; // full fee (passed to Stripe as application_fee)
-  totalCents: number;
+  adjustedSubtotalCents: number;
+  depositCents: number; // configured deposit on the adjusted subtotal
+  feeCents: number; // full fee (card only, passed mode)
+  applicationFeeCents: number; // full fee regardless of mode (for Stripe app_fee)
+  onlineBaseCents: number; // amount toward the tour paid online
+  onlineTaxCents: number; // tax on onlineBase (card only, passed mode)
+  dueNowCents: number; // onlineBase + onlineTax + fee
+  totalCents: number; // adjustedSubtotal + fee + onlineTax (what we track/charge)
+  balanceDueCents: number; // total − dueNow (remaining tour cost; venue tax extra)
 };
 
-export function priceBreakdown(i: BreakdownInput): Breakdown {
-  const subtotal = Math.max(0, Math.round(i.baseSubtotalCents));
-  const discount = Math.max(0, Math.min(Math.round(i.discountCents), subtotal));
-  const adjusted = subtotal - discount;
-  const collectFee = i.collectFee !== false;
-  const taxFull = Math.round(adjusted * (i.taxRateBps / 10000));
-  const feeFull = collectFee ? Math.round(adjusted * (i.platformFeeBps / 10000)) : 0;
-  const taxCents = i.taxMode === "passed_to_customer" ? taxFull : 0;
-  const feeCents = collectFee && i.platformFeeMode === "passed_to_customer" ? feeFull : 0;
-  return {
-    subtotalCents: subtotal,
-    discountCents: discount,
-    adjustedSubtotalCents: adjusted,
-    taxCents,
-    feeCents,
-    applicationFeeCents: feeFull,
-    totalCents: adjusted + taxCents + feeCents,
-  };
-}
-
-// Deposit amount per the location's deposit settings, computed on the adjusted
-// subtotal. Mirrors quote()'s deposit logic.
 export function depositForMode(input: {
   adjustedSubtotalCents: number;
   depositMode: DepositMode;
@@ -76,4 +68,52 @@ export function depositForMode(input: {
       d = s;
   }
   return Math.max(0, Math.min(d, s));
+}
+
+export function computeBooking(i: ComputeInput): Computed {
+  const subtotal = Math.max(0, Math.round(i.baseSubtotalCents));
+  const discount = Math.max(0, Math.min(Math.round(i.discountCents), subtotal));
+  const adjusted = subtotal - discount;
+
+  const card = i.paymentMethod === "card";
+  const feeFull = card ? Math.round(adjusted * (i.platformFeeBps / 10000)) : 0;
+  const feeCents = card && i.platformFeeMode === "passed_to_customer" ? feeFull : 0;
+
+  const deposit = depositForMode({
+    adjustedSubtotalCents: adjusted,
+    depositMode: i.depositMode,
+    depositAmountCents: i.depositAmountCents,
+    depositPercentBps: i.depositPercentBps,
+    totalQty: i.totalQty,
+  });
+
+  let onlineBase: number;
+  if (i.paymentMethod === "walk_in") onlineBase = 0;
+  else if (i.paymentMethod === "groupon_ota")
+    onlineBase = Math.max(0, Math.min(Math.round(i.amountCents ?? 0), adjusted));
+  else if (i.amountMode === "full") onlineBase = adjusted;
+  else if (i.amountMode === "deposit") onlineBase = Math.min(deposit, adjusted);
+  else onlineBase = Math.max(0, Math.min(Math.round(i.amountCents ?? 0), adjusted)); // partial
+
+  const onlineTaxCents =
+    card && i.taxMode === "passed_to_customer"
+      ? Math.round(onlineBase * (i.taxRateBps / 10000))
+      : 0;
+
+  const dueNowCents = onlineBase + onlineTaxCents + feeCents;
+  const totalCents = adjusted + feeCents + onlineTaxCents;
+
+  return {
+    subtotalCents: subtotal,
+    discountCents: discount,
+    adjustedSubtotalCents: adjusted,
+    depositCents: deposit,
+    feeCents,
+    applicationFeeCents: feeFull,
+    onlineBaseCents: onlineBase,
+    onlineTaxCents,
+    dueNowCents,
+    totalCents,
+    balanceDueCents: totalCents - dueNowCents,
+  };
 }

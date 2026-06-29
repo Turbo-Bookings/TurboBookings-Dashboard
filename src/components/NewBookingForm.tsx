@@ -12,7 +12,7 @@ import {
   createOperatorIntent,
   getTourBookingData,
 } from "@/lib/actions/manualBooking";
-import { depositForMode, priceBreakdown } from "@/lib/pricing/breakdown";
+import { computeBooking } from "@/lib/pricing/breakdown";
 import type { ChargeMode, DepositMode } from "@/lib/pricing/quote";
 
 type ItemOpt = { id: string; name: string };
@@ -130,32 +130,31 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
     overrideStr.trim() !== "" && Number(overrideStr) >= 0 ? Math.round(Number(overrideStr) * 100) : null;
   const baseSubtotal = overrideCents ?? lineSubtotal;
   const discountCents = discount ? Math.min(discount.cents, baseSubtotal) : 0;
-  const bd = priceBreakdown({
+  const totalQty = activeLines.reduce((s, p) => s + qty[p.ct], 0);
+  const amountCents =
+    method === "groupon_ota"
+      ? Math.round(Number(grouponStr || "0") * 100)
+      : amountMode === "partial"
+        ? Math.round(Number(partialStr || "0") * 100)
+        : undefined;
+  const c = computeBooking({
     baseSubtotalCents: baseSubtotal,
     discountCents,
     taxRateBps: location.taxRateBps,
     taxMode: location.taxMode,
     platformFeeBps: location.platformFeeBps,
     platformFeeMode: location.platformFeeMode,
-    collectFee: method === "card",
-  });
-  const total = bd.totalCents;
-  const totalQty = activeLines.reduce((s, p) => s + qty[p.ct], 0);
-  const deposit = depositForMode({
-    adjustedSubtotalCents: bd.adjustedSubtotalCents,
     depositMode: location.depositMode,
     depositAmountCents: location.depositAmountCents,
     depositPercentBps: location.depositPercentBps,
     totalQty,
+    paymentMethod: method,
+    amountMode,
+    amountCents,
   });
-  let dueNow: number;
-  if (method === "walk_in") dueNow = 0;
-  else if (method === "groupon_ota") dueNow = Math.max(0, Math.min(Math.round(Number(grouponStr || "0") * 100), total));
-  else if (amountMode === "full") dueNow = total;
-  // Card deposit/partial always add the full processing fee on top.
-  else if (amountMode === "deposit") dueNow = Math.min(deposit + bd.feeCents, total);
-  else dueNow = Math.min(Math.max(Math.round(Number(partialStr || "0") * 100), 0) + bd.feeCents, total);
-  const payLater = total - dueNow;
+  const total = c.totalCents;
+  const dueNow = c.dueNowCents;
+  const payLater = c.balanceDueCents;
 
   const requiredAcks = fields.filter((f) => f.kind === "checkbox" && f.required);
   const ackOk = requiredAcks.every((f) => acks.has(f.id));
@@ -344,11 +343,11 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
               )}
               {discountErr && <p className="mt-1 text-xs text-red-600">{discountErr}</p>}
 
-              {bd.feeCents > 0 && (
-                <div className="mt-2 flex justify-between text-zinc-500"><span>Processing fee</span><span>{usd(bd.feeCents)}</span></div>
+              {c.feeCents > 0 && (
+                <div className="mt-2 flex justify-between text-zinc-500"><span>Processing fee</span><span>{usd(c.feeCents)}</span></div>
               )}
-              {bd.taxCents > 0 && (
-                <div className="flex justify-between text-zinc-500"><span>Taxes</span><span>{usd(bd.taxCents)}</span></div>
+              {c.onlineTaxCents > 0 && (
+                <div className="flex justify-between text-zinc-500"><span>Tax (on amount paid now)</span><span>{usd(c.onlineTaxCents)}</span></div>
               )}
               <div className="mt-1 flex justify-between border-t border-zinc-100 pt-1 font-semibold dark:border-zinc-800"><span>Total</span><span>{usd(total)}</span></div>
               {dueNow !== total && (
@@ -381,7 +380,7 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
             <div className="flex flex-wrap items-center gap-2 text-sm">
               {([
                 ["full", "Pay in full"],
-                ["deposit", `Pay deposit (${usd(Math.min(deposit, total))})`],
+                ["deposit", `Pay deposit (${usd(Math.min(c.depositCents, total))})`],
                 ["partial", "Partial"],
               ] as [AmountMode, string][]).map(([m, label]) => (
                 <button key={m} type="button" onClick={() => setAmountMode(m)} className={`rounded-md border px-3 py-1 text-sm font-medium ${amountMode === m ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300" : "border-zinc-300 dark:border-zinc-700"}`}>
