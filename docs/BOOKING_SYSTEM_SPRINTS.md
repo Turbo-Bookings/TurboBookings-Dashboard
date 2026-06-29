@@ -20,11 +20,46 @@
 >   pay-at-venue, oversell-safe); operator reschedule (+history); config editors (discount codes,
 >   cancellation policies, custom fields; equipment OOS via Resources); reports + CSV export; RBAC
 >   (4 roles, mutation-layer enforcement, Clerk publicMetadata.role). Commits 6aaf300→9c5dd9a.
-> - **▶ NEXT: front-end optimization + real photos (per-tour photo upload via MediaForm, conversion
->   pass — reviews/copy/A-B, seat-hold countdown); then the live Dallas build + replicable
->   operator-onboarding SOPs. Wire custom-field collection + discount-code apply into the customer
->   checkout. RBAC UI hiding (hide actions for lower roles) is a polish follow-up. Migrate
->   Miami/Houston once Dallas proves it.**
+ - **OPERATOR UX — TESTING FEEDBACK ROUNDS 1–3 COMPLETE 2026-06-29 (dashboard `develop`):**
+>   - *Round 1* (`f26a460`→`ded94b9`): schedule 18-month rolling horizon (migration 0015; chunked
+>     materialize) + blackout management page; Bookings grid day/week + booked-only toggles + slot
+>     quick-action popover (no manifest teleport); migration 0016 (nullable PI, payment_gateway enum,
+>     subtotal_cents_override) + rich New Booking form (staff note, subtotal override, discount code,
+>     required acknowledgments, breakdown, payment methods Charge-card/Groupon-OTA/Walk-in × full/
+>     deposit/partial). Reused by grid popover + manifest +Book.
+>   - *Round 2* (`d264fa3`,`4386c5b`): **Taxes & Fees settings page** (Settings → Payments & pricing:
+>     tax / processing fee / pass-vs-absorb / deposit; `updateTaxesFees`) reflecting on both booking
+>     surfaces; manifest hides empty slots; card section shows on selecting Charge-card. Mock manifest
+>     data seeded for dtown today (`scripts/seed-manifest-mock.ts`, `@manifestmock.test` emails).
+>   - *Round 3* (`e1378a2`,`4d22380`,`941108f`,`de99d98`,`7b1ef46`): **(S1) tax charged ONLY on the
+>     amount paid online** — `computeBooking()` replaces priceBreakdown/dueNowCents; fee still full-
+>     subtotal card-only ($130/7%/6%, $20 deposit → fee $7.80, tax $1.40, due $29.20, balance $110).
+>     **(S2) per-vehicle check-in** (migration 0017: `booking_lines.checked_in_units/no_show_units`) →
+>     All/Partially/No-show/Not-yet rollup (`bookingRollup`); `LineCheckIn` = a row per vehicle.
+>     **(S3) universal `BookingModal`** (click #/name on manifest → overlay: contact, per-vehicle
+>     check-in, pricing, add/remove vehicles [→ balance due, capacity-checked], edit total / add
+>     expense-discount, cancel/refund/holds, reschedule, send msg [queues `communication.requested`],
+>     activity); online-status dropdown removed from manifest. **(S4) global top-bar booking search**
+>     (`searchBookings`: #/name/email/phone → modal). **Reschedule = month calendar → time chips.**
+>   - **Customer-flow tax parity DONE** (`bookingsystem` `4aa77ed`): `quote()` taxes only the online
+>     deposit (per-line overrides pro-rated), matching `computeBooking`; widget label "Tax (on amount
+>     paid today)". The two flows now agree.
+>   - ⚠️ **Card fields on the dashboard preview need Stripe TEST keys in the Vercel PREVIEW env**
+>     (`STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) — operator to add; can't be set by Claude.
+>
+> - **▶ NEXT (start here):**
+>   1. **Slot "Actions & Settings" quick-action menu** — operator wants to DISCUSS/design before
+>      building: eliminate just that slot, adjust availability for that one slot, mass-email the slot's
+>      customers, etc. (mass-email *send* stays deferred until the Railway brain's messaging is wired).
+>      Interview → design → build. This is the agreed next conversation.
+>   2. **Clean up test data** — delete `@manifestmock.test` mock bookings + the earlier real test
+>      bookings created during operator testing (operator to confirm which real ones).
+>   3. **Then:** Reports parity + full Dashboard KPIs + mobile pass; front-end conversion work (real
+>      per-tour photos via MediaForm, reviews/copy/A-B, seat-hold countdown); wire custom-field
+>      collection + discount-code apply into the customer checkout; RBAC UI hiding (polish); live
+>      Dallas build + operator-onboarding SOPs; migrate Miami/Houston once Dallas proves it.
+>   - **Deferred (do not build yet):** mass-message a slot's customers (needs brain send); customer
+>     profile / Returning badge / cross-booking history / "new booking for contact".
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
 > the customer flow only *reads* tours, pricing, and bookable time slots. Its gating input is
