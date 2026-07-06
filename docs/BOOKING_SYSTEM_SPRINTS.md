@@ -71,15 +71,23 @@
 >   locations now at 0 bookings — clean slate.** (Stripe test-mode charge object remains in the Stripe
 >   test dashboard; harmless.)
 >
+> - **Reports parity + Dashboard KPIs + mobile pass ✅ DONE 2026-07-06 (`cada89f`,`14ab374`)** —
+>   Reports/Dashboard "Gross" tile summed `totalCents` (adjusted + fee + online tax), which counted
+>   the processing fee + pass-through tax as revenue and hid the venue balance. Now decomposed to
+>   `computeBooking` semantics via the identity **tour sales = totalCents − platformFeeCents − taxCents**:
+>   Reports tiles = Bookings/Pax/Tour sales/Collected online + Balance-at-venue/Fees/Tax/Refunded;
+>   by-tour adds Collected; CSV gains Sales/Discount/Fee/Tax/Refunded columns. Dashboard adds an
+>   operational row (Today, Next 7 days, Balance to collect, Tax+fees 30d). Mobile: wide tables
+>   (manifest, reports, landing) now horizontal-scroll; search dropdown viewport-capped. Verified
+>   end-to-end (12 assertions) with the canonical example. `bookingsReport`/`listBookingsForCsv`
+>   `BookingsReport`/`CsvRow` types changed (`grossCents`→`salesCents` + new money fields).
+>
 > - **▶ NEXT (start here):**
->   1. **Reports parity + full Dashboard KPIs + mobile pass** — reconcile the reports/CSV numbers with
->      `computeBooking` (tax-on-deposit) semantics; build out the Dashboard landing KPIs; responsive pass
->      on manifest/bookings/catalog.
->   2. **Front-end conversion work** (`bookingsystem`) — real per-tour photos via MediaForm, reviews/
+>   1. **Front-end conversion work** (`bookingsystem`) — real per-tour photos via MediaForm, reviews/
 >      copy/A-B, seat-hold countdown; wire custom-field collection + discount-code apply into checkout.
->   3. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
+>   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
->   4. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
+>   3. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Deferred (do not build yet):** the slot mass-message *send* itself (UI queues now, needs brain
 >     send to actually deliver); customer
 >     profile / Returning badge / cross-booking history / "new booking for contact".
