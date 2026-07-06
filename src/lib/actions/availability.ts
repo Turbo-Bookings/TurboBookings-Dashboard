@@ -1,11 +1,12 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
-import { availabilities, bookings, getDb } from "@/lib/db";
+import { availabilities, bookingReschedules, bookings, getDb } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getSlot } from "@/lib/data/availability";
+import { withTxn } from "@/lib/db/txn";
 
 const VALID_STATUS = ["on", "off", "auto"] as const;
 
@@ -100,7 +101,21 @@ export async function deleteSlot(
   if (booked[0])
     return { ok: false, error: "This slot has a booking and can't be deleted." };
 
-  await db.delete(availabilities).where(eq(availabilities.id, slotId));
+  // booking_reschedules.from/to_availability_id are ON DELETE RESTRICT, so a slot
+  // that was ever a reschedule source/target (e.g. the origin of a group move)
+  // can't be deleted until its history rows are cleared. The slot is going away,
+  // so those pointers are moot — drop them, then delete the slot atomically.
+  await withTxn(async (tx) => {
+    await tx
+      .delete(bookingReschedules)
+      .where(
+        or(
+          eq(bookingReschedules.fromAvailabilityId, slotId),
+          eq(bookingReschedules.toAvailabilityId, slotId),
+        ),
+      );
+    await tx.delete(availabilities).where(eq(availabilities.id, slotId));
+  });
 
   await recordAudit({
     slug,
