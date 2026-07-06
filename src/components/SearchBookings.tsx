@@ -50,7 +50,7 @@ export function SearchBookings({ slug }: { slug: string }) {
         />
       </div>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-80 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="absolute right-0 z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
           {hits.length === 0 ? (
             <p className="px-3 py-2 text-sm text-zinc-500">No matches</p>
           ) : (

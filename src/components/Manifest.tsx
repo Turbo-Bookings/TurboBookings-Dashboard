@@ -258,7 +258,8 @@ export function Manifest({
                 {bookings.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-zinc-400">No bookings.</p>
                 ) : (
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                  <table className="w-full min-w-[36rem] text-sm">
                     <thead>
                       <tr className="border-t border-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
                         <th className="w-8" />
@@ -350,6 +351,7 @@ export function Manifest({
                       })}
                     </tbody>
                   </table>
+                  </div>
                 )}
               </div>
             );
