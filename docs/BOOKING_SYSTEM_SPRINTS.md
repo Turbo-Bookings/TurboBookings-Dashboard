@@ -58,15 +58,28 @@
 >   all-or-nothing txn, combined capacity check, logs `booking_reschedules` + emits `booking.rescheduled`
 >   + a queued "time changed" notice each), then the now-empty slot's Delete unlocks (no auto-delete).
 >   No schema change. Grid popover only. `GridSlot` gained `bookingCount`/`capacityMode`/`capacityOverride`.
->   Verified: tsc/lint/build clean. **Pending: UI click-test on preview (Clerk sign-in).**
+>   **Verified end-to-end 2026-07-06** against the live DB (29 assertions: capacity/status persistence,
+>   `gridForDate` fields, `messageSlotCustomers` all/not-checked-in/both-channel event fan-out,
+>   `moveSlotBookings` all-or-nothing capacity guard + reschedule log + queued notices, `deleteSlot`
+>   booked-guard + empty delete). Verification surfaced + fixed a real bug (`39f3478`): `deleteSlot`
+>   now clears `booking_reschedules` rows referencing the slot (ON DELETE RESTRICT) so an **emptied
+>   ex-move-source slot can actually be deleted** — the move→delete flow would otherwise FK-error.
+>   Still worth a manual UI click-test on preview, but the server-action logic is proven.
+>
+> - **Test data cleaned 2026-07-06** — deleted the 12 `@manifestmock.test` mocks (#0002–#0013) AND
+>   the real Stripe-test booking #0001 (`soselman@gmail.com`, operator-confirmed). **dtown/all
+>   locations now at 0 bookings — clean slate.** (Stripe test-mode charge object remains in the Stripe
+>   test dashboard; harmless.)
 >
 > - **▶ NEXT (start here):**
->   1. **Clean up test data** — delete `@manifestmock.test` mock bookings + the earlier real test
->      bookings created during operator testing (operator to confirm which real ones).
->   2. **Then:** Reports parity + full Dashboard KPIs + mobile pass; front-end conversion work (real
->      per-tour photos via MediaForm, reviews/copy/A-B, seat-hold countdown); wire custom-field
->      collection + discount-code apply into the customer checkout; RBAC UI hiding (polish); live
->      Dallas build + operator-onboarding SOPs; migrate Miami/Houston once Dallas proves it.
+>   1. **Reports parity + full Dashboard KPIs + mobile pass** — reconcile the reports/CSV numbers with
+>      `computeBooking` (tax-on-deposit) semantics; build out the Dashboard landing KPIs; responsive pass
+>      on manifest/bookings/catalog.
+>   2. **Front-end conversion work** (`bookingsystem`) — real per-tour photos via MediaForm, reviews/
+>      copy/A-B, seat-hold countdown; wire custom-field collection + discount-code apply into checkout.
+>   3. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
+>      enforces; this is cosmetic so lower roles don't see dead buttons).
+>   4. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Deferred (do not build yet):** the slot mass-message *send* itself (UI queues now, needs brain
 >     send to actually deliver); customer
 >     profile / Returning badge / cross-booking history / "new booking for contact".
