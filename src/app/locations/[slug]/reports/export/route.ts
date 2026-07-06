@@ -36,7 +36,7 @@ export async function GET(
     minute: "2-digit",
   });
 
-  const header = ["Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Pax", "Total", "Paid", "Balance"];
+  const header = ["Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Pax", "Sales", "Discount", "Fee", "Tax (online)", "Total", "Paid (online)", "Balance (venue)", "Refunded"];
   const lines = [header.map(cell).join(",")];
   for (const r of rows) {
     lines.push(
@@ -49,9 +49,14 @@ export async function GET(
         r.customerName,
         r.email,
         r.pax,
+        (r.salesCents / 100).toFixed(2),
+        (r.discountCents / 100).toFixed(2),
+        (r.feeCents / 100).toFixed(2),
+        (r.taxCents / 100).toFixed(2),
         (r.totalCents / 100).toFixed(2),
         (r.paidCents / 100).toFixed(2),
         (r.balanceCents / 100).toFixed(2),
+        (r.refundedCents / 100).toFixed(2),
       ]
         .map(cell)
         .join(","),

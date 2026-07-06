@@ -504,11 +504,18 @@ export async function getBookingDetail(id: string, locationId: string) {
 export type BookingsReport = {
   bookings: number;
   pax: number;
-  grossCents: number;
-  paidCents: number;
+  // Money, decomposed to match computeBooking() semantics. adjusted subtotal
+  // (true tour sales, net of discount) = totalCents − platformFeeCents − taxCents;
+  // that identity holds for every booking regardless of override/discount.
+  salesCents: number; // Σ tour sales (adjusted subtotal, net of discount)
+  collectedCents: number; // Σ collected online so far (deposit_paid)
+  balanceDueCents: number; // Σ remaining to collect at the venue
+  feesCents: number; // Σ processing fee (card, passed)
+  taxCents: number; // Σ tax collected online (on the amount paid online)
+  refundedCents: number; // Σ refunded
   onlineCount: number;
   directCount: number;
-  byTour: { name: string; bookings: number; pax: number; grossCents: number }[];
+  byTour: { name: string; bookings: number; pax: number; salesCents: number; collectedCents: number }[];
 };
 
 async function paxByBooking(ids: string[]): Promise<Map<string, number>> {
@@ -536,6 +543,10 @@ export async function bookingsReport(
       source: bookings.source,
       totalCents: bookings.totalCents,
       paidCents: bookings.depositPaidCents,
+      balanceDueCents: bookings.balanceDueCents,
+      feeCents: bookings.platformFeeCents,
+      taxCents: bookings.taxCents,
+      refundedCents: bookings.refundedCents,
     })
     .from(bookings)
     .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
@@ -549,29 +560,39 @@ export async function bookingsReport(
       ),
     );
   const pax = await paxByBooking(rows.map((r) => r.id));
-  const byTour = new Map<string, { name: string; bookings: number; pax: number; grossCents: number }>();
-  let totalPax = 0, gross = 0, paid = 0, online = 0, direct = 0;
+  const byTour = new Map<string, { name: string; bookings: number; pax: number; salesCents: number; collectedCents: number }>();
+  let totalPax = 0, sales = 0, collected = 0, balance = 0, fees = 0, tax = 0, refunded = 0, online = 0, direct = 0;
   for (const r of rows) {
     const p = pax.get(r.id) ?? 0;
+    const adjusted = r.totalCents - r.feeCents - r.taxCents; // true tour sales
     totalPax += p;
-    gross += r.totalCents;
-    paid += r.paidCents;
+    sales += adjusted;
+    collected += r.paidCents;
+    balance += r.balanceDueCents;
+    fees += r.feeCents;
+    tax += r.taxCents;
+    refunded += r.refundedCents;
     if (r.source === "online") online++;
     else if (r.source === "direct") direct++;
-    const t = byTour.get(r.itemName) ?? { name: r.itemName, bookings: 0, pax: 0, grossCents: 0 };
+    const t = byTour.get(r.itemName) ?? { name: r.itemName, bookings: 0, pax: 0, salesCents: 0, collectedCents: 0 };
     t.bookings++;
     t.pax += p;
-    t.grossCents += r.totalCents;
+    t.salesCents += adjusted;
+    t.collectedCents += r.paidCents;
     byTour.set(r.itemName, t);
   }
   return {
     bookings: rows.length,
     pax: totalPax,
-    grossCents: gross,
-    paidCents: paid,
+    salesCents: sales,
+    collectedCents: collected,
+    balanceDueCents: balance,
+    feesCents: fees,
+    taxCents: tax,
+    refundedCents: refunded,
     onlineCount: online,
     directCount: direct,
-    byTour: [...byTour.values()].sort((a, b) => b.grossCents - a.grossCents),
+    byTour: [...byTour.values()].sort((a, b) => b.salesCents - a.salesCents),
   };
 }
 
@@ -584,9 +605,14 @@ export type CsvRow = {
   customerName: string;
   email: string;
   pax: number;
+  salesCents: number; // adjusted subtotal (tour sales)
+  discountCents: number;
+  feeCents: number;
+  taxCents: number;
   totalCents: number;
   paidCents: number;
   balanceCents: number;
+  refundedCents: number;
 };
 
 export async function listBookingsForCsv(
@@ -609,6 +635,10 @@ export async function listBookingsForCsv(
       totalCents: bookings.totalCents,
       paidCents: bookings.depositPaidCents,
       balanceCents: bookings.balanceDueCents,
+      feeCents: bookings.platformFeeCents,
+      taxCents: bookings.taxCents,
+      discountCents: bookings.discountCents,
+      refundedCents: bookings.refundedCents,
     })
     .from(bookings)
     .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
@@ -632,8 +662,13 @@ export async function listBookingsForCsv(
     customerName: [r.first, r.last].filter(Boolean).join(" ") || "",
     email: r.email,
     pax: pax.get(r.id) ?? 0,
+    salesCents: r.totalCents - r.feeCents - r.taxCents,
+    discountCents: r.discountCents,
+    feeCents: r.feeCents,
+    taxCents: r.taxCents,
     totalCents: r.totalCents,
     paidCents: r.paidCents,
     balanceCents: r.balanceCents,
+    refundedCents: r.refundedCents,
   }));
 }

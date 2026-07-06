@@ -3,8 +3,11 @@ import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import {
   ArrowRight,
+  CalendarClock,
+  CalendarDays,
   ClipboardList,
   DollarSign,
+  Landmark,
   Plus,
   Ticket,
   Users,
@@ -33,7 +36,14 @@ export default async function DashboardPage({
   const now = DateTime.now().setZone(tz);
   const from = now.minus({ days: 30 }).startOf("day").toUTC().toJSDate();
   const to = now.plus({ days: 1 }).startOf("day").toUTC().toJSDate();
-  const r = await bookingsReport(loc.id, from, to);
+  const todayStart = now.startOf("day").toUTC().toJSDate();
+  const todayEnd = now.plus({ days: 1 }).startOf("day").toUTC().toJSDate();
+  const next7End = now.plus({ days: 7 }).startOf("day").toUTC().toJSDate();
+  const [r, today30, upcoming7] = await Promise.all([
+    bookingsReport(loc.id, from, to),
+    bookingsReport(loc.id, todayStart, todayEnd),
+    bookingsReport(loc.id, todayEnd, next7End),
+  ]);
   const b = `/locations/${slug}`;
 
   const quickLinks = [
@@ -46,18 +56,22 @@ export default async function DashboardPage({
     <section>
       <PageHeader
         title="Dashboard"
-        description={`${loc.brandDisplayName ?? loc.slug} · last 30 days`}
+        description={`${loc.brandDisplayName ?? loc.slug} · revenue over the last 30 days`}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Bookings" value={String(r.bookings)} tone="blue" icon={Ticket} />
+        <StatTile label="Bookings" value={String(r.bookings)} sub={`${r.onlineCount} online · ${r.directCount} direct`} tone="blue" icon={Ticket} />
         <StatTile label="Pax" value={String(r.pax)} tone="violet" icon={Users} />
-        <StatTile label="Gross" value={usd(r.grossCents)} tone="emerald" icon={DollarSign} />
-        <StatTile label="Collected online" value={usd(r.paidCents)} tone="amber" icon={Wallet} />
+        <StatTile label="Tour sales" value={usd(r.salesCents)} sub="net of discounts" tone="emerald" icon={DollarSign} />
+        <StatTile label="Collected online" value={usd(r.collectedCents)} tone="amber" icon={Wallet} />
       </div>
-      <p className="mt-2 text-xs text-zinc-500">
-        {r.onlineCount} online · {r.directCount} direct (active bookings)
-      </p>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Today" value={String(today30.bookings)} sub={`${today30.pax} pax`} tone="blue" icon={CalendarDays} />
+        <StatTile label="Next 7 days" value={String(upcoming7.bookings)} sub={`${upcoming7.pax} pax`} tone="violet" icon={CalendarClock} />
+        <StatTile label="Balance to collect" value={usd(r.balanceDueCents)} sub="at venue (30d)" tone="orange" icon={Landmark} />
+        <StatTile label="Tax + fees (30d)" value={usd(r.taxCents + r.feesCents)} tone="zinc" icon={Wallet} />
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4 lg:col-span-2 dark:border-zinc-800 dark:bg-zinc-900">
@@ -71,7 +85,7 @@ export default async function DashboardPage({
                   <span className="truncate">{t.name}</span>
                   <span className="text-zinc-500">
                     {t.pax} pax ·{" "}
-                    <span className="font-medium text-zinc-700 dark:text-zinc-200">{usd(t.grossCents)}</span>
+                    <span className="font-medium text-zinc-700 dark:text-zinc-200">{usd(t.salesCents)}</span>
                   </span>
                 </li>
               ))}
@@ -100,7 +114,8 @@ export default async function DashboardPage({
       </div>
 
       <p className="mt-6 text-xs text-zinc-400">
-        More operator KPIs (next payout, year-over-year, conversion, marketing ROAS) land in a follow-up pass.
+        Revenue is by tour date, active bookings. Tour sales exclude processing fees and pass-through tax.
+        Deeper KPIs (payouts, YoY, conversion, marketing ROAS) land once the brains pipe is live.
       </p>
     </section>
   );
