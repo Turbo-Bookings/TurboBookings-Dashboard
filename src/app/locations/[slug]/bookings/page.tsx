@@ -107,7 +107,7 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
       {view === "week" ? (
         <WeekGrid slug={slug} loc={{ id: loc.id, tz }} day={day} fmtTime={fmtTime} filt={filt} />
       ) : (
-        <DayGrid slug={slug} dateKey={dateKey} slots={filt(await gridForDate(loc.id, dateKey, tz))} fmtTime={fmtTime} />
+        <DayGrid slug={slug} dateKey={dateKey} slots={filt(await gridForDate(loc.id, dateKey, tz))} fmtTime={fmtTime} tz={tz} />
       )}
     </section>
   );
@@ -118,11 +118,13 @@ function DayGrid({
   dateKey,
   slots,
   fmtTime,
+  tz,
 }: {
   slug: string;
   dateKey: string;
   slots: GridSlot[];
   fmtTime: Intl.DateTimeFormat;
+  tz: string;
 }) {
   const groups: { time: string; slots: GridSlot[] }[] = [];
   for (const s of slots) {
@@ -145,7 +147,7 @@ function DayGrid({
           <div className="w-20 shrink-0 pt-2 text-right text-sm font-medium text-zinc-500">{g.time}</div>
           <div className="flex-1 space-y-2">
             {g.slots.map((s) => (
-              <SlotPopover key={s.availabilityId} slug={slug} dateKey={dateKey} slot={s} timeLabel={fmtTime.format(s.startsAt)} />
+              <SlotPopover key={s.availabilityId} slug={slug} dateKey={dateKey} slot={s} timeLabel={fmtTime.format(s.startsAt)} tz={tz} />
             ))}
           </div>
         </div>
@@ -190,7 +192,7 @@ async function WeekGrid({
                 </p>
               ) : (
                 slots.map((s) => (
-                  <SlotPopover key={s.availabilityId} slug={slug} dateKey={dk} slot={s} timeLabel={fmtTime.format(s.startsAt)} />
+                  <SlotPopover key={s.availabilityId} slug={slug} dateKey={dk} slot={s} timeLabel={fmtTime.format(s.startsAt)} tz={loc.tz} />
                 ))
               )}
             </div>

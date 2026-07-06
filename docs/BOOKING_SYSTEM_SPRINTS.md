@@ -47,18 +47,28 @@
 >   - ⚠️ **Card fields on the dashboard preview need Stripe TEST keys in the Vercel PREVIEW env**
 >     (`STRIPE_SECRET_KEY` + `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`) — operator to add; can't be set by Claude.
 >
+> - **Slot "Actions & Settings" quick-action menu ✅ BUILT 2026-07-05 (dashboard `develop`)** —
+>   replaced the teleport link in the Bookings-grid slot popover (`SlotPopover.tsx`) with an in-place
+>   three-section menu: **(1) Availability** inline — online status auto/on/off (`setSlotStatus`) +
+>   capacity override for fixed tours (`setSlotCapacity`), resource-based shows "auto · resource-limited";
+>   **(2) Message customers** — compose once, channel email/SMS/both, audience all vs not-checked-in,
+>   queues one `communication.requested` per booking (`messageSlotCustomers`, send still deferred to the
+>   brain); **(3) Eliminate slot** — empty slots delete immediately; **booked slots are guarded** — you
+>   must first group-move the bookings to another same-tour slot with room (`moveSlotBookings`: one
+>   all-or-nothing txn, combined capacity check, logs `booking_reschedules` + emits `booking.rescheduled`
+>   + a queued "time changed" notice each), then the now-empty slot's Delete unlocks (no auto-delete).
+>   No schema change. Grid popover only. `GridSlot` gained `bookingCount`/`capacityMode`/`capacityOverride`.
+>   Verified: tsc/lint/build clean. **Pending: UI click-test on preview (Clerk sign-in).**
+>
 > - **▶ NEXT (start here):**
->   1. **Slot "Actions & Settings" quick-action menu** — operator wants to DISCUSS/design before
->      building: eliminate just that slot, adjust availability for that one slot, mass-email the slot's
->      customers, etc. (mass-email *send* stays deferred until the Railway brain's messaging is wired).
->      Interview → design → build. This is the agreed next conversation.
->   2. **Clean up test data** — delete `@manifestmock.test` mock bookings + the earlier real test
+>   1. **Clean up test data** — delete `@manifestmock.test` mock bookings + the earlier real test
 >      bookings created during operator testing (operator to confirm which real ones).
->   3. **Then:** Reports parity + full Dashboard KPIs + mobile pass; front-end conversion work (real
+>   2. **Then:** Reports parity + full Dashboard KPIs + mobile pass; front-end conversion work (real
 >      per-tour photos via MediaForm, reviews/copy/A-B, seat-hold countdown); wire custom-field
 >      collection + discount-code apply into the customer checkout; RBAC UI hiding (polish); live
 >      Dallas build + operator-onboarding SOPs; migrate Miami/Houston once Dallas proves it.
->   - **Deferred (do not build yet):** mass-message a slot's customers (needs brain send); customer
+>   - **Deferred (do not build yet):** the slot mass-message *send* itself (UI queues now, needs brain
+>     send to actually deliver); customer
 >     profile / Returning badge / cross-booking history / "new booking for contact".
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**

@@ -203,6 +203,9 @@ export type GridSlot = {
   booked: number;
   available: number | null;
   full: boolean;
+  bookingCount: number;
+  capacityMode: "resource_based" | "fixed";
+  capacityOverride: number | null;
   riderCounts: { ctName: string; booked: number }[];
 };
 
@@ -241,6 +244,7 @@ export async function gridForDate(
   const slotIds = slots.map((s) => s.a.id);
   const bookedRows = await db
     .select({
+      bookingId: bookings.id,
       availabilityId: bookings.availabilityId,
       qty: bookingLines.quantity,
       ctName: customerTypes.singular,
@@ -251,8 +255,15 @@ export async function gridForDate(
     .where(and(inArray(bookings.availabilityId, slotIds), eq(bookings.status, "active")));
   const bookedBySlot = new Map<string, number>();
   const typeBySlot = new Map<string, Map<string, number>>();
+  const bookingIdsBySlot = new Map<string, Set<string>>();
   for (const r of bookedRows) {
     bookedBySlot.set(r.availabilityId, (bookedBySlot.get(r.availabilityId) ?? 0) + r.qty);
+    let ids = bookingIdsBySlot.get(r.availabilityId);
+    if (!ids) {
+      ids = new Set();
+      bookingIdsBySlot.set(r.availabilityId, ids);
+    }
+    ids.add(r.bookingId);
     let m = typeBySlot.get(r.availabilityId);
     if (!m) {
       m = new Map();
@@ -316,6 +327,9 @@ export async function gridForDate(
       booked,
       available,
       full: available != null && available <= 0,
+      bookingCount: bookingIdsBySlot.get(s.a.id)?.size ?? 0,
+      capacityMode: s.capacityMode,
+      capacityOverride: s.a.capacityOverride,
       riderCounts: [...(typeBySlot.get(s.a.id)?.entries() ?? [])].map(([ctName, b]) => ({
         ctName,
         booked: b,

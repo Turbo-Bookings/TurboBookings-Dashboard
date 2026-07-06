@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -719,6 +719,214 @@ export async function requestCommunication(
   }
   await recordAudit({ slug, action: "catalog.booking.message", summary: `Queued ${channel} to customer`, payload: { bookingId, channel } });
   return { ok: true };
+}
+
+// ---------- Slot-level quick actions (Bookings-grid popover) ----------
+
+// Queue a message to every active booking in a slot. audience "not_checked_in"
+// limits to bookings that have no vehicles checked in yet. Sent by the Railway
+// brain once wired — here we only enqueue one communication.requested per
+// booking (twice for channel "both").
+export async function messageSlotCustomers(
+  slug: string,
+  availabilityId: string,
+  channel: "email" | "sms" | "both",
+  audience: "all" | "not_checked_in",
+  body: string,
+): Promise<Result & { count?: number }> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
+  if (!body.trim()) return { ok: false, error: "Enter a message" };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const db = getDb();
+
+  const rows = await db
+    .select({
+      id: bookings.id,
+      checkedIn: sql<number>`coalesce(sum(${bookingLines.checkedInUnits}), 0)`,
+    })
+    .from(bookings)
+    .leftJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+    .where(
+      and(
+        eq(bookings.availabilityId, availabilityId),
+        eq(bookings.locationId, location.id),
+        eq(bookings.status, "active"),
+      ),
+    )
+    .groupBy(bookings.id);
+
+  const targets = rows
+    .filter((r) => (audience === "not_checked_in" ? Number(r.checkedIn) === 0 : true))
+    .map((r) => r.id);
+  if (targets.length === 0)
+    return { ok: false, error: "No customers match that audience" };
+
+  const channels: ("email" | "sms")[] = channel === "both" ? ["email", "sms"] : [channel];
+  for (const bookingId of targets) {
+    for (const ch of channels) {
+      try {
+        await emitEvent({
+          event_type: "communication.requested",
+          location_id: location.id,
+          source_surface: "dashboard",
+          data: { booking_id: bookingId, channel: ch, body: body.trim() },
+        });
+      } catch (e) {
+        console.error("slot communication emit failed", e);
+      }
+    }
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.slot.message",
+    summary: `Queued ${channel} to ${targets.length} customer${targets.length === 1 ? "" : "s"} in a slot`,
+    payload: { availabilityId, channel, audience, count: targets.length },
+  });
+  return { ok: true, count: targets.length };
+}
+
+// Move every active booking out of one slot into another slot of the SAME tour,
+// all-or-nothing (one transaction, combined capacity check). Logs a reschedule
+// per booking and queues a "time changed" notice each. Leaves the (now empty)
+// source slot in place for the operator to delete.
+export async function moveSlotBookings(
+  slug: string,
+  fromAvailabilityId: string,
+  toAvailabilityId: string,
+): Promise<Result & { count?: number }> {
+  const deny = await denyIfCannot("manage_bookings");
+  if (deny) return { ok: false, error: deny };
+  if (fromAvailabilityId === toAvailabilityId)
+    return { ok: false, error: "Pick a different time" };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+
+  let performedBy: string | null = null;
+  try {
+    const { userId } = await auth();
+    performedBy = userId ?? null;
+  } catch {}
+
+  const moved: string[] = [];
+  try {
+    await withTxn(async (tx) => {
+      const target = (
+        await tx.select().from(availabilities).where(eq(availabilities.id, toAvailabilityId)).for("update")
+      )[0];
+      if (!target) throw new Error("Target time not found");
+
+      const group = await tx
+        .select({ id: bookings.id, availabilityId: bookings.availabilityId })
+        .from(bookings)
+        .where(
+          and(
+            eq(bookings.availabilityId, fromAvailabilityId),
+            eq(bookings.locationId, location.id),
+            eq(bookings.status, "active"),
+          ),
+        );
+      if (group.length === 0) throw new Error("No bookings to move");
+
+      const item = (
+        await tx.select().from(items).where(eq(items.id, target.itemId)).limit(1)
+      )[0];
+      if (!item) throw new Error("Tour not found");
+
+      // Party size of the whole moving group.
+      const groupIds = group.map((g) => g.id);
+      const groupLines = await tx
+        .select({ q: bookingLines.quantity })
+        .from(bookingLines)
+        .where(inArray(bookingLines.bookingId, groupIds));
+      const groupSize = groupLines.reduce((s, r) => s + r.q, 0);
+
+      // Capacity already consumed at the target (excludes the moving group,
+      // which is still attached to the source slot).
+      const bookedRows = await tx
+        .select({ qty: bookingLines.quantity })
+        .from(bookings)
+        .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+        .where(and(eq(bookings.availabilityId, toAvailabilityId), eq(bookings.status, "active")));
+      const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
+
+      let remaining: number;
+      if (item.capacityMode === "fixed") {
+        let base = target.capacityOverride;
+        if (base == null && target.scheduleId) {
+          const sc = (
+            await tx.select({ c: availabilitySchedules.capacityPerSlot }).from(availabilitySchedules).where(eq(availabilitySchedules.id, target.scheduleId)).limit(1)
+          )[0];
+          base = sc?.c ?? null;
+        }
+        remaining = fixedRemaining(base, booked);
+      } else {
+        const rr = await tx
+          .select({ rr: resourceRequirements, r: resources })
+          .from(resourceRequirements)
+          .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
+          .where(eq(resourceRequirements.itemId, item.id));
+        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
+        for (const { rr: req, r } of rr) {
+          const cur = byRes.get(r.id);
+          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
+          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
+        }
+        remaining = resourceRemaining(
+          [...byRes.values()].map<ResourcePool>((p) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: booked })),
+        );
+      }
+      if (groupSize > remaining) throw new Error("Not enough capacity at the target time");
+
+      for (const g of group) {
+        await tx
+          .update(bookings)
+          .set({ availabilityId: toAvailabilityId, updatedAt: new Date() })
+          .where(eq(bookings.id, g.id));
+        await tx.insert(bookingReschedules).values({
+          bookingId: g.id,
+          fromAvailabilityId: g.availabilityId,
+          toAvailabilityId,
+          feeChargedCents: 0,
+          performedByUserId: performedBy,
+          reason: "Slot eliminated — group move",
+        });
+        moved.push(g.id);
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Move failed" };
+  }
+
+  for (const bookingId of moved) {
+    await emitLifecycle(location, bookingId, "booking.rescheduled");
+    try {
+      await emitEvent({
+        event_type: "communication.requested",
+        location_id: location.id,
+        source_surface: "dashboard",
+        data: {
+          booking_id: bookingId,
+          channel: "email",
+          body: "Your booking time has changed. Please check your confirmation for the new time.",
+        },
+      });
+    } catch (e) {
+      console.error("move notice emit failed", e);
+    }
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.slot.move",
+    summary: `Moved ${moved.length} booking${moved.length === 1 ? "" : "s"} to another slot`,
+    payload: { fromAvailabilityId, toAvailabilityId, count: moved.length },
+  });
+  revalidate(slug);
+  revalidatePath(`/locations/${slug}/catalog/schedule/calendar`);
+  return { ok: true, count: moved.length };
 }
 
 // Bundle everything the booking modal needs (called client-side on open).
