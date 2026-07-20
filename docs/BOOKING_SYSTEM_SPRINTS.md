@@ -82,14 +82,35 @@
 >   end-to-end (12 assertions) with the canonical example. `bookingsReport`/`listBookingsForCsv`
 >   `BookingsReport`/`CsvRow` types changed (`grossCents`→`salesCents` + new money fields).
 >
+> - **Checkout: discount codes + custom-field collection ✅ DONE 2026-07-20 (`bookingsystem` `b498016`)** —
+>   operators could configure discount codes + custom fields in the dashboard but the customer checkout
+>   never surfaced them. Now wired: **(discounts, full)** ported `validateDiscountForBooking` (mirrors
+>   dashboard — active/date/maxUses/item+CT restrictions, percent-bps vs fixed-cents, clamped); `quote()`
+>   gained `discountCents` → discount reduces the tour subtotal and everything downstream (deposit, fee,
+>   tax base, venue balance) computes off the adjusted subtotal, matching `computeBooking`; new
+>   `applyDiscount()` action returns the recomputed quote, Stripe Elements amount updates live via
+>   `elements.update`; `commit` persists `discount_redemptions` + bumps `usedCount` + sets
+>   `bookings.discountCents`. **(custom fields, collection)** `getCheckoutFieldsForItem` returns
+>   whole-booking text/checkbox/dropdown fields (excludes archived + priced quantity add-ons), checkout
+>   renders + required-validates them, `commit` persists `booking_custom_field_values`. Server
+>   re-validates authoritatively. Verified vs live DB (28 assertions: quote discount parity + no-discount
+>   regression guard, all 8 discount branches, field fetch/filtering). tsc/lint/build clean.
+>   - ⚠️ **Priced quantity add-ons deferred** (operator decision 2026-07-20): the "photographer $/each"
+>     add-on pricing needs its own design pass (how it interacts with the deposit split / tax). Fields of
+>     kind `quantity` are hidden at checkout until then. **NEXT sub-item when resumed.**
+>   - ⚠️ **Full Stripe-charge path (discount+fields → PI metadata → webhook commit → persisted rows)
+>     still needs Stripe TEST keys on the `bookingsystem` preview to take a live test booking.** The unit
+>     logic is proven; the end-to-end charge is not yet exercised post-change.
+>
 > - **▶ NEXT (start here):**
->   1. **Front-end conversion work** (`bookingsystem`) — real per-tour photos via MediaForm, reviews/
->      copy/A-B, seat-hold countdown; wire custom-field collection + discount-code apply into checkout.
+>   1. **Remaining front-end conversion work** (`bookingsystem`) — priced quantity add-ons (needs the
+>      add-on pricing design above); real per-tour photos via MediaForm; reviews/copy/A-B; seat-hold
+>      countdown (`booking_holds` + TTL).
 >   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
 >   3. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Deferred (do not build yet):** the slot mass-message *send* itself (UI queues now, needs brain
->     send to actually deliver); customer
+>     send to actually deliver); priced custom-field add-ons (above); customer
 >     profile / Returning badge / cross-booking history / "new booking for contact".
 >
 > **Why the dashboard catalog/config is built BEFORE the customer flow (locked — do not re-litigate):**
