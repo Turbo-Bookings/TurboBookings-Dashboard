@@ -102,10 +102,30 @@
 >     still needs Stripe TEST keys on the `bookingsystem` preview to take a live test booking.** The unit
 >     logic is proven; the end-to-end charge is not yet exercised post-change.
 >
+> - **Checkout: seat-hold countdown ✅ DONE 2026-07-21 (`bookingsystem` `c56ad50`; schema `ae85721`)** —
+>   note: the pre-existing `booking_holds` table is Stripe **security-deposit** holds, NOT seat inventory,
+>   and there was no seat-reservation table. Added a **new `seat_holds` table** (dashboard migration
+>   `0018`, applied to the shared Neon DB; mirrored into `bookingsystem` schema): a short-lived reservation
+>   of N units on an availability keyed by an opaque `hold_token`. `listOpenSlots` now treats active
+>   (non-expired) holds as consumed inventory (booked + held), so a shopper mid-checkout doesn't leave the
+>   last seat visible to everyone. `reserveSeats`/`releaseSeats` actions (capacity-checked, excludes the
+>   shopper's own token); checkout reserves on mount (token in `sessionStorage`), shows a live mm:ss
+>   countdown (amber < 60s) and on expiry blocks Pay + offers a reselect link; token flows into PI
+>   metadata and `commit` releases the hold in-txn. `commit` remains the authoritative oversell guard —
+>   holds are a UX/urgency + race reducer. TTL = 10 min (default). Verified vs live DB (13 assertions).
+>   tsc/lint/build clean. **TTL + banner copy to be refined against the FareHarbor customer widget.**
+>   - ⚠️ **Grounding TODO:** crawl the live FareHarbor **customer** widget (e.g.
+>     `fareharbor.com/embeds/book/htownatvrentals/items/724641/?flow=1618818`) to match the customer
+>     experience for photos/reviews/copy + refine the hold TTL/messaging. Blocked on the **Claude Chrome
+>     extension not being connected** (install/enable at claude.ai/chrome, restart Chrome). The FareHarbor
+>     **backend** crawl already exists: `~/takeovers-site/docs/booking-system-fareharbor-inventory.md`.
+>
 > - **▶ NEXT (start here):**
->   1. **Remaining front-end conversion work** (`bookingsystem`) — priced quantity add-ons (needs the
->      add-on pricing design above); real per-tour photos via MediaForm; reviews/copy/A-B; seat-hold
->      countdown (`booking_holds` + TTL).
+>   1. **Remaining front-end conversion work** (`bookingsystem`) — after the customer-widget crawl:
+>      real per-tour photos via MediaForm (needs real photo assets from operator; plumbing exists);
+>      reviews (needs source decision: Google import / manual / new table + content); tour copy
+>      (placeholder `TOUR_PLACEHOLDER` → real per-tour copy). **Priced quantity add-ons stay LAST**
+>      (needs the add-on pricing design: how it interacts with the deposit split / tax).
 >   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
 >   3. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
