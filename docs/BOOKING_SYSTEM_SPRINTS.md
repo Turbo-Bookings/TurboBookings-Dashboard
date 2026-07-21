@@ -114,18 +114,24 @@
 >   metadata and `commit` releases the hold in-txn. `commit` remains the authoritative oversell guard —
 >   holds are a UX/urgency + race reducer. TTL = 10 min (default). Verified vs live DB (13 assertions).
 >   tsc/lint/build clean. **TTL + banner copy to be refined against the FareHarbor customer widget.**
->   - ⚠️ **Grounding TODO:** crawl the live FareHarbor **customer** widget (e.g.
->     `fareharbor.com/embeds/book/htownatvrentals/items/724641/?flow=1618818`) to match the customer
->     experience for photos/reviews/copy + refine the hold TTL/messaging. Blocked on the **Claude Chrome
->     extension not being connected** (install/enable at claude.ai/chrome, restart Chrome). The FareHarbor
->     **backend** crawl already exists: `~/takeovers-site/docs/booking-system-fareharbor-inventory.md`.
+>   - ✅ **Grounding DONE 2026-07-21:** live crawl of the FareHarbor **customer** widget (htown 1-hr ATV)
+>     via chrome-devtools → `bookingsystem/docs/fareharbor-customer-flow-crawl.md` (+ screenshots in
+>     `turbobookings-dashboard/.fh-crawl/`, gitignored). Confirms our deposit-split + tax-on-online-amount
+>     already matches FareHarbor; surfaces parity gaps (see below). Backend crawl:
+>     `~/takeovers-site/docs/booking-system-fareharbor-inventory.md`.
 >
-> - **▶ NEXT (start here):**
->   1. **Remaining front-end conversion work** (`bookingsystem`) — after the customer-widget crawl:
->      real per-tour photos via MediaForm (needs real photo assets from operator; plumbing exists);
->      reviews (needs source decision: Google import / manual / new table + content); tour copy
->      (placeholder `TOUR_PLACEHOLDER` → real per-tour copy). **Priced quantity add-ons stay LAST**
->      (needs the add-on pricing design: how it interacts with the deposit split / tax).
+> - **▶ NEXT (start here) — informed by the customer-flow crawl:**
+>   1. **Remaining front-end conversion work** (`bookingsystem`). Crawl-resolved decisions:
+>      - **Reviews = Google** — show "4.9 ★★★★★ · N Google reviews" (pull Places rating/count per
+>        location). No manual content needed.
+>      - **Tour copy = operator-authored per-item content** (not hardcoded) — needs a per-tour rich
+>        content field in the dashboard (items); the operator's existing FareHarbor Details/Additional-info
+>        text lifts directly. Replaces `TOUR_PLACEHOLDER`.
+>      - **Photos** — real per-tour photos (operator supplies assets; plumbing exists).
+>      - Quick wins also surfaced: **"N left!" slot scarcity**, **phone required at checkout**, amount-due
+>        copy ("Total" + "Pay later"), marketing opt-in checkbox.
+>      - **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — note the
+>        crawl's "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
 >   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
 >   3. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
