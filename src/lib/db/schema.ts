@@ -1340,3 +1340,49 @@ export const outboundEventQueue = pgTable(
 
 export type OutboundEvent = typeof outboundEventQueue.$inferSelect;
 export type NewOutboundEvent = typeof outboundEventQueue.$inferInsert;
+
+// ---------- Seat holds (transient checkout reservations) ----------
+// A short-lived reservation of N units on an availability while a customer is in
+// checkout, so two shoppers can't both take the last seat during the payment
+// window. NOT a booking and NOT a security-deposit hold (see booking_holds).
+// The customer-funnel availability query subtracts active (non-expired) holds;
+// booking commit is still the authoritative oversell guard and releases the
+// customer's own hold. Expired rows are ignored (expires_at filter) and swept.
+export const seatHolds = pgTable(
+  "seat_holds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    availabilityId: uuid("availability_id")
+      .notNull()
+      .references(() => availabilities.id, { onDelete: "cascade" }),
+    // Opaque per-checkout token (held client-side) identifying the shopper's
+    // own hold so it can be refreshed/released and excluded from its own count.
+    holdToken: uuid("hold_token").notNull(),
+    quantity: integer("quantity").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // One live hold per (availability, token) — upsert target for refresh.
+    slotTokenIdx: uniqueIndex("seat_holds_slot_token_idx").on(
+      t.availabilityId,
+      t.holdToken,
+    ),
+    // Fast "active holds on these slots" lookup.
+    slotActiveIdx: index("seat_holds_slot_active_idx").on(
+      t.availabilityId,
+      t.expiresAt,
+    ),
+  }),
+);
+
+export type SeatHold = typeof seatHolds.$inferSelect;
+export type NewSeatHold = typeof seatHolds.$inferInsert;

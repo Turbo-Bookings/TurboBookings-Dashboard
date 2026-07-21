@@ -127,6 +127,13 @@
       "when": 1782755342502,
       "tag": "0017_old_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784653999427,
+      "tag": "0018_wide_shiver_man",
+      "breakpoints": true
     }
   ]
 }
