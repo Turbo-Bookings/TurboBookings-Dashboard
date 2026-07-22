@@ -120,21 +120,33 @@
 >     already matches FareHarbor; surfaces parity gaps (see below). Backend crawl:
 >     `~/takeovers-site/docs/booking-system-fareharbor-inventory.md`.
 >
-> - **▶ NEXT (start here) — informed by the customer-flow crawl:**
->   1. **Remaining front-end conversion work** (`bookingsystem`). Crawl-resolved decisions:
->      - **Reviews = Google** — show "4.9 ★★★★★ · N Google reviews" (pull Places rating/count per
->        location). No manual content needed.
->      - **Tour copy = operator-authored per-item content** (not hardcoded) — needs a per-tour rich
->        content field in the dashboard (items); the operator's existing FareHarbor Details/Additional-info
->        text lifts directly. Replaces `TOUR_PLACEHOLDER`.
->      - **Photos** — real per-tour photos (operator supplies assets; plumbing exists).
->      - Quick wins also surfaced: **"N left!" slot scarcity**, **phone required at checkout**, amount-due
->        copy ("Total" + "Pay later"), marketing opt-in checkbox.
->      - **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — note the
->        crawl's "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
->   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
+> - **Google reviews badge + FareHarbor-parity quick wins ✅ DONE 2026-07-22
+>   (`bookingsystem` `152a47d`; dashboard `a008eb3`, migration 0019)** — no live Places API exists, so
+>   reviews are **operator-configured location fields** (`google_rating_tenths`/`review_count`/
+>   `reviews_url`) set in the dashboard (Settings → Reviews) and rendered customer-side by a `ReviewBadge`
+>   on the tour page (replaced the placeholder) + checkout header (hidden until set). Quick wins from the
+>   crawl also shipped: **"N left!" slot scarcity** (all slots, amber+"!" when ≤5), **phone required** at
+>   checkout, amount-due copy (**"Total"** line + **"Pay later (at venue)"**), and a **marketing opt-in**
+>   checkbox → `commit` sets `customers.marketing_email_consent_at` (only upgrades). dtown seeded 4.9/5135
+>   for testing. Verified (8 assertions on the reviews action). tsc/lint/build clean.
+>   - ⚠️ Live Places API auto-refresh of the rating is a future add (needs an API key + per-location
+>     place_id); today the operator sets the number by hand.
+>
+> - **▶ NEXT (start here) — remaining conversion work:**
+>   1. **Tour copy = operator-authored per-item content** (not hardcoded) — add a per-tour rich content
+>      field in the dashboard (items); the operator's existing FareHarbor Details/Additional-info/Highlights
+>      text lifts directly. Replaces `TOUR_PLACEHOLDER`. **No external input needed — buildable now.**
+>   2. **Photos** — real per-tour photos. Plumbing exists; **blocked on the operator supplying photo
+>      assets.**
+>   3. **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — the crawl's
+>      "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
+>   4. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
->   3. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
+>   5. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
+>   - **Verification boundary:** the reviews badge + quick wins are logic-verified + build-clean but not yet
+>     eyeballed in a running customer flow (needs the bookingsystem dev server or preview). The full Stripe
+>     charge path (discount/custom-fields/hold-release/marketing-consent → committed rows) still wants a
+>     live test booking on the preview.
 >   - **Deferred (do not build yet):** the slot mass-message *send* itself (UI queues now, needs brain
 >     send to actually deliver); priced custom-field add-ons (above); customer
 >     profile / Returning badge / cross-booking history / "new booking for contact".
