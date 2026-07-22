@@ -152,14 +152,21 @@
 >   render, no layout break). Blob host already allowed in both `next.config` image `remotePatterns`.
 >   ⚠️ **Operator action:** upload real per-tour photos via the tour edit page.
 >
-> - **▶ NEXT (start here) — remaining conversion work:**
->   1. **Priced quantity add-ons** (was last) — needs the add-on/per-person-fee pricing design (the crawl's
->      "Park Admission Fee $20/person" is a per-person venue fee in the same design space). Discuss before
->      building, like tour copy.
->   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
->      enforces; this is cosmetic so lower roles don't see dead buttons).
->   - Optional FareHarbor-parity content sections (not built): Overview key-values (Duration/Age/Group
->     size), FAQs, per-item Cancellations prose.
+> - **FareHarbor-parity content sections ✅ DONE 2026-07-22 (dashboard `0a2e383`, migration 0021;
+>   `bookingsystem` `d9dd9e9`)** — added Overview key-values, FAQs, and per-tour Cancellations prose.
+>   Migration 0021 adds `items.min_age`/`languages`/`group_size_label`/`faqs`(jsonb {q,a}[])/
+>   `cancellation_notes_md`. Dashboard tour form: Overview inputs + a `FaqEditor` (repeatable Q/A → hidden
+>   JSON) + a Cancellation-notes `MarkdownField`. Customer tour page renders an Overview block
+>   (Duration always; Age/Offered-in/Group-size when set), an FAQ list, and cancellation markdown — each
+>   hidden when empty. dtown seeded; verified in-browser. tsc/lint/build clean.
+>
+> - **▶ NEXT (start here):**
+>   1. **RBAC UI hiding (polish)** — hide/disable actions the current role can't perform (mutation layer
+>      already enforces server-side; this is cosmetic so lower roles don't see dead buttons). **In plan
+>      mode.**
+>   - **Deferred to a later phase (operator decision 2026-07-22): priced quantity add-ons** — not until
+>     after the booking system launches. Needs the add-on/per-person-fee pricing design (the crawl's
+>     "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
 >   - Optional future FareHarbor-parity content sections (not yet built): Overview key-values
 >     (Duration/Age/Group size), FAQs, per-item Cancellations prose.
 >   5. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
