@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ItemForm } from "@/components/ItemForm";
+import { ItemPhotoManager } from "@/components/ItemPhotoManager";
 import { updateItem } from "@/lib/actions/items";
 import { getItemById } from "@/lib/data/items";
 import { getLocationBySlug } from "@/lib/data/locations";
@@ -66,6 +67,10 @@ export default async function EditTourPage({ params }: Props) {
         }}
         submitLabel="Save"
       />
+
+      <div className="mt-8 border-t border-zinc-200 pt-6 dark:border-zinc-800">
+        <ItemPhotoManager slug={slug} itemId={id} photos={item.photoUrls} />
+      </div>
     </section>
   );
 }
