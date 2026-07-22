@@ -143,13 +143,23 @@
 >   + the three lists as checkmark bullets (hidden when empty). dtown 1-Hour ATV seeded with real content.
 >   Verified in-browser (customer render); dashboard editor click-test needs Clerk sign-in.
 >
+> - **Per-tour photos ✅ BUILT 2026-07-22 (dashboard `f3b9785`; `bookingsystem` `47a9e48`)** — the upload
+>   path is done; only real photo *assets* from the operator remain. Dashboard tour edit page has an
+>   **`ItemPhotoManager`** (upload to Vercel Blob → `items.photoUrls`, Make-cover = move to `photoUrls[0]`,
+>   remove; manage_config-gated, JPEG/PNG/WebP ≤5 MB, ≤8). Customer tour page renders a **`TourGallery`**
+>   (cover hero + thumbnail strip, click to swap), falling back to the location gallery then the branded
+>   gradient. Verified end-to-end against live Blob + DB (9 assertions) + in-browser (hero + thumb strip
+>   render, no layout break). Blob host already allowed in both `next.config` image `remotePatterns`.
+>   ⚠️ **Operator action:** upload real per-tour photos via the tour edit page.
+>
 > - **▶ NEXT (start here) — remaining conversion work:**
->   1. **Photos** — real per-tour photos. Plumbing exists (`items.photoUrls`, MediaForm); **blocked on the
->      operator supplying photo assets.**
->   2. **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — the crawl's
->      "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
->   3. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
+>   1. **Priced quantity add-ons** (was last) — needs the add-on/per-person-fee pricing design (the crawl's
+>      "Park Admission Fee $20/person" is a per-person venue fee in the same design space). Discuss before
+>      building, like tour copy.
+>   2. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
+>   - Optional FareHarbor-parity content sections (not built): Overview key-values (Duration/Age/Group
+>     size), FAQs, per-item Cancellations prose.
 >   - Optional future FareHarbor-parity content sections (not yet built): Overview key-values
 >     (Duration/Age/Group size), FAQs, per-item Cancellations prose.
 >   5. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
