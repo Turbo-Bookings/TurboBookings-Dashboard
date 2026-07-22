@@ -16,7 +16,7 @@ import { getLocationBySlug } from "@/lib/data/locations";
 
 type ItemFieldErrors = Partial<
   Record<
-    "name" | "defaultDurationMinutes" | "descriptionMd" | "capacityMode" | "form",
+    "name" | "defaultDurationMinutes" | "descriptionMd" | "capacityMode" | "minAge" | "form",
     string
   >
 >;
@@ -33,6 +33,11 @@ export type ItemFormState = {
     highlights: string[];
     included: string[];
     whatToBring: string[];
+    minAge: string;
+    languages: string[];
+    groupSizeLabel: string;
+    faqs: { q: string; a: string }[];
+    cancellationNotesMd: string;
     defaultDurationMinutes: string;
     capacityMode: string;
     bookableOnline: boolean;
@@ -63,6 +68,28 @@ function parseStringList(raw: FormDataEntryValue | null): string[] {
     .slice(0, MAX_LIST_ITEMS);
 }
 
+// Parse a FaqEditor's hidden JSON input into clean {q,a} pairs (both non-empty).
+function parseFaqs(raw: FormDataEntryValue | null): { q: string; a: string }[] {
+  if (typeof raw !== "string" || !raw) return [];
+  let arr: unknown;
+  try {
+    arr = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((x) => {
+      const o = x as { q?: unknown; a?: unknown };
+      return {
+        q: typeof o.q === "string" ? o.q.trim().slice(0, 200) : "",
+        a: typeof o.a === "string" ? o.a.trim().slice(0, 1000) : "",
+      };
+    })
+    .filter((p) => p.q && p.a)
+    .slice(0, 20);
+}
+
 function parseItemForm(formData: FormData): ItemFormState["values"] {
   return {
     name: String(formData.get("name") ?? "").trim(),
@@ -70,6 +97,11 @@ function parseItemForm(formData: FormData): ItemFormState["values"] {
     highlights: parseStringList(formData.get("highlights")),
     included: parseStringList(formData.get("included")),
     whatToBring: parseStringList(formData.get("whatToBring")),
+    minAge: String(formData.get("minAge") ?? "").trim(),
+    languages: parseStringList(formData.get("languages")),
+    groupSizeLabel: String(formData.get("groupSizeLabel") ?? "").trim(),
+    faqs: parseFaqs(formData.get("faqs")),
+    cancellationNotesMd: String(formData.get("cancellationNotesMd") ?? ""),
     defaultDurationMinutes: String(
       formData.get("defaultDurationMinutes") ?? "",
     ).trim(),
@@ -77,6 +109,15 @@ function parseItemForm(formData: FormData): ItemFormState["values"] {
     bookableOnline: formData.get("bookableOnline") === "on",
     listingVisible: formData.get("listingVisible") === "on",
   };
+}
+
+// Optional whole-number age (blank → null). Returns undefined on invalid input
+// so the caller can flag it.
+function parseMinAge(raw: string): number | null | undefined {
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 120) return undefined;
+  return n;
 }
 
 function validateItem(values: ItemFormState["values"]): ItemFieldErrors {
@@ -98,6 +139,9 @@ function validateItem(values: ItemFormState["values"]): ItemFieldErrors {
 
   if (values.descriptionMd.length > MAX_DESC_LEN)
     errors.descriptionMd = `Keep under ${MAX_DESC_LEN} characters`;
+
+  if (parseMinAge(values.minAge) === undefined)
+    errors.minAge = "Whole number 0–120 (or blank)";
 
   return errors;
 }
@@ -136,6 +180,11 @@ export async function createItem(
       highlights: values.highlights,
       included: values.included,
       whatToBring: values.whatToBring,
+      minAge: parseMinAge(values.minAge) ?? null,
+      languages: values.languages,
+      groupSizeLabel: values.groupSizeLabel || null,
+      faqs: values.faqs,
+      cancellationNotesMd: values.cancellationNotesMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,
@@ -186,6 +235,11 @@ export async function updateItem(
       highlights: values.highlights,
       included: values.included,
       whatToBring: values.whatToBring,
+      minAge: parseMinAge(values.minAge) ?? null,
+      languages: values.languages,
+      groupSizeLabel: values.groupSizeLabel || null,
+      faqs: values.faqs,
+      cancellationNotesMd: values.cancellationNotesMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,

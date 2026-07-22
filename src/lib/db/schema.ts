@@ -575,6 +575,15 @@ export const items = pgTable(
     highlights: jsonb("highlights").$type<string[]>().notNull().default([]),
     included: jsonb("included").$type<string[]>().notNull().default([]),
     whatToBring: jsonb("what_to_bring").$type<string[]>().notNull().default([]),
+    // Overview key-values (FareHarbor parity): duration comes from
+    // defaultDurationMinutes; these add the rest. Null/empty → row hidden.
+    minAge: integer("min_age"), // "Age 3+"
+    languages: jsonb("languages").$type<string[]>().notNull().default([]), // "Offered in"
+    groupSizeLabel: text("group_size_label"), // freeform, e.g. "Up to 65 ATVs"
+    // Per-tour FAQ (question/answer pairs) + customer-facing cancellation prose
+    // (display copy — distinct from the structured cancellationPolicyId).
+    faqs: jsonb("faqs").$type<{ q: string; a: string }[]>().notNull().default([]),
+    cancellationNotesMd: text("cancellation_notes_md"),
     // Array of Blob URLs for the booking page hero / gallery.
     photoUrls: jsonb("photo_urls").$type<string[]>().notNull().default([]),
     defaultDurationMinutes: integer("default_duration_minutes").notNull(),

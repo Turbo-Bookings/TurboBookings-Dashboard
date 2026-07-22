@@ -6,6 +6,7 @@ import { useFormStatus } from "react-dom";
 import { Field } from "@/components/Field";
 import { MarkdownField } from "@/components/MarkdownField";
 import { StringListField } from "@/components/StringListField";
+import { FaqEditor } from "@/components/FaqEditor";
 import type { ItemFormState } from "@/lib/actions/items";
 
 type Action = (
@@ -26,6 +27,11 @@ const EMPTY: ItemFormState["values"] = {
   highlights: [],
   included: [],
   whatToBring: [],
+  minAge: "",
+  languages: [],
+  groupSizeLabel: "",
+  faqs: [],
+  cancellationNotesMd: "",
   defaultDurationMinutes: "60",
   capacityMode: "resource_based",
   bookableOnline: true,
@@ -163,6 +169,41 @@ export function ItemForm({
           placeholder="e.g. Closed-toe shoes"
         />
       </div>
+
+      {/* Overview key-values (shown alongside Duration on the tour page) */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <Field
+          label="Minimum age"
+          name="minAge"
+          defaultValue={values.minAge}
+          placeholder="e.g. 3"
+          hint="Shown as “Age 3+”. Blank for no minimum."
+          error={errors.minAge}
+        />
+        <Field
+          label="Group size"
+          name="groupSizeLabel"
+          defaultValue={values.groupSizeLabel}
+          placeholder="e.g. Up to 65 ATVs"
+          hint="Freeform label shown in Overview."
+        />
+        <StringListField
+          name="languages"
+          label="Offered in"
+          defaultValue={values.languages}
+          placeholder="e.g. English"
+        />
+      </div>
+
+      <FaqEditor name="faqs" defaultValue={values.faqs} />
+
+      <MarkdownField
+        name="cancellationNotesMd"
+        label="Cancellation notes"
+        defaultValue={values.cancellationNotesMd}
+        rows={4}
+        placeholder="Customer-facing cancellation policy — e.g. **Full refund** with 48 hours notice."
+      />
 
       <div className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
         <label className="flex items-start gap-3">
