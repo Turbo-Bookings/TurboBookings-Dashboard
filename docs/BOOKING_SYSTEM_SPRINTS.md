@@ -132,16 +132,26 @@
 >   - ⚠️ Live Places API auto-refresh of the rating is a future add (needs an API key + per-location
 >     place_id); today the operator sets the number by hand.
 >
+> - **Tour copy: Markdown editor + per-tour content lists ✅ DONE 2026-07-22
+>   (dashboard `dce8701`, migration 0020; `bookingsystem` `524948b`)** — replaced the hardcoded,
+>   identical-for-every-tour `TOUR_PLACEHOLDER` with real per-tour fields. Migration 0020 adds
+>   `items.highlights`/`included`/`what_to_bring` (jsonb string[]). Dashboard tour form: **`MarkdownField`**
+>   (Details editor with a Bold/Italic/Heading/Bullet/Link toolbar that inserts Markdown + a live preview
+>   using the same react-markdown pipeline the customer page uses) and **`StringListField`** (repeatable
+>   line editor for the three lists → hidden JSON input, parsed server-side, same pattern as
+>   `PricingMatrixEditor`). Customer tour page renders `descriptionMd` as "Details" (bold/headings/bullets)
+>   + the three lists as checkmark bullets (hidden when empty). dtown 1-Hour ATV seeded with real content.
+>   Verified in-browser (customer render); dashboard editor click-test needs Clerk sign-in.
+>
 > - **▶ NEXT (start here) — remaining conversion work:**
->   1. **Tour copy = operator-authored per-item content** (not hardcoded) — add a per-tour rich content
->      field in the dashboard (items); the operator's existing FareHarbor Details/Additional-info/Highlights
->      text lifts directly. Replaces `TOUR_PLACEHOLDER`. **No external input needed — buildable now.**
->   2. **Photos** — real per-tour photos. Plumbing exists; **blocked on the operator supplying photo
->      assets.**
->   3. **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — the crawl's
+>   1. **Photos** — real per-tour photos. Plumbing exists (`items.photoUrls`, MediaForm); **blocked on the
+>      operator supplying photo assets.**
+>   2. **Priced quantity add-ons stay LAST** (needs the add-on/per-person-fee pricing design — the crawl's
 >      "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
->   4. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
+>   3. **RBAC UI hiding (polish)** — hide actions the current role can't perform (mutation layer already
 >      enforces; this is cosmetic so lower roles don't see dead buttons).
+>   - Optional future FareHarbor-parity content sections (not yet built): Overview key-values
+>     (Duration/Age/Group size), FAQs, per-item Cancellations prose.
 >   5. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Verification boundary:** the reviews badge + quick wins are logic-verified + build-clean but not yet
 >     eyeballed in a running customer flow (needs the bookingsystem dev server or preview). The full Stripe
