@@ -567,8 +567,14 @@ export const items = pgTable(
       .notNull()
       .references(() => locations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    // Markdown-formatted description shown on the booking page.
+    // Markdown-formatted description shown on the booking page ("Details").
     descriptionMd: text("description_md"),
+    // Per-tour structured content lists shown as checkmark bullets on the
+    // booking page. Operator-authored (dashboard tour form); empty = section
+    // hidden. FareHarbor's separate-lists model.
+    highlights: jsonb("highlights").$type<string[]>().notNull().default([]),
+    included: jsonb("included").$type<string[]>().notNull().default([]),
+    whatToBring: jsonb("what_to_bring").$type<string[]>().notNull().default([]),
     // Array of Blob URLs for the booking page hero / gallery.
     photoUrls: jsonb("photo_urls").$type<string[]>().notNull().default([]),
     defaultDurationMinutes: integer("default_duration_minutes").notNull(),

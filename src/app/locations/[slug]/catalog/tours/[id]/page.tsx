@@ -56,6 +56,9 @@ export default async function EditTourPage({ params }: Props) {
         initialValues={{
           name: item.name,
           descriptionMd: item.descriptionMd ?? "",
+          highlights: item.highlights,
+          included: item.included,
+          whatToBring: item.whatToBring,
           defaultDurationMinutes: item.defaultDurationMinutes.toString(),
           capacityMode: item.capacityMode,
           bookableOnline: item.bookableOnline,

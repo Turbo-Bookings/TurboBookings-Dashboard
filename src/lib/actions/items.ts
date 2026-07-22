@@ -30,6 +30,9 @@ export type ItemFormState = {
   values: {
     name: string;
     descriptionMd: string;
+    highlights: string[];
+    included: string[];
+    whatToBring: string[];
     defaultDurationMinutes: string;
     capacityMode: string;
     bookableOnline: boolean;
@@ -39,11 +42,34 @@ export type ItemFormState = {
 
 const MAX_NAME_LEN = 120;
 const MAX_DESC_LEN = 8000;
+const MAX_LIST_ITEMS = 15;
+const MAX_LIST_ITEM_LEN = 160;
+
+// Parse a StringListField's hidden JSON input into a clean string array
+// (trim, drop blanks, cap count + per-item length).
+function parseStringList(raw: FormDataEntryValue | null): string[] {
+  if (typeof raw !== "string" || !raw) return [];
+  let arr: unknown;
+  try {
+    arr = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((x): x is string => typeof x === "string")
+    .map((s) => s.trim().slice(0, MAX_LIST_ITEM_LEN))
+    .filter(Boolean)
+    .slice(0, MAX_LIST_ITEMS);
+}
 
 function parseItemForm(formData: FormData): ItemFormState["values"] {
   return {
     name: String(formData.get("name") ?? "").trim(),
     descriptionMd: String(formData.get("descriptionMd") ?? ""),
+    highlights: parseStringList(formData.get("highlights")),
+    included: parseStringList(formData.get("included")),
+    whatToBring: parseStringList(formData.get("whatToBring")),
     defaultDurationMinutes: String(
       formData.get("defaultDurationMinutes") ?? "",
     ).trim(),
@@ -107,6 +133,9 @@ export async function createItem(
       locationId: location.id,
       name: values.name,
       descriptionMd: values.descriptionMd || null,
+      highlights: values.highlights,
+      included: values.included,
+      whatToBring: values.whatToBring,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,
@@ -154,6 +183,9 @@ export async function updateItem(
     .set({
       name: values.name,
       descriptionMd: values.descriptionMd || null,
+      highlights: values.highlights,
+      included: values.included,
+      whatToBring: values.whatToBring,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
       bookableOnline: values.bookableOnline,

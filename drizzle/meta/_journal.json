@@ -141,6 +141,13 @@
       "when": 1784737962541,
       "tag": "0019_clammy_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1784739828008,
+      "tag": "0020_nasty_the_enforcers",
+      "breakpoints": true
     }
   ]
 }

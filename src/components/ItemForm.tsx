@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { Field } from "@/components/Field";
+import { MarkdownField } from "@/components/MarkdownField";
+import { StringListField } from "@/components/StringListField";
 import type { ItemFormState } from "@/lib/actions/items";
 
 type Action = (
@@ -21,6 +23,9 @@ type Props = {
 const EMPTY: ItemFormState["values"] = {
   name: "",
   descriptionMd: "",
+  highlights: [],
+  included: [],
+  whatToBring: [],
   defaultDurationMinutes: "60",
   capacityMode: "resource_based",
   bookableOnline: true,
@@ -130,28 +135,33 @@ export function ItemForm({
         )}
       </div>
 
-      <div className="space-y-1.5">
-        <label
-          htmlFor="descriptionMd"
-          className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300"
-        >
-          Description (markdown)
-          <span className="text-xs font-normal text-zinc-400">(optional)</span>
-        </label>
-        <textarea
-          id="descriptionMd"
-          name="descriptionMd"
-          defaultValue={values.descriptionMd}
-          rows={8}
-          placeholder="What's included, who it's for, what to bring. Supports basic markdown — **bold**, _italic_, lists."
-          className="block w-full rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm shadow-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
-          aria-invalid={errors.descriptionMd ? true : undefined}
+      <MarkdownField
+        name="descriptionMd"
+        label="Details"
+        defaultValue={values.descriptionMd}
+        error={errors.descriptionMd}
+        placeholder="Describe the tour — the ride, the terrain, who it's for. Use the toolbar for **bold**, ## headings, and bullet lists."
+      />
+
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+        <StringListField
+          name="highlights"
+          label="Highlights"
+          defaultValue={values.highlights}
+          placeholder="e.g. Beginner-friendly, no experience needed"
         />
-        {errors.descriptionMd && (
-          <p className="text-xs font-medium text-red-600 dark:text-red-400">
-            {errors.descriptionMd}
-          </p>
-        )}
+        <StringListField
+          name="included"
+          label="What's included"
+          defaultValue={values.included}
+          placeholder="e.g. Helmet + safety briefing"
+        />
+        <StringListField
+          name="whatToBring"
+          label="What to bring"
+          defaultValue={values.whatToBring}
+          placeholder="e.g. Closed-toe shoes"
+        />
       </div>
 
       <div className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50/50 p-4 dark:border-zinc-800 dark:bg-zinc-900/30">
