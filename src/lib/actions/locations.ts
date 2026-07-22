@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
 import { getDb, locations, type TourCatalogItem } from "@/lib/db";
+import { getLocationBySlug } from "@/lib/data/locations";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 type FieldErrors = Partial<
   Record<"slug" | "city" | "apex" | "displayName" | "form", string>
@@ -175,6 +177,68 @@ export async function updateLocationBranding(
   await recordAudit({ slug, action: "branding.save", summary: "Updated branding details" });
 
   return { ok: true, savedAt: Date.now() };
+}
+
+// ---------- Social proof (Google reviews shown on the customer flow) ----------
+
+type ReviewsErrors = Partial<Record<"rating" | "count" | "url" | "form", string>>;
+export type ReviewsState =
+  | { ok: true; savedAt: number; values: ReviewsValues }
+  | { ok: false; errors: ReviewsErrors; values: ReviewsValues };
+export type ReviewsValues = { rating: string; count: string; url: string };
+
+export async function updateReviews(
+  slug: string,
+  _prev: ReviewsState | null,
+  formData: FormData,
+): Promise<ReviewsState> {
+  const values: ReviewsValues = {
+    rating: (formData.get("rating") as string | null)?.trim() ?? "",
+    count: (formData.get("count") as string | null)?.trim() ?? "",
+    url: (formData.get("url") as string | null)?.trim() ?? "",
+  };
+  const errors: ReviewsErrors = {};
+
+  let ratingTenths: number | null = null;
+  if (values.rating) {
+    const r = Number(values.rating);
+    if (!Number.isFinite(r) || r < 0 || r > 5) errors.rating = "0–5 (e.g. 4.9)";
+    else ratingTenths = Math.round(r * 10);
+  }
+  let count: number | null = null;
+  if (values.count) {
+    const c = Number(values.count);
+    if (!Number.isInteger(c) || c < 0) errors.count = "Whole number ≥ 0";
+    else count = c;
+  }
+  const url = values.url || null;
+  if (url && !URL_RE.test(url)) errors.url = "Must start with http:// or https://";
+  // A rating without a count (or vice-versa) reads oddly on the badge.
+  if ((ratingTenths == null) !== (count == null))
+    errors.form = "Set both rating and review count (or clear both).";
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors, values };
+
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, errors: { form: "Location not found" }, values };
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
+
+  const db = getDb();
+  await db
+    .update(locations)
+    .set({
+      googleRatingTenths: ratingTenths,
+      googleReviewCount: count,
+      googleReviewsUrl: url,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(locations.slug, slug));
+
+  revalidatePath(`/locations/${slug}`);
+  await recordAudit({ slug, action: "reviews.save", summary: "Updated Google reviews badge" });
+
+  return { ok: true, savedAt: Date.now(), values };
 }
 
 // ---------------------------------------------------------------------------

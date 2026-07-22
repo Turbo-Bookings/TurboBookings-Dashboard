@@ -162,6 +162,14 @@ export const locations = pgTable("locations", {
   // turned into a real FK in the migration.
   cancellationPolicyId: uuid("cancellation_policy_id"),
 
+  // Social proof — operator-configured Google rating shown on the customer
+  // booking flow (tour page + checkout). Rating in tenths (49 = 4.9) to avoid
+  // float issues. No live Places API dependency; a future cron can refresh
+  // these from the Places API if a key is provided.
+  googleRatingTenths: integer("google_rating_tenths"),
+  googleReviewCount: integer("google_review_count"),
+  googleReviewsUrl: text("google_reviews_url"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

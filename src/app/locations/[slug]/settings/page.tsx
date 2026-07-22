@@ -11,6 +11,7 @@ import {
   Percent,
   Plug,
   Receipt,
+  Star,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -57,6 +58,7 @@ export default async function SettingsPage({
       items: [
         { label: "Tracking", desc: "Pixels, GA4, CAPI & server-side events", href: `${b}/tracking`, icon: LineChart, tone: "blue" },
         { label: "Integrations", desc: "Stripe Connect & secrets", href: `${b}/integrations`, icon: Plug, tone: "violet" },
+        { label: "Reviews", desc: "Google rating shown on the booking flow", href: `${b}/settings/reviews`, icon: Star, tone: "amber" },
       ],
     },
     {
