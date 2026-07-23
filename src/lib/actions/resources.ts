@@ -1,4 +1,5 @@
 "use server";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 import { and, eq, max } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -72,6 +73,8 @@ export async function createResource(
   const errors = validate(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, errors: { form: "Location not found" }, values };
 
@@ -121,6 +124,8 @@ export async function updateResource(
   const errors = validate(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, errors: { form: "Location not found" }, values };
 
@@ -168,6 +173,8 @@ export async function deleteResource(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
 

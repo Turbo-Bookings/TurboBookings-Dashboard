@@ -1,4 +1,5 @@
 "use server";
+import { assertCan } from "@/lib/auth/roles";
 
 import { asc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -11,6 +12,7 @@ import { SETUP_TEMPLATE } from "@/lib/external-setup/template";
 // items present in the template but missing for this location (so the
 // template can grow new rows over time without churn).
 export async function initializeSetupItems(slug: string): Promise<{ added: number }> {
+  await assertCan("manage_config");
   const db = getDb();
   const locRows = await db
     .select({ id: locations.id })
@@ -67,6 +69,7 @@ export async function updateSetupItem(
   itemId: string,
   patch: UpdatePatch,
 ): Promise<void> {
+  await assertCan("manage_config");
   const db = getDb();
 
   // Drizzle's .set() accepts SQL expressions for timestamp columns, so we

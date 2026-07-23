@@ -39,6 +39,10 @@ export async function createLocation(
   const apex = String(formData.get("apex") ?? "").toLowerCase().trim();
   const displayName = String(formData.get("displayName") ?? "").trim();
 
+  const deny = await denyIfCannot("manage_config");
+  if (deny)
+    return { ok: false, errors: { form: deny }, values: { slug, city, apex, displayName } };
+
   const errors: FieldErrors = {};
   if (!slug) errors.slug = "Required";
   else if (!SLUG_RE.test(slug))
@@ -114,6 +118,8 @@ export async function updateLocationBranding(
   _prev: UpdateBrandingState | null,
   formData: FormData,
 ): Promise<UpdateBrandingState> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny } };
   const brandDisplayName = clean(formData.get("brandDisplayName"));
   const brandLocationLabel = clean(formData.get("brandLocationLabel"));
   const brandLegalName = clean(formData.get("brandLegalName"));
@@ -261,6 +267,8 @@ export async function updateTourCatalog(
   _prev: UpdateTourCatalogState | null,
   formData: FormData,
 ): Promise<UpdateTourCatalogState> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const raw = formData.get("tourCatalog");
   if (typeof raw !== "string") return { ok: false, error: "Missing tourCatalog payload" };
 

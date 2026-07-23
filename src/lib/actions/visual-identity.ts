@@ -1,4 +1,5 @@
 "use server";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -46,6 +47,8 @@ export async function uploadLogo(
   _prev: UploadLogoState | null,
   formData: FormData,
 ): Promise<UploadLogoState> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const file = formData.get("logo");
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Please choose a logo file" };
@@ -113,6 +116,8 @@ export async function saveVisualIdentity(
   _prev: SaveVisualIdentityState | null,
   formData: FormData,
 ): Promise<SaveVisualIdentityState> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny } };
   const primaryColor = String(formData.get("primaryColor") ?? "").trim().toLowerCase();
   const accentColor = String(formData.get("accentColor") ?? "").trim().toLowerCase();
   const displayFont = String(formData.get("displayFont") ?? "").trim();

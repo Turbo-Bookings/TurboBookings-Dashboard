@@ -74,6 +74,8 @@ export async function setBookingCheckIn(
   bookingId: string,
   status: string,
 ): Promise<Result> {
+  const deny = await denyIfCannot("checkin");
+  if (deny) return { ok: false, error: deny };
   if (!CHECK.includes(status as Check))
     return { ok: false, error: "Invalid status" };
   const location = await getLocationBySlug(slug);
@@ -115,6 +117,8 @@ export async function setLineCheckInCounts(
   checkedIn: number,
   noShow: number,
 ): Promise<Result> {
+  const deny = await denyIfCannot("checkin");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const db = getDb();

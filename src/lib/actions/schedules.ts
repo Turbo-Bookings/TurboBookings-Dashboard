@@ -1,4 +1,5 @@
 "use server";
+import { denyIfCannot } from "@/lib/auth/roles";
 
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -168,6 +169,8 @@ export async function createSchedule(
   formData: FormData,
 ): Promise<ScheduleFormState> {
   const values = parseFormData(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validateBase(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
@@ -227,6 +230,8 @@ export async function updateSchedule(
   formData: FormData,
 ): Promise<ScheduleFormState> {
   const values = parseFormData(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validateBase(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
@@ -289,6 +294,8 @@ export async function deleteSchedule(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
 
@@ -316,6 +323,8 @@ export async function setScheduleActive(
   id: string,
   active: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
 

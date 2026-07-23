@@ -1,4 +1,5 @@
 "use server";
+import { assertCan } from "@/lib/auth/roles";
 
 import { eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -29,6 +30,7 @@ function buildReturnUrl(slug: string): string {
 //   2. Otherwise create a new Standard connected account, persist the id
 //   3. Generate an Account Link and redirect the operator to it
 export async function startStripeConnectOnboarding(slug: string): Promise<void> {
+  await assertCan("manage_config");
   if (!stripeConfigured()) {
     throw new Error(
       "STRIPE_SECRET_KEY is not configured on the dashboard. Set it via vercel env before continuing.",
@@ -101,6 +103,7 @@ export async function refreshStripeAccountStatus(
 export async function openStripeDashboardForLocation(
   slug: string,
 ): Promise<void> {
+  await assertCan("manage_config");
   const db = getDb();
   const rows = await db
     .select({ stripeAccountId: locations.stripeAccountId })
@@ -118,6 +121,7 @@ export async function openStripeDashboardForLocation(
 // underlying account at Stripe (clients keep ownership of their Stripe data).
 // Just removes the link so we stop using it.
 export async function disconnectStripeAccount(slug: string): Promise<void> {
+  await assertCan("manage_config");
   const db = getDb();
   await db
     .update(locations)

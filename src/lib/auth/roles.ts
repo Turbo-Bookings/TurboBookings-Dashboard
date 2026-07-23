@@ -1,5 +1,6 @@
 import "server-only";
 import { currentUser } from "@clerk/nextjs/server";
+import { notFound } from "next/navigation";
 
 // 4 fixed roles (locked design, custom-booking-system-exploration §0.7):
 //   master      — operator + team; cross-location admin
@@ -54,4 +55,31 @@ export async function can(cap: Capability): Promise<boolean> {
 // Returns null when allowed, or an error string when denied.
 export async function denyIfCannot(cap: Capability): Promise<string | null> {
   return (await can(cap)) ? null : "You don't have permission for this action.";
+}
+
+// Throwing variant — for server actions that return void and for page guards,
+// where there's no result shape to carry the deny message. UI hiding means this
+// is a defense-in-depth path a correctly-scoped user never hits.
+export async function assertCan(cap: Capability): Promise<void> {
+  if (!(await can(cap))) throw new Error("You don't have permission for this action.");
+}
+
+// Server-component / layout guard for a whole route subtree — 404s the page for
+// a user who lacks the capability (defense-in-depth behind the hidden nav).
+export async function requirePageCapability(cap: Capability): Promise<void> {
+  if (!(await can(cap))) notFound();
+}
+
+export type Capabilities = Record<Capability, boolean>;
+
+// Resolve all capabilities for the current user in one shot (single role read).
+export async function getCapabilities(): Promise<Capabilities> {
+  const role = await getCurrentRole();
+  const rank = RANK[role];
+  return {
+    checkin: rank >= RANK[CAP_MIN.checkin],
+    manage_bookings: rank >= RANK[CAP_MIN.manage_bookings],
+    refund: rank >= RANK[CAP_MIN.refund],
+    manage_config: rank >= RANK[CAP_MIN.manage_config],
+  };
 }

@@ -1,4 +1,5 @@
 "use server";
+import { assertCan, denyIfCannot } from "@/lib/auth/roles";
 
 import { and, eq, max } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
@@ -89,6 +90,8 @@ export async function createCustomerType(
   formData: FormData,
 ): Promise<CustomerTypeFormState> {
   const values = parseFormData(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
@@ -129,6 +132,8 @@ export async function updateCustomerType(
   formData: FormData,
 ): Promise<CustomerTypeFormState> {
   const values = parseFormData(formData);
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
 
@@ -174,6 +179,7 @@ export async function setCustomerTypeArchived(
   id: string,
   archived: boolean,
 ): Promise<void> {
+  await assertCan("manage_config");
   const location = await getLocationBySlug(slug);
   if (!location) return;
   const db = getDb();
