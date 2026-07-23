@@ -160,16 +160,22 @@
 >   (Duration always; Age/Offered-in/Group-size when set), an FAQ list, and cancellation markdown — each
 >   hidden when empty. dtown seeded; verified in-browser. tsc/lint/build clean.
 >
+> - **RBAC — server enforcement + UI hiding ✅ DONE 2026-07-22 (dashboard `493776b` + `097989e`)** —
+>   the "cosmetic polish" turned up a real gap: only 8 of 22 action files checked permissions, so ~14
+>   config mutations were **server-unenforced**. **(1) Closed all gaps** — `denyIfCannot`/`assertCan` now
+>   guard every mutating action (manage_config for config, checkin for check-in). **(2) UI hiding** —
+>   `getCapabilities()` → `LocationShell` nav filter + `CapabilitiesProvider`/`useCaps`; route-tree guards
+>   (`requirePageCapability` in catalog layout + thin guard layouts for settings/tracking/integrations/
+>   setup/activity = manage_config, dashboard/bookings/reports = manage_bookings); config-root redirects
+>   lower roles to their landing; BookingModal + Manifest gate controls by cap (check-in always visible).
+>   Verified against the real code path with an injected Clerk role (23 assertions). tsc/lint/build clean.
+>   ⚠️ **Per-role visual check needs the operator to set a Clerk user's `publicMetadata.role`.**
+>
 > - **▶ NEXT (start here):**
->   1. **RBAC UI hiding (polish)** — hide/disable actions the current role can't perform (mutation layer
->      already enforces server-side; this is cosmetic so lower roles don't see dead buttons). **In plan
->      mode.**
+>   1. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Deferred to a later phase (operator decision 2026-07-22): priced quantity add-ons** — not until
 >     after the booking system launches. Needs the add-on/per-person-fee pricing design (the crawl's
 >     "Park Admission Fee $20/person" is a per-person venue fee in the same design space).
->   - Optional future FareHarbor-parity content sections (not yet built): Overview key-values
->     (Duration/Age/Group size), FAQs, per-item Cancellations prose.
->   5. **Live Dallas build + operator-onboarding SOPs**, then migrate Miami/Houston once Dallas proves it.
 >   - **Verification boundary:** the reviews badge + quick wins are logic-verified + build-clean but not yet
 >     eyeballed in a running customer flow (needs the bookingsystem dev server or preview). The full Stripe
 >     charge path (discount/custom-fields/hold-release/marketing-consent → committed rows) still wants a
