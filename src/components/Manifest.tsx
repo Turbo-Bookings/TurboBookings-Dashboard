@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { CheckInControls, LineCheckIn } from "@/components/CheckInControls";
 import { BookingModal } from "@/components/BookingModal";
+import { useCaps } from "@/components/CapabilitiesProvider";
 import { TONE_DOT, itemColor } from "@/lib/ui/itemColor";
 import { checkInLabel, checkInTone } from "@/lib/ui/status";
 
@@ -80,6 +81,7 @@ export function Manifest({
   items,
   slots,
 }: Props) {
+  const caps = useCaps();
   const base = `/locations/${slug}`;
   const manifestBase = `${base}/manifest`;
   const [itemFilter, setItemFilter] = useState("all");
@@ -227,12 +229,14 @@ export function Manifest({
                       {fmtTime.format(s.startsAt)} – {fmtTime.format(s.endsAt)}
                     </span>
                   </div>
-                  <Link
-                    href={`${base}/bookings/new?item=${s.itemId}&availability=${s.availabilityId}`}
-                    className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 print:hidden"
-                  >
-                    <Plus className="h-4 w-4" /> Book
-                  </Link>
+                  {caps.manage_bookings && (
+                    <Link
+                      href={`${base}/bookings/new?item=${s.itemId}&availability=${s.availabilityId}`}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 px-2.5 py-1.5 text-sm font-medium text-white hover:bg-blue-700 print:hidden"
+                    >
+                      <Plus className="h-4 w-4" /> Book
+                    </Link>
+                  )}
                 </div>
 
                 {/* Sub-row */}
@@ -246,12 +250,14 @@ export function Manifest({
                       </span>
                     )}
                   </span>
-                  <Link
-                    href={`${base}/catalog/schedule/calendar?date=${dateKey}`}
-                    className="ml-auto inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-300 print:hidden"
-                  >
-                    <Settings2 className="h-3.5 w-3.5" /> Slot settings
-                  </Link>
+                  {caps.manage_config && (
+                    <Link
+                      href={`${base}/catalog/schedule/calendar?date=${dateKey}`}
+                      className="ml-auto inline-flex items-center gap-1 hover:text-zinc-700 dark:hover:text-zinc-300 print:hidden"
+                    >
+                      <Settings2 className="h-3.5 w-3.5" /> Slot settings
+                    </Link>
+                  )}
                 </div>
 
                 {/* Bookings table */}
@@ -339,9 +345,11 @@ export function Manifest({
                                         noShowUnits={l.noShowUnits}
                                       />
                                     ))}
-                                    <Link href={`${base}/bookings/${b.id}`} className="inline-block text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
-                                      Open booking →
-                                    </Link>
+                                    {caps.manage_bookings && (
+                                      <Link href={`${base}/bookings/${b.id}`} className="inline-block text-xs font-medium text-blue-600 hover:underline dark:text-blue-400">
+                                        Open booking →
+                                      </Link>
+                                    )}
                                   </div>
                                 </td>
                               </tr>

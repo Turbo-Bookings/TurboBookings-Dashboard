@@ -1,10 +1,11 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { BrandingForm } from "@/components/BrandingForm";
 import { MediaForm } from "@/components/MediaForm";
 import { TourCatalogEditor } from "@/components/TourCatalogEditor";
 import { VisualIdentityForm } from "@/components/VisualIdentityForm";
 import { getAssetsForLocation } from "@/lib/actions/media";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { can } from "@/lib/auth/roles";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -12,6 +13,12 @@ type Props = {
 
 export default async function BrandingPage({ params }: Props) {
   const { slug } = await params;
+  // This root is a config (branding/media) surface. Send lower roles to the
+  // highest landing they can access so the bare root is never a dead end.
+  if (!(await can("manage_config"))) {
+    if (await can("manage_bookings")) redirect(`/locations/${slug}/dashboard`);
+    redirect(`/locations/${slug}/manifest`);
+  }
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 

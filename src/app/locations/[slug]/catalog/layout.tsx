@@ -1,4 +1,5 @@
 import { CatalogSubNav } from "@/components/CatalogSubNav";
+import { requirePageCapability } from "@/lib/auth/roles";
 
 type Props = {
   children: React.ReactNode;
@@ -7,6 +8,7 @@ type Props = {
 
 export default async function CatalogLayout({ children, params }: Props) {
   const { slug } = await params;
+  await requirePageCapability("manage_config");
 
   return (
     <div>

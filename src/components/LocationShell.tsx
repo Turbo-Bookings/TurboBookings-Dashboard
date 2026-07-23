@@ -20,11 +20,13 @@ import {
 } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { Location } from "@/lib/db/schema";
+import type { Capabilities, Capability } from "@/lib/auth/roles";
 
 type NavItem = {
   key: string;
   label: string;
   icon: LucideIcon;
+  cap: Capability;
   href: (base: string) => string;
   match: (p: string, base: string) => boolean;
 };
@@ -40,6 +42,7 @@ const NAV: NavItem[] = [
     key: "dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
+    cap: "manage_bookings",
     href: (b) => `${b}/dashboard`,
     match: (p, b) => p === `${b}/dashboard`,
   },
@@ -47,6 +50,7 @@ const NAV: NavItem[] = [
     key: "bookings",
     label: "Bookings",
     icon: Ticket,
+    cap: "manage_bookings",
     href: (b) => `${b}/bookings`,
     match: (p, b) => p.startsWith(`${b}/bookings`),
   },
@@ -54,6 +58,7 @@ const NAV: NavItem[] = [
     key: "manifest",
     label: "Manifest",
     icon: ClipboardList,
+    cap: "checkin",
     href: (b) => `${b}/manifest`,
     match: (p, b) => p.startsWith(`${b}/manifest`),
   },
@@ -61,6 +66,7 @@ const NAV: NavItem[] = [
     key: "reports",
     label: "Reports",
     icon: BarChart3,
+    cap: "manage_bookings",
     href: (b) => `${b}/reports`,
     match: (p, b) => p.startsWith(`${b}/reports`),
   },
@@ -68,6 +74,7 @@ const NAV: NavItem[] = [
     key: "catalog",
     label: "Tour Catalog",
     icon: Map,
+    cap: "manage_config",
     href: (b) => `${b}/catalog/tours`,
     match: (p, b) =>
       p.startsWith(`${b}/catalog/tours`) ||
@@ -78,6 +85,7 @@ const NAV: NavItem[] = [
     key: "settings",
     label: "Settings",
     icon: SettingsIcon,
+    cap: "manage_config",
     href: (b) => `${b}/settings`,
     match: (p, b) =>
       p.startsWith(`${b}/settings`) ||
@@ -95,13 +103,15 @@ type Props = {
   brandName: string;
   status: Location["status"];
   locations: { slug: string; name: string; status: string }[];
+  caps: Capabilities;
   children: React.ReactNode;
 };
 
-export function LocationShell({ slug, brandName, status, locations, children }: Props) {
+export function LocationShell({ slug, brandName, status, locations, caps, children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const base = `/locations/${slug}`;
+  const nav = NAV.filter((n) => caps[n.cap]);
   const [collapsed, setCollapsed] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -119,12 +129,12 @@ export function LocationShell({ slug, brandName, status, locations, children }: 
     });
   }
 
-  const activeKey = NAV.find((n) => n.match(pathname, base))?.key ?? "";
+  const activeKey = nav.find((n) => n.match(pathname, base))?.key ?? "";
 
   function NavLinks({ compact }: { compact: boolean }) {
     return (
       <nav className="flex flex-col gap-1 px-2">
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const Icon = item.icon;
           const active = item.key === activeKey;
           return (

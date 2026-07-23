@@ -7,6 +7,7 @@ import { Mail, Minus, Plus, X } from "lucide-react";
 import { BookingActions } from "@/components/BookingActions";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
+import { useCaps } from "@/components/CapabilitiesProvider";
 import { Badge } from "@/components/ui/Badge";
 import {
   addBookingAdjustment,
@@ -87,6 +88,7 @@ function Body({
   data: NonNullable<Data>;
   reload: () => void;
 }) {
+  const caps = useCaps();
   const { detail, refund, rescheduleSlots, tz, hasCardOnFile } = data;
   const b = detail.booking;
   const cust = detail.customer;
@@ -124,7 +126,7 @@ function Body({
             <div key={l.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-medium">{l.quantity} × {l.ctName} <span className="text-zinc-400">@ {usd(l.unitPriceCents)}</span></span>
-                <VehicleEditor slug={slug} lineId={l.id} reload={reload} />
+                {caps.manage_bookings && <VehicleEditor slug={slug} lineId={l.id} reload={reload} />}
               </div>
               <LineCheckIn slug={slug} lineId={l.id} ctName={l.ctName} quantity={l.quantity} checkedInUnits={l.checkedInUnits} noShowUnits={l.noShowUnits} onChanged={reload} />
             </div>
@@ -144,7 +146,7 @@ function Body({
           {b.balanceDueCents > 0 && <Row label="Balance at venue" value={usd(b.balanceDueCents)} muted />}
           {b.refundedCents > 0 && <Row label="Refunded" value={usd(b.refundedCents)} muted />}
         </dl>
-        {b.status === "active" && (
+        {b.status === "active" && caps.manage_bookings && (
           <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <PriceEditors slug={slug} bookingId={b.id} total={b.totalCents} reload={reload} />
           </div>
@@ -166,25 +168,29 @@ function Body({
       )}
 
       {/* Booking actions (cancel / refund / holds) */}
-      <BookingActions
-        slug={slug}
-        bookingId={b.id}
-        status={b.status}
-        refundLabel={refund.label}
-        refundCents={refund.refundCents}
-        hasCardOnFile={hasCardOnFile}
-        holds={detail.holds.map((h) => ({ id: h.hold.id, status: h.hold.status, amountCents: h.hold.amountCents }))}
-        onChanged={reload}
-      />
+      {caps.refund && (
+        <BookingActions
+          slug={slug}
+          bookingId={b.id}
+          status={b.status}
+          refundLabel={refund.label}
+          refundCents={refund.refundCents}
+          hasCardOnFile={hasCardOnFile}
+          holds={detail.holds.map((h) => ({ id: h.hold.id, status: h.hold.status, amountCents: h.hold.amountCents }))}
+          onChanged={reload}
+        />
+      )}
 
-      {b.status === "active" && (
+      {b.status === "active" && caps.manage_bookings && (
         <RescheduleControls slug={slug} bookingId={b.id} currentId={b.availabilityId} slots={rescheduleSlots} tz={tz} onChanged={reload} />
       )}
 
       {/* Send message */}
-      <Section title="Message customer">
-        <SendMessage slug={slug} bookingId={b.id} />
-      </Section>
+      {caps.manage_bookings && (
+        <Section title="Message customer">
+          <SendMessage slug={slug} bookingId={b.id} />
+        </Section>
+      )}
 
       {/* Activity */}
       {detail.activity.length > 0 && (
