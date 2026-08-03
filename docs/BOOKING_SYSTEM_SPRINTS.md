@@ -4,6 +4,45 @@
 > This file is the canonical build-status + sequencing roadmap for the custom booking system across
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
+> ---
+> ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-03)
+> **The build is feature-complete; we are now in GO-LIVE.** Everything below the fold is the historical
+> log. The full operator runbook is **`docs/DALLAS_GO_LIVE.md`** (also rendered as the "Dallas Go-Live"
+> Artifact) — follow its 6 phases. **Do these in order next session:**
+>
+> 1. **Build + deploy the Dallas site & booking system** (runbook Phases 1–4): attach prod domains
+>    (`book.`/`dashboard.turbobookings.net` — they don't resolve yet), set Vercel env (test keys for now);
+>    fill Dallas branding/settings; **load the real Dallas catalog** (operator provides tours → enter +
+>    materialize slots, write content, upload photos, delete the 2 placeholder tours); **fork the Dallas
+>    marketing site** (`npm run fork -- dtown --push`) + add the `/book/:path*` →
+>    `book.turbobookings.net/dtown/:path*` rewrite + repoint CTAs; operator points DNS for
+>    `dtownatvrentals.com`.
+> 2. **Test everything end-to-end in Stripe TEST mode** (runbook Phase 5): real site → `/book` → book with
+>    test card `4242…` → manifest → check-in → refund/reschedule → tracking events.
+> 3. **Email confirmations via Resend (NEW — build this).** Send a transactional booking-confirmation
+>    email to the customer on `booking.created`. Not built yet. Decision 2026-08-03: use **Resend**
+>    directly from the booking app for transactional confirmations now (the Railway brain owns *marketing*
+>    email later; don't block launch on it). Needs: Resend account + API key + verified sending domain,
+>    a confirmation template, and a send hook in the commit/webhook path (`bookingsystem`).
+> 4. **Convert everything to LIVE keys** (runbook Phase 6): Stripe live Connect onboarding + `pk_live`/
+>    `sk_live` in Vercel (booking app + dashboard); flip Dallas `draft`→`launched`; one real-card test +
+>    refund; then go public.
+> 5. **THEN Miami + Houston booking system** — migrate them off FareHarbor onto the custom flow: add the
+>    `/book` rewrite to each marketing site's `next.config.ts` + repoint tour CTAs from FareHarbor URLs to
+>    `/book/…`; build out their catalogs/config in the dashboard (both are `launched` locations already,
+>    no Stripe connected yet). Per `bookingsystem/docs/embedding-and-tracking.md` (locked: only after
+>    Dallas proves the design).
+>
+> **What this session (through 2026-08-03) delivered — all on `develop`, pushed:** slot Actions menu +
+> FK fix; test-data cleanup (0 bookings); Reports/Dashboard parity + mobile pass; checkout discount codes
+> + custom-field collection; seat-hold countdown (migration 0018); FareHarbor customer-flow crawl
+> (`bookingsystem/docs/fareharbor-customer-flow-crawl.md`); Google reviews badge + quick wins (0019); tour
+> copy Markdown editor + content lists (0020); per-tour photos (ItemPhotoManager + TourGallery);
+> FareHarbor-parity content sections Overview/FAQs/Cancellations (0021); **RBAC — closed all server-
+> enforcement gaps + hid UI by role**; **Dallas go-live runbook** (`docs/DALLAS_GO_LIVE.md`). Detailed
+> entries for each are in the log below. Schema is at **migration 0021**; both repos clean on `develop`.
+> ---
+>
 > - **Open this repo to build:** `~/turbobookings-dashboard` — owns the schema, the catalog/config
 >   surface, and the active sprint. First file to read: this one.
 > - **Companion repo:** `~/bookingsystem` — the customer-facing booking engine. Sprint D committed.
