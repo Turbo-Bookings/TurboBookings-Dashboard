@@ -22,6 +22,13 @@ export default async function BrandingPage({ params }: Props) {
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 
+  // FareHarbor-era locations (Miami/Houston) have a FareHarbor shortname and
+  // sell FareHarbor items; custom-booking-system locations (e.g. DTown) don't —
+  // their tours live in the native Tour Catalog. Only show the FareHarbor
+  // tour-catalog section (and its FareHarbor-specific copy) for the former, so
+  // new-system locations never see FareHarbor language here.
+  const isFareharborLocation = Boolean(loc.fareharborShortname);
+
   const assetsByKind = await getAssetsForLocation(loc.id);
 
   return (
@@ -46,22 +53,24 @@ export default async function BrandingPage({ params }: Props) {
         </div>
       </section>
 
-      <section>
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          <header className="md:col-span-1">
-            <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-              Tour catalog
-            </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              The FareHarbor items this location sells. Used to generate booking
-              links and the pricing UI on the marketing site.
-            </p>
-          </header>
-          <div className="md:col-span-2">
-            <TourCatalogEditor location={loc} />
+      {isFareharborLocation && (
+        <section>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <header className="md:col-span-1">
+              <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+                Tour catalog
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                The FareHarbor items this location sells. Used to generate booking
+                links and the pricing UI on the marketing site.
+              </p>
+            </header>
+            <div className="md:col-span-2">
+              <TourCatalogEditor location={loc} />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       <section>
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
