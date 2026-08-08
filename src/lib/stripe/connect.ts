@@ -25,6 +25,13 @@ export type AccountStatus = {
   // in the dashboard.
   businessProfileName: string | null;
   emailHint: string | null;
+  // What Stripe still needs before charges/payouts turn on. Surfaced on the
+  // Integrations card so the operator can see exactly what's outstanding
+  // instead of a bare "onboarding incomplete".
+  currentlyDue: string[];
+  pastDue: string[];
+  pendingVerification: string[];
+  disabledReason: string | null;
 };
 
 // Creates a Standard connected account. Standard means the client has full
@@ -74,6 +81,7 @@ export async function fetchAccountStatus(
 ): Promise<AccountStatus> {
   const stripe = getStripe();
   const acct = await stripe.accounts.retrieve(accountId);
+  const req = acct.requirements;
   return {
     id: acct.id,
     detailsSubmitted: acct.details_submitted,
@@ -81,6 +89,10 @@ export async function fetchAccountStatus(
     payoutsEnabled: acct.payouts_enabled,
     businessProfileName: acct.business_profile?.name ?? null,
     emailHint: acct.email ?? null,
+    currentlyDue: req?.currently_due ?? [],
+    pastDue: req?.past_due ?? [],
+    pendingVerification: req?.pending_verification ?? [],
+    disabledReason: req?.disabled_reason ?? null,
   };
 }
 
@@ -90,6 +102,14 @@ export async function createDashboardLoginLink(
   accountId: string,
 ): Promise<string> {
   const stripe = getStripe();
-  const link = await stripe.accounts.createLoginLink(accountId);
-  return link.url;
+  // Login links only exist for Express accounts. Ours are Standard, whose
+  // owners sign into the full Stripe dashboard with their own credentials —
+  // calling createLoginLink on a Standard account throws, so fall back to the
+  // hosted dashboard sign-in instead of 500-ing the page.
+  try {
+    const link = await stripe.accounts.createLoginLink(accountId);
+    return link.url;
+  } catch {
+    return "https://dashboard.stripe.com/";
+  }
 }

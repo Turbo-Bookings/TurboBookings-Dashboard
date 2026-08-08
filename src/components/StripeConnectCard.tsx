@@ -147,6 +147,8 @@ export function StripeConnectCard({
         <StatusBadge label="Payouts enabled" ok={status.payoutsEnabled} />
       </div>
 
+      {!fullySetUp && <OutstandingRequirements status={status} />}
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {!fullySetUp && (
           <button
@@ -175,6 +177,71 @@ export function StripeConnectCard({
           Disconnect
         </button>
       </div>
+    </div>
+  );
+}
+
+// Human-readable labels for the most common Stripe requirement keys, so the
+// operator sees "Bank account" instead of "external_account".
+const REQUIREMENT_LABELS: Record<string, string> = {
+  external_account: "Bank account (for payouts)",
+  "business_profile.url": "Business website URL",
+  "business_profile.mcc": "Industry / business category",
+  "business_profile.product_description": "Product description",
+  "tos_acceptance.date": "Accept Stripe's terms of service",
+  "individual.verification.document": "Photo ID document",
+  "individual.verification.additional_document": "Additional ID document",
+  "individual.id_number": "SSN / tax ID",
+  "individual.ssn_last_4": "SSN (last 4)",
+};
+
+function prettyRequirement(key: string): string {
+  return REQUIREMENT_LABELS[key] ?? key;
+}
+
+function OutstandingRequirements({ status }: { status: AccountStatus }) {
+  const blocking = [...status.pastDue, ...status.currentlyDue];
+  const dedupedBlocking = Array.from(new Set(blocking));
+  const hasAny =
+    dedupedBlocking.length > 0 ||
+    status.pendingVerification.length > 0 ||
+    Boolean(status.disabledReason);
+  if (!hasAny) {
+    // Nothing outstanding but not fully enabled → Stripe is still processing.
+    return (
+      <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        All info submitted — Stripe is finishing verification. Charges usually
+        enable within a minute; refresh this page shortly.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+      <p className="font-semibold">Stripe still needs:</p>
+      {dedupedBlocking.length > 0 && (
+        <ul className="mt-1 list-disc space-y-0.5 pl-4">
+          {dedupedBlocking.map((r) => (
+            <li key={r}>
+              {prettyRequirement(r)}{" "}
+              <code className="font-mono text-[10px] opacity-60">{r}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+      {status.pendingVerification.length > 0 && (
+        <p className="mt-1">
+          Verifying: {status.pendingVerification.map(prettyRequirement).join(", ")}
+        </p>
+      )}
+      {status.disabledReason && (
+        <p className="mt-1">
+          Reason: <code className="font-mono text-[10px]">{status.disabledReason}</code>
+        </p>
+      )}
+      <p className="mt-1.5 opacity-80">
+        Click <span className="font-medium">Continue onboarding</span> to finish
+        these in Stripe.
+      </p>
     </div>
   );
 }
