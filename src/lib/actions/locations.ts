@@ -4,7 +4,12 @@ import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
-import { getDb, locations, type TourCatalogItem } from "@/lib/db";
+import {
+  emailTemplates,
+  getDb,
+  locations,
+  type TourCatalogItem,
+} from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 
@@ -292,6 +297,92 @@ export async function updateNotifications(
   });
 
   return { ok: true, savedAt: Date.now(), value };
+}
+
+// ---------------------------------------------------------------------------
+// Per-type lifecycle email templates (reminders, cart recovery, review,
+// cancellation, reschedule). Operators edit subject + body + on/off toggle;
+// timings are fixed in code. The bookingsystem cron reads these rows at send
+// time. Confirmation copy stays on locations.confirmationEmailMessageMd above.
+// ---------------------------------------------------------------------------
+
+const MAX_EMAIL_SUBJECT_LEN = 150;
+const MAX_EMAIL_BODY_LEN = 2000;
+
+// Types editable here (confirmation is handled by updateNotifications).
+const EDITABLE_EMAIL_TYPES = [
+  "reminder_24h",
+  "reminder_2h",
+  "abandoned_cart_1",
+  "abandoned_cart_2",
+  "post_tour_review",
+  "cancellation",
+  "reschedule",
+] as const;
+export type EditableEmailType = (typeof EDITABLE_EMAIL_TYPES)[number];
+
+export type EmailTemplateState =
+  | { ok: true; savedAt: number }
+  | { ok: false; error: string };
+
+export async function updateEmailTemplate(
+  slug: string,
+  type: EditableEmailType,
+  _prev: EmailTemplateState | null,
+  formData: FormData,
+): Promise<EmailTemplateState> {
+  if (!EDITABLE_EMAIL_TYPES.includes(type))
+    return { ok: false, error: "Unknown email type" };
+
+  const enabled = formData.get("enabled") === "on";
+  const subject = ((formData.get("subject") as string | null) ?? "").trim();
+  const body = ((formData.get("body") as string | null) ?? "").trim();
+  const discountRaw = (
+    (formData.get("discountCodeId") as string | null) ?? ""
+  ).trim();
+  const discountCodeId =
+    type === "abandoned_cart_2" && discountRaw ? discountRaw : null;
+
+  if (subject.length > MAX_EMAIL_SUBJECT_LEN)
+    return { ok: false, error: `Subject must be under ${MAX_EMAIL_SUBJECT_LEN} characters.` };
+  if (body.length > MAX_EMAIL_BODY_LEN)
+    return { ok: false, error: `Message must be under ${MAX_EMAIL_BODY_LEN} characters.` };
+
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny };
+
+  const db = getDb();
+  await db
+    .insert(emailTemplates)
+    .values({
+      locationId: location.id,
+      type,
+      enabled,
+      subject: subject || null,
+      bodyMd: body || null,
+      discountCodeId,
+    })
+    .onConflictDoUpdate({
+      target: [emailTemplates.locationId, emailTemplates.type],
+      set: {
+        enabled,
+        subject: subject || null,
+        bodyMd: body || null,
+        discountCodeId,
+        updatedAt: sql`now()`,
+      },
+    });
+
+  revalidatePath(`/locations/${slug}/settings/notifications`);
+  await recordAudit({
+    slug,
+    action: "notifications.template.save",
+    summary: `Updated ${type} email`,
+  });
+
+  return { ok: true, savedAt: Date.now() };
 }
 
 // ---------------------------------------------------------------------------

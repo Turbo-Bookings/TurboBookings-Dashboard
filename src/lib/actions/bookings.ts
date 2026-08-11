@@ -33,6 +33,10 @@ import {
   releaseHold as stripeReleaseHold,
 } from "@/lib/stripe/payments";
 import { emitEvent } from "@/lib/events/emit";
+import {
+  onBookingCancelled,
+  onBookingRescheduled,
+} from "@/lib/email/scheduledEmails";
 import type { Location } from "@/lib/db/schema";
 
 const CHECK = ["not_yet", "checked_in", "no_show"] as const;
@@ -239,6 +243,7 @@ export async function cancelBooking(
     payload: { bookingId, refundedCents: refunded, reason },
   });
   await emitLifecycle(location, bookingId, "booking.cancelled");
+  await onBookingCancelled(bookingId);
   revalidate(slug, bookingId);
   return { ok: true };
 }
@@ -524,6 +529,7 @@ export async function rescheduleBooking(
     payload: { bookingId },
   });
   await emitLifecycle(location, bookingId, "booking.rescheduled");
+  await onBookingRescheduled(bookingId, toAvailabilityId);
   revalidate(slug, bookingId);
   return { ok: true };
 }
@@ -906,6 +912,7 @@ export async function moveSlotBookings(
 
   for (const bookingId of moved) {
     await emitLifecycle(location, bookingId, "booking.rescheduled");
+    await onBookingRescheduled(bookingId, toAvailabilityId);
     try {
       await emitEvent({
         event_type: "communication.requested",

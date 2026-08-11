@@ -1415,3 +1415,201 @@ export const seatHolds = pgTable(
 
 export type SeatHold = typeof seatHolds.$inferSelect;
 export type NewSeatHold = typeof seatHolds.$inferInsert;
+
+// ===========================================================================
+// LIFECYCLE EMAIL PROGRAM — added 2026-08-11
+// ---------------------------------------------------------------------------
+// Reminders (24h/2h), abandoned-cart recovery (2-step), post-tour review,
+// cancellation/reschedule confirmations. Sent by the bookingsystem app via
+// Resend, on the shared central sending domain. The dashboard owns this
+// schema; the bookingsystem repo hand-mirrors these tables.
+//
+// - email_templates: per-location, per-type operator-editable copy/subject +
+//   on/off toggle (timings are fixed in code). Sender prefers a template row's
+//   overrides over code defaults.
+// - scheduled_emails: the reliable send backbone. A Vercel cron in
+//   bookingsystem drains due rows (mirrors outbound_event_queue + retry cron).
+// - abandoned_carts: pre-payment lead capture (email-on-blur at checkout).
+// - email_suppressions: unsubscribe + bounce/complaint list (CAN-SPAM) for
+//   the marketing-class emails (cart + review).
+// ===========================================================================
+
+// The full set of lifecycle email types. `confirmation` is sent immediately
+// (not scheduled) but still editable; the rest are scheduled/triggered.
+export const emailTemplateTypeEnum = pgEnum("email_template_type", [
+  "confirmation",
+  "reminder_24h",
+  "reminder_2h",
+  "abandoned_cart_1",
+  "abandoned_cart_2",
+  "post_tour_review",
+  "cancellation",
+  "reschedule",
+]);
+
+// Per-location, per-type operator overrides. A missing row => code defaults +
+// enabled. `subject`/`body_md` null => fall back to the template's code copy.
+export const emailTemplates = pgTable(
+  "email_templates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    type: emailTemplateTypeEnum("type").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    subject: text("subject"),
+    bodyMd: text("body_md"),
+    // Only used by abandoned_cart_2 — the operator-configured code offered in
+    // the 24h recovery email. Null => no discount block.
+    discountCodeId: uuid("discount_code_id").references(
+      () => discountCodes.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    locationTypeIdx: uniqueIndex("email_templates_location_type_idx").on(
+      t.locationId,
+      t.type,
+    ),
+  }),
+);
+
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type NewEmailTemplate = typeof emailTemplates.$inferInsert;
+
+// Pre-payment lead capture. Written when a shopper enters a valid email on the
+// checkout form (email-on-blur), before paying. Keyed for upsert by
+// (location, anonymous visitor, slot). `converted_at` is set at booking commit
+// and cancels the pending cart-recovery emails.
+export const abandonedCarts = pgTable(
+  "abandoned_carts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    emailLower: text("email_lower").notNull(),
+    firstName: text("first_name"),
+    // tb_aid cookie — ties the cart to a visitor across the funnel.
+    anonymousId: uuid("anonymous_id"),
+    itemId: uuid("item_id"),
+    availabilityId: uuid("availability_id"),
+    // [{ ct, q }] plus item/slot so the recovery email can rebuild the
+    // checkout URL (?item=&slot=&q=).
+    cartSnapshot: jsonb("cart_snapshot").$type<Record<string, unknown>>(),
+    marketingOptIn: boolean("marketing_opt_in").notNull().default(false),
+    convertedAt: timestamp("converted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    upsertIdx: uniqueIndex("abandoned_carts_visitor_slot_idx").on(
+      t.locationId,
+      t.anonymousId,
+      t.availabilityId,
+    ),
+  }),
+);
+
+export type AbandonedCart = typeof abandonedCarts.$inferSelect;
+export type NewAbandonedCart = typeof abandonedCarts.$inferInsert;
+
+// Scheduled/triggered types (confirmation is immediate, so not here).
+export const scheduledEmailTypeEnum = pgEnum("scheduled_email_type", [
+  "reminder_24h",
+  "reminder_2h",
+  "abandoned_cart_1",
+  "abandoned_cart_2",
+  "post_tour_review",
+  "cancellation",
+  "reschedule",
+]);
+
+// The send backbone. A cron in bookingsystem drains due rows (scheduled_at <=
+// now, not sent, not canceled) with retry backoff. Cancelling = set
+// canceled_at (cron skips). idempotency_key guarantees exactly-once enqueue
+// and is reused as Resend's Idempotency-Key on send.
+export const scheduledEmails = pgTable(
+  "scheduled_emails",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    type: scheduledEmailTypeEnum("type").notNull(),
+    bookingId: uuid("booking_id").references(() => bookings.id, {
+      onDelete: "cascade",
+    }),
+    abandonedCartId: uuid("abandoned_cart_id").references(
+      () => abandonedCarts.id,
+      { onDelete: "cascade" },
+    ),
+    // Denormalized — abandoned-cart leads aren't customers yet.
+    recipientEmail: text("recipient_email").notNull(),
+    scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", {
+      withTimezone: true,
+    }).notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    resendEmailId: text("resend_email_id"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    keyIdx: uniqueIndex("scheduled_emails_key_idx").on(t.idempotencyKey),
+    dueIdx: index("scheduled_emails_due_idx")
+      .on(t.scheduledAt)
+      .where(sql`${t.sentAt} IS NULL AND ${t.canceledAt} IS NULL`),
+  }),
+);
+
+export type ScheduledEmail = typeof scheduledEmails.$inferSelect;
+export type NewScheduledEmail = typeof scheduledEmails.$inferInsert;
+
+export const emailSuppressionReasonEnum = pgEnum("email_suppression_reason", [
+  "unsubscribe",
+  "bounce",
+  "complaint",
+]);
+
+// Per-location suppression list for marketing-class emails (cart + review).
+// Populated by one-click unsubscribe and by Resend bounce/complaint webhooks.
+export const emailSuppressions = pgTable(
+  "email_suppressions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    emailLower: text("email_lower").notNull(),
+    reason: emailSuppressionReasonEnum("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    locationEmailIdx: uniqueIndex("email_suppressions_location_email_idx").on(
+      t.locationId,
+      t.emailLower,
+    ),
+  }),
+);
+
+export type EmailSuppression = typeof emailSuppressions.$inferSelect;
+export type NewEmailSuppression = typeof emailSuppressions.$inferInsert;
