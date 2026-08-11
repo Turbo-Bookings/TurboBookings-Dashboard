@@ -119,6 +119,12 @@ export const locations = pgTable("locations", {
   marketingReplyToEmail: text("marketing_reply_to_email"),
   marketingAiChatKb: text("marketing_ai_chat_kb"),
 
+  // Transactional email — operator-editable custom message appended to the
+  // bottom of every booking-confirmation email (Markdown). Branding, From name,
+  // and reply-to for those emails come automatically from the branding/contact
+  // fields above; this is the one free-text block an operator can personalize.
+  confirmationEmailMessageMd: text("confirmation_email_message_md"),
+
   // Socials block
   socialsInstagram: text("socials_instagram"),
   socialsTiktok: text("socials_tiktok"),

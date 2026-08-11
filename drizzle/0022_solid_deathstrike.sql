@@ -1,0 +1,1 @@
+ALTER TABLE "locations" ADD COLUMN "confirmation_email_message_md" text;

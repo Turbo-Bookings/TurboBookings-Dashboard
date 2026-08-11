@@ -248,6 +248,53 @@ export async function updateReviews(
 }
 
 // ---------------------------------------------------------------------------
+// Transactional-email notifications: the operator-editable custom message that
+// appends to the bottom of every booking-confirmation email. Everything else
+// about those emails (branding, From name, reply-to) is derived automatically
+// from the branding/contact fields, so this is the one free-text knob.
+// ---------------------------------------------------------------------------
+
+const MAX_CONFIRMATION_MESSAGE_LEN = 2000;
+
+export type NotificationsState =
+  | { ok: true; savedAt: number; value: string }
+  | { ok: false; error: string; value: string };
+
+export async function updateNotifications(
+  slug: string,
+  _prev: NotificationsState | null,
+  formData: FormData,
+): Promise<NotificationsState> {
+  const value = ((formData.get("confirmationMessage") as string | null) ?? "").trim();
+  if (value.length > MAX_CONFIRMATION_MESSAGE_LEN)
+    return {
+      ok: false,
+      error: `Keep it under ${MAX_CONFIRMATION_MESSAGE_LEN} characters.`,
+      value,
+    };
+
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found", value };
+  const deny = await denyIfCannot("manage_config");
+  if (deny) return { ok: false, error: deny, value };
+
+  const db = getDb();
+  await db
+    .update(locations)
+    .set({ confirmationEmailMessageMd: value || null, updatedAt: sql`now()` })
+    .where(eq(locations.slug, slug));
+
+  revalidatePath(`/locations/${slug}/settings/notifications`);
+  await recordAudit({
+    slug,
+    action: "notifications.save",
+    summary: "Updated booking-confirmation email message",
+  });
+
+  return { ok: true, savedAt: Date.now(), value };
+}
+
+// ---------------------------------------------------------------------------
 // Replace the entire tour catalog JSONB column. Editor sends the full array
 // each save (no partial updates) — simpler than diffing add/remove/reorder
 // at this scale (~3-10 tours per location).

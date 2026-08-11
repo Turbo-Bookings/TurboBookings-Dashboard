@@ -6,6 +6,7 @@ import {
   History,
   LineChart,
   ListChecks,
+  Mail,
   Boxes,
   Palette,
   Percent,
@@ -59,6 +60,7 @@ export default async function SettingsPage({
         { label: "Tracking", desc: "Pixels, GA4, CAPI & server-side events", href: `${b}/tracking`, icon: LineChart, tone: "blue" },
         { label: "Integrations", desc: "Stripe Connect & secrets", href: `${b}/integrations`, icon: Plug, tone: "violet" },
         { label: "Reviews", desc: "Google rating shown on the booking flow", href: `${b}/settings/reviews`, icon: Star, tone: "amber" },
+        { label: "Notifications", desc: "Booking-confirmation email message", href: `${b}/settings/notifications`, icon: Mail, tone: "emerald" },
       ],
     },
     {
