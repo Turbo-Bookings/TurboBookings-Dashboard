@@ -43,7 +43,7 @@ export function CheckInControls({
   const router = useRouter();
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1" data-tour="manifest-checkin">
       {OPTIONS.map((o) => (
         <button
           key={o.value}

@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { TaxesFeesForm } from "@/components/TaxesFeesForm";
 import { updateTaxesFees } from "@/lib/actions/pricing";
+import { can } from "@/lib/auth/roles";
 import { getLocationBySlug } from "@/lib/data/locations";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function TaxesFeesPage({ params }: Props) {
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
   const action = updateTaxesFees.bind(null, slug);
+  const showFee = await can("manage_platform");
 
   return (
     <section>
@@ -33,6 +35,7 @@ export default async function TaxesFeesPage({ params }: Props) {
       />
       <TaxesFeesForm
         action={action}
+        showFee={showFee}
         initial={{
           taxRatePct: pctStr(loc.taxRateBps),
           taxMode: loc.taxMode,

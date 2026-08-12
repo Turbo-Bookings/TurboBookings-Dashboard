@@ -21,6 +21,7 @@
     "@stripe/stripe-js": "^9.8.0",
     "@types/luxon": "^3.7.2",
     "@vercel/blob": "^2.4.0",
+    "driver.js": "^1.8.0",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.22.0",
     "luxon": "^3.7.2",

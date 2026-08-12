@@ -18,10 +18,12 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { can } from "@/lib/auth/roles";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { TONE_SOFT, type Tone } from "@/lib/ui/status";
 
-type Item = { label: string; desc: string; href: string; icon: LucideIcon; tone: Tone };
+// `platform: true` = Turbo-only surface (manage_platform); hidden from operators.
+type Item = { label: string; desc: string; href: string; icon: LucideIcon; tone: Tone; platform?: boolean };
 type Group = { title: string; desc: string; items: Item[] };
 
 export default async function SettingsPage({
@@ -33,6 +35,7 @@ export default async function SettingsPage({
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
   const b = `/locations/${slug}`;
+  const showPlatform = await can("manage_platform");
 
   const groups: Group[] = [
     {
@@ -57,7 +60,7 @@ export default async function SettingsPage({
       title: "Online Booking",
       desc: "How customers find and pay you online.",
       items: [
-        { label: "Tracking", desc: "Pixels, GA4, CAPI & server-side events", href: `${b}/tracking`, icon: LineChart, tone: "blue" },
+        { label: "Tracking", desc: "Pixels, GA4, CAPI & server-side events", href: `${b}/tracking`, icon: LineChart, tone: "blue", platform: true },
         { label: "Integrations", desc: "Stripe Connect & secrets", href: `${b}/integrations`, icon: Plug, tone: "violet" },
         { label: "Reviews", desc: "Google rating shown on the booking flow", href: `${b}/settings/reviews`, icon: Star, tone: "amber" },
         { label: "Notifications", desc: "Booking-confirmation email message", href: `${b}/settings/notifications`, icon: Mail, tone: "emerald" },
@@ -74,7 +77,7 @@ export default async function SettingsPage({
       title: "Operations",
       desc: "Launch readiness and change history.",
       items: [
-        { label: "Setup", desc: "External-dependency checklist", href: `${b}/setup`, icon: ClipboardCheck, tone: "amber" },
+        { label: "Setup", desc: "External-dependency checklist", href: `${b}/setup`, icon: ClipboardCheck, tone: "amber", platform: true },
         { label: "Activity", desc: "Audit log of every change", href: `${b}/activity`, icon: History, tone: "zinc" },
       ],
     },
@@ -85,7 +88,13 @@ export default async function SettingsPage({
       <PageHeader title="Settings" description="Everything that configures this location." />
 
       <div className="space-y-8">
-        {groups.map((g) => (
+        {groups
+          .map((g) => ({
+            ...g,
+            items: g.items.filter((it) => showPlatform || !it.platform),
+          }))
+          .filter((g) => g.items.length > 0)
+          .map((g) => (
           <div key={g.title}>
             <div className="mb-2">
               <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{g.title}</h2>

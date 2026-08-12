@@ -61,7 +61,7 @@ export async function updateTracking(
   _prev: UpdateTrackingState | null,
   formData: FormData,
 ): Promise<UpdateTrackingState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_platform");
   if (deny) return { ok: false, errors: { form: deny } };
   const mode = String(formData.get("mode") ?? "direct") as
     | "direct"
@@ -179,7 +179,7 @@ const MATCHERS: FieldMatcher[] = [
 ];
 
 export async function verifyTracking(slug: string): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_platform");
   const db = getDb();
   const locRows = await db
     .select({ id: locations.id, canonical: locations.domainCanonical })

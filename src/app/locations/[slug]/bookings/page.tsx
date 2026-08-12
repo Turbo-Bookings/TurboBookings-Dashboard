@@ -73,7 +73,7 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
             <Link href={mk({ date: next })} className={navCls} aria-label="Next">
               <ChevronRight className="h-4 w-4" />
             </Link>
-            <Link href={`${base}/new`} className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+            <Link href={`${base}/new`} data-tour="bookings-new" className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
               <Plus className="h-4 w-4" /> New booking
             </Link>
           </div>

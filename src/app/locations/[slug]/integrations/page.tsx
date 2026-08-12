@@ -6,6 +6,7 @@ import {
   vercelApiTokenStatus,
 } from "@/lib/actions/integrations";
 import { refreshStripeAccountStatus } from "@/lib/actions/stripe-connect";
+import { can } from "@/lib/auth/roles";
 import { stripeConfigured } from "@/lib/stripe/client";
 import { getLocationBySlug } from "@/lib/data/locations";
 
@@ -18,6 +19,9 @@ export default async function IntegrationsPage({ params }: Props) {
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 
+  // Per-location secrets are Turbo-only (manage_platform); operators see just
+  // Stripe Connect (the secrets section is hidden below).
+  const showSecrets = await can("manage_platform");
   const [summaries, tokenConfigured, stripeStatus] = await Promise.all([
     getSecretSummariesForLocation(loc.id),
     vercelApiTokenStatus(),
@@ -28,13 +32,13 @@ export default async function IntegrationsPage({ params }: Props) {
     <div className="mt-6 space-y-8">
       <div className="max-w-2xl">
         <p className="text-sm text-zinc-500">
-          Per-location secrets + Stripe Connect onboarding. Values are
-          encrypted at rest and pushed to the location&apos;s Vercel env when{" "}
-          <code className="font-mono">VERCEL_API_TOKEN</code> is configured.
+          {showSecrets
+            ? "Per-location secrets + Stripe Connect onboarding."
+            : "Connect your Stripe account so you can get paid for bookings."}
         </p>
       </div>
 
-      <section className="space-y-3">
+      <section className="space-y-3" data-tour="stripe-connect">
         <header>
           <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
             Payments — Stripe Connect
@@ -53,18 +57,20 @@ export default async function IntegrationsPage({ params }: Props) {
         />
       </section>
 
-      <section className="space-y-3">
-        <header>
-          <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Per-location secrets
-          </h2>
-        </header>
-        <IntegrationsForm
-          location={loc}
-          summaries={summaries}
-          vercelTokenConfigured={tokenConfigured}
-        />
-      </section>
+      {showSecrets && (
+        <section className="space-y-3">
+          <header>
+            <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+              Per-location secrets
+            </h2>
+          </header>
+          <IntegrationsForm
+            location={loc}
+            summaries={summaries}
+            vercelTokenConfigured={tokenConfigured}
+          />
+        </section>
+      )}
     </div>
   );
 }

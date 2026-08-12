@@ -33,7 +33,9 @@ export default async function BrandingPage({ params }: Props) {
 
   return (
     <div className="mt-6 space-y-12">
-      <BrandingForm location={loc} />
+      <div data-tour="branding">
+        <BrandingForm location={loc} />
+      </div>
 
       <section>
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">

@@ -17,7 +17,7 @@ export default async function ReviewsSettingsPage({ params }: Props) {
   const action = updateReviews.bind(null, slug);
 
   return (
-    <section>
+    <section data-tour="reviews">
       <div className="mb-2">
         <Link href={`/locations/${slug}/settings`} className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
           <ChevronLeft className="h-3.5 w-3.5" /> Settings

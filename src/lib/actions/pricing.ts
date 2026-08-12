@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import { getDb, locations } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
-import { denyIfCannot } from "@/lib/auth/roles";
+import { can, denyIfCannot } from "@/lib/auth/roles";
 
 type FieldErrors = Partial<Record<"taxRate" | "platformFee" | "deposit" | "form", string>>;
 
@@ -52,12 +52,20 @@ export async function updateTaxesFees(
   const values = parse(formData);
   const errors: FieldErrors = {};
 
+  // The processing/platform fee is Turbo-only (manage_platform). Operators
+  // don't see the fields and can't change the fee — validate + write it only
+  // for privileged users; otherwise the existing fee is preserved.
+  const canFee = await can("manage_platform");
+
   const tax = pct(values.taxRatePct);
   if (tax == null) errors.taxRate = "0–100";
-  const fee = pct(values.platformFeePct);
-  if (fee == null) errors.platformFee = "0–100";
-  if (!CHARGE_MODES.includes(values.taxMode) || !CHARGE_MODES.includes(values.platformFeeMode))
-    errors.form = "Invalid mode";
+  let fee: number | null = null;
+  if (canFee) {
+    fee = pct(values.platformFeePct);
+    if (fee == null) errors.platformFee = "0–100";
+    if (!CHARGE_MODES.includes(values.platformFeeMode)) errors.form = "Invalid mode";
+  }
+  if (!CHARGE_MODES.includes(values.taxMode)) errors.form = "Invalid mode";
   if (!DEPOSIT_MODES.includes(values.depositMode)) errors.deposit = "Invalid deposit mode";
 
   let depositAmountCents: number | null = null;
@@ -85,8 +93,13 @@ export async function updateTaxesFees(
     .set({
       taxRateBps: Math.round((tax ?? 0) * 100),
       taxMode: values.taxMode as "passed_to_customer",
-      platformFeeBps: Math.round((fee ?? 0) * 100),
-      platformFeeMode: values.platformFeeMode as "passed_to_customer",
+      // Only privileged users write the fee; operators leave it untouched.
+      ...(canFee
+        ? {
+            platformFeeBps: Math.round((fee ?? 0) * 100),
+            platformFeeMode: values.platformFeeMode as "passed_to_customer",
+          }
+        : {}),
       depositMode: values.depositMode as "full",
       depositAmountCents,
       depositPercentBps,
@@ -97,8 +110,8 @@ export async function updateTaxesFees(
   await recordAudit({
     slug,
     action: "settings.taxes_fees.update",
-    summary: `Taxes & fees: tax ${tax}%, fee ${fee}%, deposit ${values.depositMode}`,
-    payload: { tax, fee, depositMode: values.depositMode },
+    summary: `Taxes & fees: tax ${tax}%${canFee ? `, fee ${fee}%` : ""}, deposit ${values.depositMode}`,
+    payload: { tax, fee: canFee ? fee : undefined, depositMode: values.depositMode },
   });
   revalidatePath(`/locations/${slug}/settings/taxes-fees`);
   revalidatePath(`/locations/${slug}/settings`);

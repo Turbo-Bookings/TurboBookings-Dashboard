@@ -20,7 +20,7 @@ export async function setSecret(
   _prev: SaveSecretState | null,
   formData: FormData,
 ): Promise<SaveSecretState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_platform");
   if (deny) return { ok: false, error: deny };
   const value = String(formData.get("value") ?? "").trim();
   if (!value) return { ok: false, error: "Paste a token to save" };
@@ -87,7 +87,7 @@ export async function setSecret(
 }
 
 export async function clearSecret(slug: string, kind: SecretKind): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_platform");
   const db = getDb();
   const locRows = await db
     .select({ id: locations.id })

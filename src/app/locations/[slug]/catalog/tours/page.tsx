@@ -47,6 +47,7 @@ export default async function ToursPage({ params }: Props) {
         </div>
         <Link
           href={`/locations/${slug}/catalog/tours/new`}
+          data-tour="catalog-new-tour"
           className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700"
         >
           + New tour

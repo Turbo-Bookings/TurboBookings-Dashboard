@@ -24,3 +24,33 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Onboarding tour (driver.js) — match the app's blue accent + rounded cards. */
+.driver-popover.tb-tour {
+  border-radius: 12px;
+  padding: 16px 18px;
+  max-width: 340px;
+}
+.driver-popover.tb-tour .driver-popover-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+.driver-popover.tb-tour .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #52525b;
+}
+.driver-popover.tb-tour .driver-popover-navigation-btns button {
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.driver-popover.tb-tour .driver-popover-next-btn {
+  background: #2563eb;
+  color: #fff;
+  text-shadow: none;
+  border: none;
+}
+.driver-popover.tb-tour .driver-popover-next-btn:hover {
+  background: #1d4ed8;
+}

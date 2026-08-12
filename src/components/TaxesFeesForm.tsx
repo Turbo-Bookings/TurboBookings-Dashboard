@@ -22,9 +22,13 @@ const DEPOSIT_OPTS = [
 export function TaxesFeesForm({
   action,
   initial,
+  showFee = true,
 }: {
   action: (prev: TaxesFeesState | null, formData: FormData) => Promise<TaxesFeesState>;
   initial: TaxesFeesState["values"];
+  // The processing/platform fee is Turbo-only (manage_platform); operators
+  // don't see it. Defaults true so admin/master keep it.
+  showFee?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   const v = state?.values ?? initial;
@@ -34,7 +38,10 @@ export function TaxesFeesForm({
   return (
     <form action={formAction} className="max-w-lg space-y-6">
       {/* Taxes */}
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <section
+        data-tour="taxes-rate"
+        className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+      >
         <h2 className="text-sm font-semibold">Sales tax</h2>
         <div className="mt-3 grid grid-cols-2 gap-3">
           <div>
@@ -51,24 +58,29 @@ export function TaxesFeesForm({
         </div>
       </section>
 
-      {/* Processing fee */}
-      <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="text-sm font-semibold">Processing fee</h2>
-        <p className="text-xs text-zinc-500">The platform fee. Collected on every card charge (never on walk-in / Groupon).</p>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <div>
-            <label className={label}>Rate (%)</label>
-            <input name="platformFeePct" defaultValue={v.platformFeePct} className={input} inputMode="decimal" placeholder="6" />
-            {err.platformFee && <p className="mt-1 text-xs text-red-600">{err.platformFee}</p>}
+      {/* Processing fee — Turbo-only (manage_platform) */}
+      {showFee && (
+        <section
+          data-tour="processing-fee"
+          className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <h2 className="text-sm font-semibold">Processing fee</h2>
+          <p className="text-xs text-zinc-500">The platform fee. Collected on every card charge (never on walk-in / Groupon).</p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <label className={label}>Rate (%)</label>
+              <input name="platformFeePct" defaultValue={v.platformFeePct} className={input} inputMode="decimal" placeholder="6" />
+              {err.platformFee && <p className="mt-1 text-xs text-red-600">{err.platformFee}</p>}
+            </div>
+            <div>
+              <label className={label}>Mode</label>
+              <select name="platformFeeMode" defaultValue={v.platformFeeMode} className={input}>
+                {MODE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className={label}>Mode</label>
-            <select name="platformFeeMode" defaultValue={v.platformFeeMode} className={input}>
-              {MODE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-            </select>
-          </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Deposit */}
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">

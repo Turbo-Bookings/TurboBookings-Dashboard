@@ -5,9 +5,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { UserButton } from "@clerk/nextjs";
 import { SearchBookings } from "@/components/SearchBookings";
+import { useTour } from "@/components/tour/TourProvider";
 import {
   BarChart3,
   ClipboardList,
+  HelpCircle,
   LayoutDashboard,
   type LucideIcon,
   Map,
@@ -110,6 +112,7 @@ type Props = {
 export function LocationShell({ slug, brandName, status, locations, caps, children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const { startTour } = useTour();
   const base = `/locations/${slug}`;
   const nav = NAV.filter((n) => caps[n.cap]);
   const [collapsed, setCollapsed] = useState(false);
@@ -131,7 +134,7 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
 
   const activeKey = nav.find((n) => n.match(pathname, base))?.key ?? "";
 
-  function NavLinks({ compact }: { compact: boolean }) {
+  function NavLinks({ compact, anchors }: { compact: boolean; anchors?: boolean }) {
     return (
       <nav className="flex flex-col gap-1 px-2">
         {nav.map((item) => {
@@ -141,6 +144,7 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
             <Link
               key={item.key}
               href={item.href(base)}
+              data-tour={anchors ? `nav-${item.key}` : undefined}
               title={compact ? item.label : undefined}
               onClick={() => setDrawerOpen(false)}
               className={`group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
@@ -204,7 +208,7 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
         </div>
       )}
 
-      <NavLinks compact={compact} />
+      <NavLinks compact={compact} anchors={!inDrawer} />
       <div className="mt-auto" />
     </div>
   );
@@ -245,6 +249,17 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
           </div>
           <div className="ml-auto flex items-center gap-3">
             <SearchBookings slug={slug} />
+            <button
+              type="button"
+              onClick={startTour}
+              data-tour="help-button"
+              title="Take a tour"
+              aria-label="Take a tour"
+              className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <HelpCircle className="h-5 w-5" />
+              <span className="hidden sm:inline">Help</span>
+            </button>
             <UserButton appearance={{ elements: { avatarBox: "h-8 w-8" } }} />
           </div>
         </header>

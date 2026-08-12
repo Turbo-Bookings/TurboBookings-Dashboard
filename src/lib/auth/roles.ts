@@ -2,22 +2,31 @@ import "server-only";
 import { currentUser } from "@clerk/nextjs/server";
 import { notFound } from "next/navigation";
 
-// 4 fixed roles (locked design, custom-booking-system-exploration §0.7):
-//   master      — operator + team; cross-location admin
-//   admin       — client; full access for their location (config, etc.)
-//   director    — manager; manifest + bookings + refunds + reports
+// 5 fixed roles (ranked ladder — a role has every capability at or below it):
+//   master      — Turbo owner; cross-location, sees everything incl. platform fee
+//   admin       — Turbo team; full access to a location incl. fee + marketing
+//   operator    — location client; their product (tours/Stripe/taxes/branding/
+//                 emails/reviews/bookings) but NOT the platform fee or marketing
+//   director    — manager/standard staff; manifest + bookings + refunds + reports
 //   basic_user  — front-line staff; manifest + check-in + view-only
 // Role is read from Clerk publicMetadata.role. Until a user is explicitly
 // assigned a role, they default to "master" so the owner is never locked out;
 // assigning a lower role (in the Clerk dashboard) activates enforcement.
-export const ROLES = ["master", "admin", "director", "basic_user"] as const;
+export const ROLES = [
+  "master",
+  "admin",
+  "operator",
+  "director",
+  "basic_user",
+] as const;
 export type Role = (typeof ROLES)[number];
 
 const RANK: Record<Role, number> = {
   basic_user: 0,
   director: 1,
-  admin: 2,
-  master: 3,
+  operator: 2,
+  admin: 3,
+  master: 4,
 };
 
 export async function getCurrentRole(): Promise<Role> {
@@ -39,13 +48,17 @@ export type Capability =
   | "checkin" // basic_user+
   | "manage_bookings" // director+ (create/reschedule)
   | "refund" // director+ (cancel/refund/holds)
-  | "manage_config"; // admin+ (discounts, policies, custom fields)
+  | "manage_config" // operator+ (their location: catalog, Stripe, taxes,
+  //   branding, emails, reviews, discounts, policies, activity)
+  | "manage_platform"; // admin+ (Turbo-only: processing/platform fee,
+//   marketing tracking, integration secrets, setup checklist)
 
 const CAP_MIN: Record<Capability, Role> = {
   checkin: "basic_user",
   manage_bookings: "director",
   refund: "director",
-  manage_config: "admin",
+  manage_config: "operator",
+  manage_platform: "admin",
 };
 
 export async function can(cap: Capability): Promise<boolean> {
@@ -81,5 +94,6 @@ export async function getCapabilities(): Promise<Capabilities> {
     manage_bookings: rank >= RANK[CAP_MIN.manage_bookings],
     refund: rank >= RANK[CAP_MIN.refund],
     manage_config: rank >= RANK[CAP_MIN.manage_config],
+    manage_platform: rank >= RANK[CAP_MIN.manage_platform],
   };
 }

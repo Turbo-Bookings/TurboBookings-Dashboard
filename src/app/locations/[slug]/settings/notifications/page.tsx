@@ -67,7 +67,7 @@ export default async function NotificationsSettingsPage({ params }: Props) {
   const confirmationAction = updateNotifications.bind(null, slug);
 
   return (
-    <section>
+    <section data-tour="notifications">
       <div className="mb-2">
         <Link
           href={`/locations/${slug}/settings`}

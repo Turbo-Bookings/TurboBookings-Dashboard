@@ -21,7 +21,7 @@ export default async function TrackingPage({ params }: Props) {
   ]);
 
   return (
-    <div className="mt-6 space-y-8">
+    <div className="mt-6 space-y-8" data-tour="tracking">
       <section>
         <div className="mb-4 max-w-2xl">
           <h2 className="text-base font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">

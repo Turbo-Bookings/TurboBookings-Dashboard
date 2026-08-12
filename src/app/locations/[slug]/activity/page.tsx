@@ -15,7 +15,7 @@ export default async function ActivityPage({ params }: Props) {
   const entries = await listAuditForLocation(loc.id, 200);
 
   return (
-    <div className="mt-6 space-y-6">
+    <div className="mt-6 space-y-6" data-tour="activity">
       <div className="max-w-2xl">
         <p className="text-sm text-zinc-500">
           Every config change to this location, newest first. Records who

@@ -15,7 +15,7 @@ export default async function SetupPage({ params }: Props) {
   const items = await getSetupItemsForLocation(loc.id);
 
   return (
-    <div className="mt-6 space-y-6">
+    <div className="mt-6 space-y-6" data-tour="setup">
       <div className="max-w-2xl">
         <p className="text-sm text-zinc-500">
           Wall-clock-heavy external dependencies. Twilio A2P brand registration
