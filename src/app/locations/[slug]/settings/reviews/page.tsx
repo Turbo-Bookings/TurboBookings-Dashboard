@@ -33,6 +33,7 @@ export default async function ReviewsSettingsPage({ params }: Props) {
           rating: loc.googleRatingTenths != null ? String(loc.googleRatingTenths / 10) : "",
           count: loc.googleReviewCount != null ? String(loc.googleReviewCount) : "",
           url: loc.googleReviewsUrl ?? "",
+          writeUrl: loc.googleWriteReviewUrl ?? "",
         }}
       />
     </section>

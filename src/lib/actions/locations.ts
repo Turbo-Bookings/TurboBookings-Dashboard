@@ -192,11 +192,18 @@ export async function updateLocationBranding(
 
 // ---------- Social proof (Google reviews shown on the customer flow) ----------
 
-type ReviewsErrors = Partial<Record<"rating" | "count" | "url" | "form", string>>;
+type ReviewsErrors = Partial<
+  Record<"rating" | "count" | "url" | "writeUrl" | "form", string>
+>;
 export type ReviewsState =
   | { ok: true; savedAt: number; values: ReviewsValues }
   | { ok: false; errors: ReviewsErrors; values: ReviewsValues };
-export type ReviewsValues = { rating: string; count: string; url: string };
+export type ReviewsValues = {
+  rating: string;
+  count: string;
+  url: string;
+  writeUrl: string;
+};
 
 export async function updateReviews(
   slug: string,
@@ -207,6 +214,7 @@ export async function updateReviews(
     rating: (formData.get("rating") as string | null)?.trim() ?? "",
     count: (formData.get("count") as string | null)?.trim() ?? "",
     url: (formData.get("url") as string | null)?.trim() ?? "",
+    writeUrl: (formData.get("writeUrl") as string | null)?.trim() ?? "",
   };
   const errors: ReviewsErrors = {};
 
@@ -224,6 +232,9 @@ export async function updateReviews(
   }
   const url = values.url || null;
   if (url && !URL_RE.test(url)) errors.url = "Must start with http:// or https://";
+  const writeUrl = values.writeUrl || null;
+  if (writeUrl && !URL_RE.test(writeUrl))
+    errors.writeUrl = "Must start with http:// or https://";
   // A rating without a count (or vice-versa) reads oddly on the badge.
   if ((ratingTenths == null) !== (count == null))
     errors.form = "Set both rating and review count (or clear both).";
@@ -242,6 +253,7 @@ export async function updateReviews(
       googleRatingTenths: ratingTenths,
       googleReviewCount: count,
       googleReviewsUrl: url,
+      googleWriteReviewUrl: writeUrl,
       updatedAt: sql`now()`,
     })
     .where(eq(locations.slug, slug));

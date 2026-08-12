@@ -169,6 +169,13 @@
       "when": 1786478178029,
       "tag": "0023_tiny_colonel_america",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786505700253,
+      "tag": "0024_chief_stepford_cuckoos",
+      "breakpoints": true
     }
   ]
 }

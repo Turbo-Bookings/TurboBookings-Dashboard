@@ -46,6 +46,31 @@ export function ReviewsForm({
         </div>
       </section>
 
+      <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="text-sm font-semibold">Write-a-review link</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          The button in your post-tour review email opens this link. Use a link
+          that drops the customer straight into Google&apos;s review dialog.
+        </p>
+        <div className="mt-3">
+          <label className={label} htmlFor="writeUrl">Write-a-review link (optional)</label>
+          <input
+            id="writeUrl"
+            name="writeUrl"
+            defaultValue={v.writeUrl}
+            placeholder="https://g.page/r/…/review"
+            className={input}
+          />
+          {err.writeUrl && <p className={errCls}>{err.writeUrl}</p>}
+          <p className="mt-1 text-xs text-zinc-500">
+            In your Google Business Profile, choose <strong>Ask for reviews</strong>{" "}
+            (or <strong>Get more reviews</strong>) and copy the share link — it
+            looks like <code>https://g.page/r/…/review</code>. Leave blank to fall
+            back to the Reviews link above.
+          </p>
+        </div>
+      </section>
+
       {err.form && <p className={errCls}>{err.form}</p>}
       {state?.ok && <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Saved.</p>}
 

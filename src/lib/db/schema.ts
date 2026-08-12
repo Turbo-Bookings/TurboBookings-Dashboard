@@ -175,6 +175,10 @@ export const locations = pgTable("locations", {
   googleRatingTenths: integer("google_rating_tenths"),
   googleReviewCount: integer("google_review_count"),
   googleReviewsUrl: text("google_reviews_url"),
+  // Deep link to Google's write-a-review dialog (e.g. https://g.page/r/…/review),
+  // used by the post-tour review email's CTA. Distinct from googleReviewsUrl,
+  // which links the on-site badge to the profile for reading reviews.
+  googleWriteReviewUrl: text("google_write_review_url"),
 
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

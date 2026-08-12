@@ -1,0 +1,1 @@
+ALTER TABLE "locations" ADD COLUMN "google_write_review_url" text;
