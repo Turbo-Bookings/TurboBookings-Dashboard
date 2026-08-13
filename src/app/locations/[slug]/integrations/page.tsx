@@ -21,7 +21,7 @@ export default async function IntegrationsPage({ params }: Props) {
 
   // Per-location secrets are Turbo-only (manage_platform); operators see just
   // Stripe Connect (the secrets section is hidden below).
-  const showSecrets = await can("manage_platform");
+  const showSecrets = await can("manage_platform", slug);
   const [summaries, tokenConfigured, stripeStatus] = await Promise.all([
     getSecretSummariesForLocation(loc.id),
     vercelApiTokenStatus(),

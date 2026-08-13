@@ -24,7 +24,7 @@ export async function setLocationStatus(
   slug: string,
   newStatus: Location["status"],
 ): Promise<LifecycleState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   if (!STATUS_VALUES.includes(newStatus)) {
     return { ok: false, error: "Invalid status" };
@@ -68,7 +68,7 @@ export async function deleteLocation(
   slug: string,
   confirmSlug: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   if (confirmSlug !== slug) {
     return { ok: false, error: "Confirmation slug doesn't match" };
@@ -112,7 +112,7 @@ export async function updateExternalLinks(
   _prev: UpdateLinksState | null,
   formData: FormData,
 ): Promise<UpdateLinksState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const vercelProjectId =
     String(formData.get("vercelProjectId") ?? "").trim() || null;

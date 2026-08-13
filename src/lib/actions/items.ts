@@ -162,7 +162,7 @@ export async function createItem(
   formData: FormData,
 ): Promise<ItemFormState> {
   const values = parseItemForm(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validateItem(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
@@ -222,7 +222,7 @@ export async function updateItem(
   formData: FormData,
 ): Promise<ItemFormState> {
   const values = parseItemForm(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validateItem(values);
   if (Object.keys(errors).length > 0) return { ok: false, errors, values };
@@ -272,7 +272,7 @@ export async function deleteItem(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -318,7 +318,7 @@ export async function addCustomerTypeToItem(
   itemId: string,
   customerTypeId: string,
 ): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_config", slug);
   const location = await getLocationBySlug(slug);
   if (!location) return;
 
@@ -375,7 +375,7 @@ export async function removeCustomerTypeFromItem(
   itemId: string,
   customerTypeId: string,
 ): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_config", slug);
   const location = await getLocationBySlug(slug);
   if (!location) return;
 
@@ -478,7 +478,7 @@ export async function saveItemPricing(
   _prev: SavePricingState | null,
   formData: FormData,
 ): Promise<SavePricingState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, rowErrors: {}, formError: deny };
   const location = await getLocationBySlug(slug);
   if (!location)
@@ -596,7 +596,7 @@ export async function saveItemResourceRequirements(
   _prev: SaveResourceReqState | null,
   formData: FormData,
 ): Promise<SaveResourceReqState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, cellErrors: {}, formError: deny };
   const location = await getLocationBySlug(slug);
   if (!location)

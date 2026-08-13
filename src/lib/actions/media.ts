@@ -74,7 +74,7 @@ export async function uploadAsset(
   _prev: UploadAssetState | null,
   formData: FormData,
 ): Promise<UploadAssetState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const limits = KIND_LIMITS[kind];
   const file = formData.get("file");
@@ -159,7 +159,7 @@ export async function uploadAsset(
 }
 
 export async function deleteAsset(slug: string, assetId: string): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_config", slug);
   const db = getDb();
   const rows = await db.select().from(assets).where(eq(assets.id, assetId)).limit(1);
   const row = rows[0];
@@ -179,7 +179,7 @@ export async function reorderGallery(
   slug: string,
   orderedIds: string[],
 ): Promise<void> {
-  await assertCan("manage_config");
+  await assertCan("manage_config", slug);
   if (orderedIds.length === 0) return;
   const db = getDb();
   // Update each row's sortOrder to match its index in the array.

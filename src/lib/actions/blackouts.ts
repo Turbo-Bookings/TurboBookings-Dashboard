@@ -14,7 +14,7 @@ export async function addBlackout(
   slug: string,
   formData: FormData,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const startDate = String(formData.get("startDate") ?? "").trim();
   const endRaw = String(formData.get("endDate") ?? "").trim();
@@ -62,7 +62,7 @@ export async function removeBlackout(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };

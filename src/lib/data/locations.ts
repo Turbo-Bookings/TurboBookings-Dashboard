@@ -1,11 +1,15 @@
 import "server-only";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getDb, locations } from "@/lib/db";
+import { accessibleLocationIds } from "@/lib/auth/roles";
 
-// Lightweight list for the sidebar location switcher.
+// Lightweight list for the sidebar location switcher — scoped to the locations
+// the current user can access (all for global master/admin).
 export async function listLocationsForSwitcher(): Promise<
   { slug: string; name: string; status: string }[]
 > {
+  const access = await accessibleLocationIds();
+  if (access !== "all" && access.length === 0) return [];
   const db = getDb();
   const rows = await db
     .select({
@@ -14,6 +18,7 @@ export async function listLocationsForSwitcher(): Promise<
       status: locations.status,
     })
     .from(locations)
+    .where(access === "all" ? undefined : inArray(locations.id, access))
     .orderBy(asc(locations.brandLocationLabel));
   return rows.map((r) => ({ slug: r.slug, name: r.name ?? r.slug, status: r.status }));
 }

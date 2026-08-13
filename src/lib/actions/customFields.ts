@@ -69,7 +69,7 @@ export async function createCustomField(
   formData: FormData,
 ): Promise<CustomFieldFormState> {
   const values = parse(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
@@ -89,7 +89,7 @@ export async function updateCustomField(
   formData: FormData,
 ): Promise<CustomFieldFormState> {
   const values = parse(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
@@ -111,7 +111,7 @@ export async function deleteCustomField(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -138,7 +138,7 @@ export async function setFieldAttachments(
   fieldId: string,
   itemIds: string[],
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };

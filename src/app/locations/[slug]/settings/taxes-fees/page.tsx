@@ -20,7 +20,7 @@ export default async function TaxesFeesPage({ params }: Props) {
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
   const action = updateTaxesFees.bind(null, slug);
-  const showFee = await can("manage_platform");
+  const showFee = await can("manage_platform", slug);
 
   return (
     <section>

@@ -23,7 +23,7 @@ export async function setSlotStatus(
   if (!VALID_STATUS.includes(status as never))
     return { ok: false, error: "Invalid status" };
 
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -54,7 +54,7 @@ export async function setSlotCapacity(
   slotId: string,
   capacityRaw: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const trimmed = capacityRaw.trim();
   let capacityOverride: number | null;
@@ -92,7 +92,7 @@ export async function deleteSlot(
   slug: string,
   slotId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };

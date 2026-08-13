@@ -13,6 +13,7 @@ import {
   Plug,
   Receipt,
   Star,
+  UserPlus,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -35,7 +36,7 @@ export default async function SettingsPage({
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
   const b = `/locations/${slug}`;
-  const showPlatform = await can("manage_platform");
+  const showPlatform = await can("manage_platform", slug);
 
   const groups: Group[] = [
     {
@@ -75,8 +76,9 @@ export default async function SettingsPage({
     },
     {
       title: "Operations",
-      desc: "Launch readiness and change history.",
+      desc: "People, launch readiness, and change history.",
       items: [
+        { label: "Team", desc: "Invite people & set their access", href: `${b}/settings/team`, icon: UserPlus, tone: "blue" },
         { label: "Setup", desc: "External-dependency checklist", href: `${b}/setup`, icon: ClipboardCheck, tone: "amber", platform: true },
         { label: "Activity", desc: "Audit log of every change", href: `${b}/activity`, icon: History, tone: "zinc" },
       ],

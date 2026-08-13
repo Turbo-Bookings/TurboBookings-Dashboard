@@ -11,7 +11,7 @@ import {
   type TourCatalogItem,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
-import { denyIfCannot } from "@/lib/auth/roles";
+import { canCreateLocation, denyIfCannot } from "@/lib/auth/roles";
 
 type FieldErrors = Partial<
   Record<"slug" | "city" | "apex" | "displayName" | "form", string>
@@ -44,9 +44,13 @@ export async function createLocation(
   const apex = String(formData.get("apex") ?? "").toLowerCase().trim();
   const displayName = String(formData.get("displayName") ?? "").trim();
 
-  const deny = await denyIfCannot("manage_config");
-  if (deny)
-    return { ok: false, errors: { form: deny }, values: { slug, city, apex, displayName } };
+  // Creating a location is a global action — only Turbo team (master/admin).
+  if (!(await canCreateLocation()))
+    return {
+      ok: false,
+      errors: { form: "You don't have permission for this action." },
+      values: { slug, city, apex, displayName },
+    };
 
   const errors: FieldErrors = {};
   if (!slug) errors.slug = "Required";
@@ -123,7 +127,7 @@ export async function updateLocationBranding(
   _prev: UpdateBrandingState | null,
   formData: FormData,
 ): Promise<UpdateBrandingState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny } };
   const brandDisplayName = clean(formData.get("brandDisplayName"));
   const brandLocationLabel = clean(formData.get("brandLocationLabel"));
@@ -243,7 +247,7 @@ export async function updateReviews(
 
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, errors: { form: "Location not found" }, values };
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
 
   const db = getDb();
@@ -292,7 +296,7 @@ export async function updateNotifications(
 
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found", value };
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny, value };
 
   const db = getDb();
@@ -362,7 +366,7 @@ export async function updateEmailTemplate(
 
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
 
   const db = getDb();
@@ -417,7 +421,7 @@ export async function updateTourCatalog(
   _prev: UpdateTourCatalogState | null,
   formData: FormData,
 ): Promise<UpdateTourCatalogState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const raw = formData.get("tourCatalog");
   if (typeof raw !== "string") return { ok: false, error: "Missing tourCatalog payload" };

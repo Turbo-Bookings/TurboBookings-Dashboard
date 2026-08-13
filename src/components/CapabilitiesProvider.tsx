@@ -11,6 +11,7 @@ const CapabilitiesContext = createContext<Capabilities>({
   manage_bookings: false,
   refund: false,
   manage_config: false,
+  manage_team: false,
   manage_platform: false,
 });
 

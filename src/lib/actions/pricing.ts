@@ -55,7 +55,7 @@ export async function updateTaxesFees(
   // The processing/platform fee is Turbo-only (manage_platform). Operators
   // don't see the fields and can't change the fee — validate + write it only
   // for privileged users; otherwise the existing fee is preserved.
-  const canFee = await can("manage_platform");
+  const canFee = await can("manage_platform", slug);
 
   const tax = pct(values.taxRatePct);
   if (tax == null) errors.taxRate = "0–100";
@@ -84,7 +84,7 @@ export async function updateTaxesFees(
 
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, errors: { form: "Location not found" }, values };
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
 
   const db = getDb();

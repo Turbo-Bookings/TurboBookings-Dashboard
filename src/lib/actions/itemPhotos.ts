@@ -42,7 +42,7 @@ export async function uploadItemPhoto(
   _prev: ItemPhotoState | null,
   formData: FormData,
 ): Promise<ItemPhotoState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
 
   const file = formData.get("file");
@@ -78,7 +78,7 @@ export async function removeItemPhoto(
   itemId: string,
   url: string,
 ): Promise<ItemPhotoState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const loaded = await loadItem(slug, itemId);
   if (!loaded.ok) return { ok: false, error: loaded.error };
@@ -106,7 +106,7 @@ export async function setItemCoverPhoto(
   itemId: string,
   url: string,
 ): Promise<ItemPhotoState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const loaded = await loadItem(slug, itemId);
   if (!loaded.ok) return { ok: false, error: loaded.error };

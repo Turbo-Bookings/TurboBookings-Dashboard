@@ -76,7 +76,7 @@ export async function createDiscountCode(
   formData: FormData,
 ): Promise<DiscountFormState> {
   const values = parse(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
@@ -102,7 +102,7 @@ export async function updateDiscountCode(
   formData: FormData,
 ): Promise<DiscountFormState> {
   const values = parse(formData);
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny }, values };
   const errors = validate(values);
   if (Object.keys(errors).length) return { ok: false, errors, values };
@@ -130,7 +130,7 @@ export async function deleteDiscountCode(
   slug: string,
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };

@@ -78,7 +78,7 @@ export async function setBookingCheckIn(
   bookingId: string,
   status: string,
 ): Promise<Result> {
-  const deny = await denyIfCannot("checkin");
+  const deny = await denyIfCannot("checkin", slug);
   if (deny) return { ok: false, error: deny };
   if (!CHECK.includes(status as Check))
     return { ok: false, error: "Invalid status" };
@@ -121,7 +121,7 @@ export async function setLineCheckInCounts(
   checkedIn: number,
   noShow: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("checkin");
+  const deny = await denyIfCannot("checkin", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -169,7 +169,7 @@ export async function cancelBooking(
   bookingId: string,
   reason: string,
 ): Promise<Result> {
-  const deny = await denyIfCannot("refund");
+  const deny = await denyIfCannot("refund", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -256,7 +256,7 @@ export async function placeHold(
 ): Promise<Result> {
   if (!Number.isInteger(amountCents) || amountCents < 50)
     return { ok: false, error: "Enter a valid hold amount" };
-  const deny = await denyIfCannot("refund");
+  const deny = await denyIfCannot("refund", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -340,7 +340,7 @@ export async function captureHold(
   holdId: string,
   amountCents?: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("refund");
+  const deny = await denyIfCannot("refund", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -381,7 +381,7 @@ export async function releaseHold(
   slug: string,
   holdId: string,
 ): Promise<Result> {
-  const deny = await denyIfCannot("refund");
+  const deny = await denyIfCannot("refund", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -422,7 +422,7 @@ export async function rescheduleBooking(
   feeCents: number,
   reason: string,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
@@ -555,7 +555,7 @@ export async function addVehicles(
   lineId: string,
   qty: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!Number.isInteger(qty) || qty < 1) return { ok: false, error: "Invalid quantity" };
   const location = await getLocationBySlug(slug);
@@ -625,7 +625,7 @@ export async function removeVehicles(
   lineId: string,
   qty: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!Number.isInteger(qty) || qty < 1) return { ok: false, error: "Invalid quantity" };
   const location = await getLocationBySlug(slug);
@@ -661,7 +661,7 @@ export async function addBookingAdjustment(
   label: string,
   amountCents: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!Number.isInteger(amountCents) || amountCents === 0) return { ok: false, error: "Enter an amount" };
   const location = await getLocationBySlug(slug);
@@ -688,7 +688,7 @@ export async function editBookingTotal(
   bookingId: string,
   totalCents: number,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!Number.isInteger(totalCents) || totalCents < 0) return { ok: false, error: "Enter a valid total" };
   const location = await getLocationBySlug(slug);
@@ -712,7 +712,7 @@ export async function requestCommunication(
   channel: "email" | "sms",
   body: string,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!body.trim()) return { ok: false, error: "Enter a message" };
   const location = await getLocationBySlug(slug);
@@ -744,7 +744,7 @@ export async function messageSlotCustomers(
   audience: "all" | "not_checked_in",
   body: string,
 ): Promise<Result & { count?: number }> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (!body.trim()) return { ok: false, error: "Enter a message" };
   const location = await getLocationBySlug(slug);
@@ -807,7 +807,7 @@ export async function moveSlotBookings(
   fromAvailabilityId: string,
   toAvailabilityId: string,
 ): Promise<Result & { count?: number }> {
-  const deny = await denyIfCannot("manage_bookings");
+  const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
   if (fromAvailabilityId === toAvailabilityId)
     return { ok: false, error: "Pick a different time" };

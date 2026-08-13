@@ -18,7 +18,7 @@ export default async function LocationLayout({ children, params }: Props) {
   const [loc, locations, caps, user] = await Promise.all([
     getLocationBySlug(slug),
     listLocationsForSwitcher(),
-    getCapabilities(),
+    getCapabilities(slug),
     currentUser(),
   ]);
   if (!loc) notFound();
@@ -30,7 +30,7 @@ export default async function LocationLayout({ children, params }: Props) {
   const autoStart = seenV < TOUR_VERSION;
 
   return (
-    <RoleGate>
+    <RoleGate slug={loc.slug}>
       <TourProvider slug={loc.slug} caps={caps} autoStart={autoStart}>
         <LocationShell
           slug={loc.slug}

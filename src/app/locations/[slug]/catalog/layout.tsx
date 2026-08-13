@@ -8,7 +8,7 @@ type Props = {
 
 export default async function CatalogLayout({ children, params }: Props) {
   const { slug } = await params;
-  await requirePageCapability("manage_config");
+  await requirePageCapability("manage_config", slug);
 
   return (
     <div>

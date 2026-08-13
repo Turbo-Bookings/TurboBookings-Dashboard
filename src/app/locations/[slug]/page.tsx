@@ -15,8 +15,8 @@ export default async function BrandingPage({ params }: Props) {
   const { slug } = await params;
   // This root is a config (branding/media) surface. Send lower roles to the
   // highest landing they can access so the bare root is never a dead end.
-  if (!(await can("manage_config"))) {
-    if (await can("manage_bookings")) redirect(`/locations/${slug}/dashboard`);
+  if (!(await can("manage_config", slug))) {
+    if (await can("manage_bookings", slug)) redirect(`/locations/${slug}/dashboard`);
     redirect(`/locations/${slug}/manifest`);
   }
   const loc = await getLocationBySlug(slug);

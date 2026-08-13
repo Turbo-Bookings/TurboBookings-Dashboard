@@ -47,7 +47,7 @@ export async function uploadLogo(
   _prev: UploadLogoState | null,
   formData: FormData,
 ): Promise<UploadLogoState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny };
   const file = formData.get("logo");
   if (!(file instanceof File) || file.size === 0) {
@@ -116,7 +116,7 @@ export async function saveVisualIdentity(
   _prev: SaveVisualIdentityState | null,
   formData: FormData,
 ): Promise<SaveVisualIdentityState> {
-  const deny = await denyIfCannot("manage_config");
+  const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, errors: { form: deny } };
   const primaryColor = String(formData.get("primaryColor") ?? "").trim().toLowerCase();
   const accentColor = String(formData.get("accentColor") ?? "").trim().toLowerCase();
