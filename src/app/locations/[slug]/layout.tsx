@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { currentUser } from "@clerk/nextjs/server";
 import { LocationShell } from "@/components/LocationShell";
 import { CapabilitiesProvider } from "@/components/CapabilitiesProvider";
+import { RoleGate } from "@/components/RoleGate";
 import { TourProvider } from "@/components/tour/TourProvider";
 import { TOUR_VERSION } from "@/components/tour/steps";
 import { getLocationBySlug, listLocationsForSwitcher } from "@/lib/data/locations";
@@ -29,16 +30,18 @@ export default async function LocationLayout({ children, params }: Props) {
   const autoStart = seenV < TOUR_VERSION;
 
   return (
-    <TourProvider slug={loc.slug} caps={caps} autoStart={autoStart}>
-      <LocationShell
-        slug={loc.slug}
-        brandName={loc.brandDisplayName ?? loc.slug}
-        status={loc.status}
-        locations={locations}
-        caps={caps}
-      >
-        <CapabilitiesProvider caps={caps}>{children}</CapabilitiesProvider>
-      </LocationShell>
-    </TourProvider>
+    <RoleGate>
+      <TourProvider slug={loc.slug} caps={caps} autoStart={autoStart}>
+        <LocationShell
+          slug={loc.slug}
+          brandName={loc.brandDisplayName ?? loc.slug}
+          status={loc.status}
+          locations={locations}
+          caps={caps}
+        >
+          <CapabilitiesProvider caps={caps}>{children}</CapabilitiesProvider>
+        </LocationShell>
+      </TourProvider>
+    </RoleGate>
   );
 }

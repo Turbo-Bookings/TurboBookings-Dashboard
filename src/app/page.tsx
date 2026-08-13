@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { asc, sql } from "drizzle-orm";
 import { AppShell } from "@/components/AppShell";
+import { RoleGate } from "@/components/RoleGate";
 import { StatusBadge } from "@/components/StatusBadge";
 import { getDb, locations } from "@/lib/db";
 
@@ -33,6 +34,7 @@ export default async function HomePage() {
   const rows = await listLocations();
 
   return (
+    <RoleGate>
     <AppShell>
       <div className="mb-6 flex items-center justify-between">
         <div>
@@ -88,5 +90,6 @@ export default async function HomePage() {
         </table>
       </div>
     </AppShell>
+    </RoleGate>
   );
 }

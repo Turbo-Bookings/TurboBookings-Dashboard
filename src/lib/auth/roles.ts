@@ -9,9 +9,10 @@ import { notFound } from "next/navigation";
 //                 emails/reviews/bookings) but NOT the platform fee or marketing
 //   director    — manager/standard staff; manifest + bookings + refunds + reports
 //   basic_user  — front-line staff; manifest + check-in + view-only
-// Role is read from Clerk publicMetadata.role. Until a user is explicitly
-// assigned a role, they default to "master" so the owner is never locked out;
-// assigning a lower role (in the Clerk dashboard) activates enforcement.
+// Role is read from Clerk publicMetadata.role. A user with NO valid role has
+// no access (fail CLOSED) — they see a "pending" gate, not the dashboard. So
+// every real user (including the owner) must be assigned a role in Clerk; this
+// prevents a fresh/invited account from silently landing as an admin.
 export const ROLES = [
   "master",
   "admin",
@@ -29,18 +30,27 @@ const RANK: Record<Role, number> = {
   master: 4,
 };
 
-export async function getCurrentRole(): Promise<Role> {
+// The current user's assigned role, or null when they have no valid role yet
+// (fail CLOSED). Also null if the auth lookup throws (e.g. mid key-rotation),
+// so a transient error never grants access.
+export async function getCurrentRole(): Promise<Role | null> {
   try {
     const u = await currentUser();
     const r = u?.publicMetadata?.role as string | undefined;
-    return r && (ROLES as readonly string[]).includes(r) ? (r as Role) : "master";
+    return r && (ROLES as readonly string[]).includes(r) ? (r as Role) : null;
   } catch {
-    return "master";
+    return null;
   }
 }
 
+// True once the user has any valid assigned role (used by the pending gate).
+export async function hasAssignedRole(): Promise<boolean> {
+  return (await getCurrentRole()) !== null;
+}
+
 export async function hasRole(min: Role): Promise<boolean> {
-  return RANK[await getCurrentRole()] >= RANK[min];
+  const r = await getCurrentRole();
+  return r !== null && RANK[r] >= RANK[min];
 }
 
 // Capability → minimum role. Gate mutations on these, not on raw role checks.
@@ -85,9 +95,19 @@ export async function requirePageCapability(cap: Capability): Promise<void> {
 
 export type Capabilities = Record<Capability, boolean>;
 
+const NO_CAPS: Capabilities = {
+  checkin: false,
+  manage_bookings: false,
+  refund: false,
+  manage_config: false,
+  manage_platform: false,
+};
+
 // Resolve all capabilities for the current user in one shot (single role read).
+// A role-less user gets nothing (fail closed).
 export async function getCapabilities(): Promise<Capabilities> {
   const role = await getCurrentRole();
+  if (role === null) return NO_CAPS;
   const rank = RANK[role];
   return {
     checkin: rank >= RANK[CAP_MIN.checkin],

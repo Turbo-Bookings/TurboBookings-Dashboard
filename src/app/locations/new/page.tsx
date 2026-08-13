@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { NewLocationForm } from "@/components/NewLocationForm";
+import { RoleGate } from "@/components/RoleGate";
 
 export default function NewLocationPage() {
   return (
+    <RoleGate>
     <AppShell>
       <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500">
         <Link href="/" className="hover:text-zinc-700 dark:hover:text-zinc-300">
@@ -26,5 +28,6 @@ export default function NewLocationPage() {
         <NewLocationForm />
       </div>
     </AppShell>
+    </RoleGate>
   );
 }
