@@ -22,7 +22,15 @@
 // a clear "now do these manually" surface.
 
 import { spawn, type SpawnOptions } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -395,18 +403,78 @@ async function downloadAssets(
   const imagesDir = `${targetDir}/public/images`;
   mkdirSync(imagesDir, { recursive: true });
 
-  // Singular kinds → conventional filenames the template references.
-  await downloadOne(grouped.hero_desktop[0], `${imagesDir}/hero-desktop-v2.mp4`);
-  await downloadOne(grouped.hero_mobile[0], `${imagesDir}/hero-mobile-v2.mp4`);
-  await downloadOne(grouped.og_image[0], `${imagesDir}/og-image-v2.jpg`);
-
   // Gallery photos numbered in order. Template references gallery-1 through
-  // gallery-8 — we honor that ceiling but allow fewer.
+  // gallery-8 — we honor that ceiling but allow fewer. (Optimized on upload,
+  // so these are already small; kept at fixed names.)
   for (let i = 0; i < Math.min(grouped.gallery_photo.length, 8); i++) {
     const asset = grouped.gallery_photo[i];
     const ext = asset.contentType.includes("png") ? "png" : "jpg";
     await downloadOne(asset, `${imagesDir}/gallery-${i + 1}.${ext}`);
   }
+}
+
+// Regex-replace across the clone's source tree. Used to retarget asset
+// references onto content-hashed filenames (works on both the initial fork and
+// --assets-only re-syncs, since it matches any prior hash).
+function replaceInTree(root: string, pattern: RegExp, replacement: string): number {
+  let count = 0;
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(root, { recursive: true }) as string[];
+  } catch {
+    return 0;
+  }
+  for (const rel of entries) {
+    if (!/\.(tsx?|json|css|mjs)$/.test(rel)) continue;
+    const full = `${root}/${rel}`;
+    try {
+      const src = readFileSync(full, "utf8");
+      if (pattern.test(src)) {
+        writeFileSync(full, src.replace(pattern, replacement));
+        count += 1;
+      }
+    } catch {
+      /* directory entry / unreadable — skip */
+    }
+  }
+  return count;
+}
+
+// Download a big bandwidth asset (hero video / OG image) to a CONTENT-HASHED
+// filename and retarget the template's references to it. Combined with the
+// immutable cache header, this means replacing an asset always busts the CDN +
+// browser cache (the URL changes), while unchanged assets stay cached. Removes
+// stale prior versions to avoid orphan bytes.
+async function syncVersioned(
+  targetDir: string,
+  asset: Asset | undefined,
+  base: string,
+  ext: string,
+): Promise<void> {
+  if (!asset) return;
+  const res = await fetch(asset.blobUrl);
+  if (!res.ok) {
+    log(`  ! Failed to download ${asset.blobUrl} (${res.status}) — skipping\n`);
+    return;
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  const hash = createHash("sha256").update(buf).digest("hex").slice(0, 8);
+  const imagesDir = `${targetDir}/public/images`;
+  const newName = `${base}-${hash}.${ext}`;
+
+  // Remove any prior <base>-*.<ext> (template's -v2 file or an older hash).
+  for (const f of readdirSync(imagesDir)) {
+    if (new RegExp(`^${base}-[a-zA-Z0-9]+\\.${ext}$`).test(f) && f !== newName) {
+      rmSync(`${imagesDir}/${f}`, { force: true });
+    }
+  }
+  writeFileSafe(`${imagesDir}/${newName}`, buf);
+
+  // Retarget every reference (template ships <base>-v2.<ext>; re-syncs carry an
+  // older hash) to the new hashed name.
+  const pattern = new RegExp(`${base}-[a-zA-Z0-9]+\\.${ext}`, "g");
+  const n = replaceInTree(`${targetDir}/src`, pattern, newName);
+  log(`  ✓ ${newName} (${formatBytes(buf.length)}, ${n} ref${n === 1 ? "" : "s"})\n`);
 }
 
 async function downloadOne(asset: Asset | undefined, destPath: string): Promise<void> {
@@ -444,6 +512,11 @@ async function downloadAllAssets(
   await downloadAssets(targetDir, grouped);
   const imagesDir = `${targetDir}/public/images`;
   mkdirSync(imagesDir, { recursive: true });
+
+  // Big bandwidth assets → content-hashed filenames (cache-bust on replace).
+  await syncVersioned(targetDir, grouped.hero_desktop[0], "hero-desktop", "mp4");
+  await syncVersioned(targetDir, grouped.hero_mobile[0], "hero-mobile", "mp4");
+  await syncVersioned(targetDir, grouped.og_image[0], "og-image", "jpg");
 
   // Logo — uploaded via Visual Identity (stored as a Blob URL for color
   // extraction). Placed at the conventional /images/logo.png the template reads.
