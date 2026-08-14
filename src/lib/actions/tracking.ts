@@ -16,7 +16,11 @@ export type UpdateTrackingState =
   | { ok: true }
   | { ok: false; errors: FieldErrors };
 
-const PIXEL_RE = /^\d{15,16}$/;
+// Meta pixel / dataset IDs are numeric — historically 15-16 digits, but newer
+// Datasets can be 17. We strip non-digits first (pastes from Meta's UI often
+// carry stray spaces / zero-width chars that a plain trim misses), then check
+// length only.
+const PIXEL_RE = /^\d{15,17}$/;
 const GA4_RE = /^G-[A-Z0-9]{8,12}$/;
 const GTM_RE = /^GTM-[A-Z0-9]{6,10}$/;
 const ADS_RE = /^AW-\d{8,12}$/;
@@ -25,6 +29,13 @@ function clean(v: FormDataEntryValue | null): string | null {
   if (typeof v !== "string") return null;
   const t = v.trim();
   return t === "" ? null : t;
+}
+
+// For the Meta pixel/dataset ID: keep digits only (robust to hidden characters).
+function cleanDigits(v: FormDataEntryValue | null): string | null {
+  if (typeof v !== "string") return null;
+  const d = v.replace(/\D/g, "");
+  return d === "" ? null : d;
 }
 
 // Ensure a tracking_config row exists for this location, returning its id.
@@ -71,7 +82,7 @@ export async function updateTracking(
     return { ok: false, errors: { mode: "Invalid mode" } };
   }
 
-  const metaPixelId = clean(formData.get("metaPixelId"));
+  const metaPixelId = cleanDigits(formData.get("metaPixelId"));
   const metaDomainVerification = clean(formData.get("metaDomainVerification"));
   const ga4MeasurementId = clean(formData.get("ga4MeasurementId"));
   const gtmContainerId = clean(formData.get("gtmContainerId"));
@@ -82,7 +93,7 @@ export async function updateTracking(
 
   const errors: FieldErrors = {};
   if (metaPixelId && !PIXEL_RE.test(metaPixelId))
-    errors.metaPixelId = "Meta pixel ID must be 15-16 digits";
+    errors.metaPixelId = "Meta pixel/dataset ID must be 15–17 digits";
   if (ga4MeasurementId && !GA4_RE.test(ga4MeasurementId))
     errors.ga4MeasurementId = "GA4 ID must look like G-ABCDEF1234";
   if (gtmContainerId && !GTM_RE.test(gtmContainerId))
@@ -152,7 +163,7 @@ const MATCHERS: FieldMatcher[] = [
     key: "metaPixelId",
     build: (id) => ({
       exact: new RegExp(`fbq\\(\\s*['"]init['"]\\s*,\\s*['"]${id}['"]`),
-      any: /fbq\(\s*['"]init['"]\s*,\s*['"](\d{15,16})['"]/,
+      any: /fbq\(\s*['"]init['"]\s*,\s*['"](\d{15,17})['"]/,
     }),
   },
   {

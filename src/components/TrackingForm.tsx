@@ -37,6 +37,9 @@ function SaveButton() {
 }
 
 export function TrackingForm({ location, config }: Props) {
+  // No FareHarbor shortname → this location runs on the custom booking system,
+  // so it IS the canonical Purchase source (CAPI toggle should be ON).
+  const isCustomBooking = !location.fareharborShortname;
   const [mode, setMode] = useState<Mode>(config?.mode ?? "direct");
   const [capiEnabled, setCapiEnabled] = useState(
     config?.metaCapiPurchaseEnabled ?? false,
@@ -117,7 +120,7 @@ export function TrackingForm({ location, config }: Props) {
             defaultValue={config?.metaPixelId ?? ""}
             error={errors.metaPixelId}
             verification={verification.metaPixelId}
-            hint="15-16 digits, no prefix. From Meta Business Manager → Data Sources → Pixels."
+            hint="15–17 digits, no prefix. From Meta Events Manager → Data Sources (the Pixel / Dataset ID)."
             placeholder="516637097197570"
           />
           <TrackingField
@@ -194,8 +197,14 @@ export function TrackingForm({ location, config }: Props) {
         </div>
       )}
 
-      {/* Meta CAPI Purchase toggle */}
-      <div className="rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/50">
+      {/* Meta CAPI Purchase toggle — guidance depends on booking mode. */}
+      <div
+        className={
+          isCustomBooking
+            ? "rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950/40"
+            : "rounded-md border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/50"
+        }
+      >
         <label className="flex items-start gap-3">
           <input
             type="checkbox"
@@ -205,16 +214,32 @@ export function TrackingForm({ location, config }: Props) {
             className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
           />
           <div className="flex-1 text-sm">
-            <div className="font-medium text-amber-900 dark:text-amber-100">
+            <div
+              className={
+                isCustomBooking
+                  ? "font-medium text-blue-900 dark:text-blue-100"
+                  : "font-medium text-amber-900 dark:text-amber-100"
+              }
+            >
               Enable our Meta CAPI Purchase events
             </div>
-            <div className="mt-1 text-xs text-amber-800 dark:text-amber-300">
-              FareHarbor&apos;s own CAPI integration is canonical for Purchase
-              and is normally the only source firing. Turn this on only if you
-              know FareHarbor&apos;s CAPI is down or you&apos;re running a
-              controlled comparison. Both on at the same time =
-              double-counting.
-            </div>
+            {isCustomBooking ? (
+              <div className="mt-1 text-xs text-blue-800 dark:text-blue-300">
+                This location runs on the custom booking system (no FareHarbor),
+                so <strong>we are the canonical source of Purchase events</strong>
+                . Keep this <strong>ON</strong> — the booking app fires the
+                server-side Purchase (deduped with the client pixel). If it&apos;s
+                off, no server-side Purchase is sent.
+              </div>
+            ) : (
+              <div className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                FareHarbor&apos;s own CAPI integration is canonical for Purchase
+                and is normally the only source firing. Turn this on only if you
+                know FareHarbor&apos;s CAPI is down or you&apos;re running a
+                controlled comparison. Both on at the same time =
+                double-counting.
+              </div>
+            )}
           </div>
         </label>
       </div>
