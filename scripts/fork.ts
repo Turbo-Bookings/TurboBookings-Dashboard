@@ -22,7 +22,7 @@
 // a clear "now do these manually" surface.
 
 import { spawn, type SpawnOptions } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -30,9 +30,10 @@ import { eq, sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
-import { assets, locations } from "../src/lib/db/schema";
+import { assets, items, locations } from "../src/lib/db/schema";
 import type {
   Asset,
+  Item,
   Location,
   TourCatalogItem,
 } from "../src/lib/db/schema";
@@ -52,9 +53,12 @@ async function main() {
   // a /book/* rewrite instead of FareHarbor, so they don't have FareHarbor
   // account fields. Skip the FareHarbor validation + print the /book follow-ups.
   const customBooking = args.includes("--custom-booking");
+  // Re-sync assets into an already-forked repo (no clone / site.ts / git init).
+  // Use after uploading/replacing assets in the dashboard's Branding & Tours tab.
+  const assetsOnly = args.includes("--assets-only");
 
   if (!slug) {
-    fail("Usage: npm run fork -- <slug> [--custom-booking] [--push]");
+    fail("Usage: npm run fork -- <slug> [--custom-booking] [--assets-only] [--push]");
   }
 
   const url = process.env.DATABASE_URL;
@@ -70,15 +74,40 @@ async function main() {
   const loc = locRows[0];
   if (!loc) fail(`Location not found: ${slug}`);
 
-  validateLocation(loc!, { customBooking });
+  if (!assetsOnly) validateLocation(loc!, { customBooking });
 
   const assetRows = await db
     .select()
     .from(assets)
     .where(eq(assets.locationId, loc!.id));
   const groupedAssets = groupAssetsByKind(assetRows);
+  const itemRows = await db
+    .select()
+    .from(items)
+    .where(eq(items.locationId, loc!.id));
 
   const targetDir = resolve(scriptDir(), "..", "..", `${slug}-atv-rentals-site`);
+
+  // ---- Assets-only re-sync path -------------------------------------------
+  if (assetsOnly) {
+    if (!existsSync(targetDir)) {
+      fail(`Repo not found: ${targetDir}. Run a full fork first (without --assets-only).`);
+    }
+    log(`Re-syncing assets → ${targetDir}\n`);
+    await downloadAllAssets(targetDir, groupedAssets, loc!, itemRows);
+    log("✓ Assets re-synced under /public/images/\n");
+    if (push) {
+      await run("git", ["add", "public/images"], { cwd: targetDir });
+      await run("git", ["commit", "-m", "Re-sync brand assets from dashboard"], {
+        cwd: targetDir,
+      });
+      log("✓ Committed. Push manually or let Vercel deploy from your branch.\n");
+    } else {
+      log("· Review the changes, then commit + push (or re-run with --push).\n");
+    }
+    return;
+  }
+
   if (existsSync(targetDir)) {
     fail(`Target directory already exists: ${targetDir}`);
   }
@@ -107,13 +136,17 @@ async function main() {
   writeReadme(targetDir, loc!);
   log("✓ Updated package.json + README\n");
 
-  // 6. Download assets
-  if (Object.values(groupedAssets).some((arr) => arr.length > 0)) {
-    log("→ Downloading assets from Vercel Blob…\n");
-    await downloadAssets(targetDir, groupedAssets);
-    log("✓ Assets in place under /public/images/\n");
-  } else {
-    log("· No assets uploaded yet — skipping. Add them in the Branding & Tours tab and re-run with --assets-only.\n");
+  // 6. Download assets (hero/og/gallery + logo + tour photos)
+  log("→ Downloading assets from Vercel Blob…\n");
+  await downloadAllAssets(targetDir, groupedAssets, loc!, itemRows);
+  log("✓ Assets in place under /public/images/\n");
+
+  // 6b. Custom-booking transform — convert the FareHarbor template clone into a
+  //     /book-rewrite site (see applyCustomBookingTransform).
+  if (customBooking) {
+    log("→ Applying custom-booking transform (/book rewrite, CTA repoint)…\n");
+    applyCustomBookingTransform(targetDir, slug!);
+    log("✓ Site wired to the custom booking system\n");
   }
 
   // 7. (Phase 2 polish) Remove Miami-specific SEO pages, drop ES locale if
@@ -378,14 +411,258 @@ async function downloadAssets(
 
 async function downloadOne(asset: Asset | undefined, destPath: string): Promise<void> {
   if (!asset) return;
-  const res = await fetch(asset.blobUrl);
+  await downloadUrl(asset.blobUrl, destPath);
+}
+
+// Download a raw Blob URL (used for the logo + per-tour photos, which live on
+// the location row / items rows rather than the assets table).
+async function downloadUrl(
+  urlStr: string | null | undefined,
+  destPath: string,
+): Promise<void> {
+  if (!urlStr) return;
+  const res = await fetch(urlStr);
   if (!res.ok) {
-    log(`  ! Failed to download ${asset.blobUrl} (${res.status}) — skipping\n`);
+    log(`  ! Failed to download ${urlStr} (${res.status}) — skipping\n`);
     return;
   }
   const buf = Buffer.from(await res.arrayBuffer());
   writeFileSafe(destPath, buf);
   log(`  ✓ ${destPath.split("/").pop()} (${formatBytes(buf.length)})\n`);
+}
+
+// Full brand-asset sync: the four assets-table kinds (hero/og/gallery) plus the
+// logo (locations.visualLogoUrl → logo.png) and the first photo of each tour
+// (items.photoUrls → tour-1.jpg …), all placed at conventional filenames the
+// template + fork transform reference. Safe to call repeatedly (--assets-only).
+async function downloadAllAssets(
+  targetDir: string,
+  grouped: Record<Asset["kind"], Asset[]>,
+  loc: Location,
+  itemRows: Item[],
+): Promise<void> {
+  await downloadAssets(targetDir, grouped);
+  const imagesDir = `${targetDir}/public/images`;
+  mkdirSync(imagesDir, { recursive: true });
+
+  // Logo — uploaded via Visual Identity (stored as a Blob URL for color
+  // extraction). Placed at the conventional /images/logo.png the template reads.
+  if (loc.visualLogoUrl) {
+    const ext = loc.visualLogoUrl.split("?")[0].endsWith(".svg") ? "svg" : "png";
+    await downloadUrl(loc.visualLogoUrl, `${imagesDir}/logo.${ext}`);
+    // Point the clone's logo references at the fork's own logo (keeps the live
+    // Miami template untouched). The template ships with the Miami logo file.
+    const logoEdit = [
+      { find: `/images/Takeover-logo-WGR.png`, replace: `/images/logo.${ext}` },
+    ];
+    patchFile(`${targetDir}/src/components/sections/Header.tsx`, logoEdit, "logo (Header)");
+    patchFile(`${targetDir}/src/components/sections/Footer.tsx`, logoEdit, "logo (Footer)");
+  } else {
+    log("  · No logo uploaded (Visual Identity tab) — template logo kept.\n");
+  }
+
+  // Per-tour hero photo → tour-1.jpg, tour-2.jpg … in catalog sort order.
+  const sortedItems = [...itemRows].sort(
+    (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0),
+  );
+  let tourN = 0;
+  for (const it of sortedItems) {
+    const first = (it.photoUrls ?? [])[0];
+    if (!first) continue;
+    tourN += 1;
+    await downloadUrl(first, `${imagesDir}/tour-${tourN}.jpg`);
+  }
+  if (tourN === 0) {
+    log("  · No tour photos uploaded (Tours tab) — none synced.\n");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Custom-booking transform
+//
+// Converts a fresh FareHarbor-template clone into a custom-booking site (served
+// by book.turbobookings.net via a /book rewrite). Kept in the fork script — NOT
+// the template — so the live Miami template's tracking-critical code is never
+// touched (per takeovers-site CLAUDE.md). Idempotent-ish and defensive: each
+// patch warns if its target text isn't found rather than failing the fork, so
+// template drift is visible. The per-company CONTENT rebrand (single vs. many
+// tours, copy, dropping locales) stays manual.
+// ---------------------------------------------------------------------------
+
+function patchFile(
+  path: string,
+  edits: { find: string; replace: string }[],
+  label: string,
+): void {
+  if (!existsSync(path)) {
+    log(`  ! ${label}: ${path.split("/").slice(-2).join("/")} not found — skipped\n`);
+    return;
+  }
+  let src = readFileSync(path, "utf8");
+  for (const { find, replace } of edits) {
+    if (src.includes(find)) {
+      src = src.replace(find, replace);
+    } else {
+      log(`  ! ${label}: expected snippet not found (template drift?) — skipped one edit\n`);
+    }
+  }
+  writeFileSync(path, src);
+}
+
+function applyCustomBookingTransform(targetDir: string, slug: string): void {
+  const src = `${targetDir}/src`;
+
+  // 1. next.config.ts — /book rewrite to the booking app; drop the template's
+  //    Miami/Wix redirect map (a fresh domain has no legacy URLs).
+  writeFileSafe(
+    `${targetDir}/next.config.ts`,
+    `import type { NextConfig } from "next";
+import createNextIntlPlugin from "next-intl/plugin";
+
+const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
+
+// Custom booking system: /book/* is proxied to the booking app so the address
+// bar stays on this location's domain and all pixels/cookies stay first-party.
+const BOOKING_APP = "https://book.turbobookings.net/${slug}";
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/images/:path*",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+        ],
+      },
+    ];
+  },
+  async rewrites() {
+    return [
+      { source: "/book", destination: BOOKING_APP },
+      { source: "/book/:path*", destination: \\\`\${BOOKING_APP}/:path*\\\` },
+    ];
+  },
+};
+
+export default withNextIntl(nextConfig);
+`,
+  );
+
+  // 2. src/lib/booking.ts — repoint every CTA to /book. A Proxy returns "/book"
+  //    for any TOUR_URLS key so this works regardless of the tour set.
+  writeFileSafe(
+    `${src}/lib/booking.ts`,
+    `// Custom booking system: every "Book" CTA points at /book, which
+// next.config.ts rewrites to the booking app. Customers land on this
+// location's tour list and pick there.
+
+export const BOOK_URL = "/book";
+
+// Any tour key resolves to /book (the marketing tour cards can deep-link to
+// /book/tours/<item> once wired to the real catalog).
+export const TOUR_URLS = new Proxy({} as Record<string, string>, {
+  get: () => "/book",
+});
+
+export type TourKey = string;
+`,
+  );
+
+  // 3. src/lib/tracking.ts — demote the book-click from InitiateCheckout to a
+  //    custom BookClick event so the booking app's InitiateCheckout isn't
+  //    double-counted. (Keeps tour content_ids for retargeting.)
+  patchFile(
+    `${src}/lib/tracking.ts`,
+    [
+      {
+        find: `  const id = trackEvent("InitiateCheckout", {
+    content_name: tourName,
+    content_ids: [tourId],
+    content_type: "product",
+    value: tourPrice,
+    currency: "USD",
+    button_location: buttonLocation,
+  });
+  trackGAInitiateCheckout(tourName, tourId, tourPrice, buttonLocation);`,
+        replace: `  const id = trackEvent(
+    "BookClick",
+    {
+      content_name: tourName,
+      content_ids: [tourId],
+      content_type: "product",
+      value: tourPrice,
+      currency: "USD",
+      button_location: buttonLocation,
+    },
+    { custom: true },
+  );
+  trackGACustomEvent("book_click", {
+    content_name: tourName,
+    content_ids: [tourId],
+    value: tourPrice,
+    currency: "USD",
+    button_location: buttonLocation,
+  });`,
+      },
+      {
+        find: `  trackGACustomEvent,
+  trackGAInitiateCheckout,
+  trackGAPageView,`,
+        replace: `  trackGACustomEvent,
+  trackGAPageView,`,
+      },
+    ],
+    "tracking.ts BookClick",
+  );
+
+  // 4. Env-gate the tracking IDs so a fork never inherits the template's pixel.
+  patchFile(
+    `${src}/components/tracking/MetaPixel.tsx`,
+    [{ find: `const PIXEL_ID = "516637097197570";`, replace: `const PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "";` }],
+    "MetaPixel env-gate",
+  );
+  patchFile(
+    `${src}/components/tracking/MetaPixel.tsx`,
+    [{ find: `  return (\n    <>\n      <Script\n        id="meta-pixel-base"`, replace: `  if (!PIXEL_ID) return null;\n\n  return (\n    <>\n      <Script\n        id="meta-pixel-base"` }],
+    "MetaPixel guard",
+  );
+  patchFile(
+    `${src}/app/api/meta-capi/route.ts`,
+    [{ find: `const PIXEL_ID = "516637097197570";`, replace: `const PIXEL_ID = process.env.META_PIXEL_ID ?? process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "";` }],
+    "meta-capi env-gate",
+  );
+
+  // 5. Remove the FareHarbor-only machinery (dead without FareHarbor). The
+  //    booking app owns Purchase; there is no lightframe, webhook, or intent
+  //    bridge here.
+  for (const p of [
+    `${src}/app/api/webhooks/fareharbor`,
+    `${src}/app/api/booking-intent`,
+    `${src}/lib/booking-intent-store.ts`,
+    `${src}/components/tracking/BookingLinkDecorator.tsx`,
+    `${src}/lib/ad-tracking.ts`,
+  ]) {
+    if (existsSync(p)) rmSync(p, { recursive: true, force: true });
+  }
+
+  // 6. Patch layout — drop the FareHarbor lightframe script + BookingLinkDecorator.
+  patchFile(
+    `${src}/app/[locale]/layout.tsx`,
+    [
+      { find: `import { BookingLinkDecorator } from "@/components/tracking/BookingLinkDecorator";\n`, replace: `` },
+      { find: `          <BookingLinkDecorator />\n`, replace: `` },
+      {
+        find: `        <Script
+          src="https://fareharbor.com/embeds/api/v1/?autolightframe=yes"
+          strategy="afterInteractive"
+        />\n`,
+        replace: ``,
+      },
+    ],
+    "layout FareHarbor removal",
+  );
+
+  log("  · Content rebrand (tours, copy, locales) remains a manual pass.\n");
 }
 
 // ---------------------------------------------------------------------------
