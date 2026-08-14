@@ -6,6 +6,13 @@ import { put, del } from "@vercel/blob";
 import { revalidatePath } from "next/cache";
 import { assets, getDb, locations } from "@/lib/db";
 import type { Asset } from "@/lib/db/schema";
+import { IMAGE_PRESETS, optimizeImage } from "@/lib/media/optimize";
+
+// Recommended encoding for hero background videos — keeps them small enough to
+// avoid the Vercel bandwidth blowup. Surfaced when a video exceeds the cap.
+const VIDEO_RECIPE =
+  "Please upload a web-optimized MP4. Recommended: H.264, ≤1080p, ~2 Mbps, no audio — e.g. " +
+  '`ffmpeg -i in.mov -vf "scale=-2:1080" -c:v libx264 -b:v 2M -an -movflags +faststart out.mp4`';
 
 // Asset kinds split into "singular" (one per location — uploading replaces
 // the existing one) and "multi" (gallery photos, ordered). Server-side
@@ -20,12 +27,12 @@ const KIND_LIMITS: Record<
   { maxBytes: number; allowedTypes: Set<string>; label: string }
 > = {
   hero_desktop: {
-    maxBytes: 50 * 1024 * 1024,
+    maxBytes: 15 * 1024 * 1024,
     allowedTypes: new Set(["video/mp4", "video/quicktime", "video/webm"]),
     label: "Hero video (desktop)",
   },
   hero_mobile: {
-    maxBytes: 50 * 1024 * 1024,
+    maxBytes: 12 * 1024 * 1024,
     allowedTypes: new Set(["video/mp4", "video/quicktime", "video/webm"]),
     label: "Hero video (mobile)",
   },
@@ -87,9 +94,11 @@ export async function uploadAsset(
       error: `${limits.label} must be one of: ${[...limits.allowedTypes].join(", ")}`,
     };
   }
+  const isVideo = kind === "hero_desktop" || kind === "hero_mobile";
   if (file.size > limits.maxBytes) {
     const mb = Math.round(limits.maxBytes / (1024 * 1024));
-    return { ok: false, error: `${limits.label} must be ${mb} MB or smaller` };
+    const base = `${limits.label} must be ${mb} MB or smaller`;
+    return { ok: false, error: isVideo ? `${base}. ${VIDEO_RECIPE}` : base };
   }
 
   const locationId = await getLocationIdBySlug(slug);
@@ -123,14 +132,29 @@ export async function uploadAsset(
     }
   }
 
-  // Path: kinds/<slug>/<kind>/<timestamp>.<ext> — easy to inspect in Blob
-  // browser; doesn't collide across reuploads.
+  // Optimize images before storing (format-preserving resize + recompress).
+  // Videos pass through — they're size-guarded above and transcoded in the CI
+  // fork step. SVG / failed optimizations fall back to the original bytes.
+  let body: File | Buffer = file;
+  let contentType = file.type;
+  let sizeBytes = file.size;
+  if (kind === "og_image" || kind === "gallery_photo") {
+    const preset =
+      kind === "og_image" ? IMAGE_PRESETS.og_image : IMAGE_PRESETS.gallery_photo;
+    const original = Buffer.from(await file.arrayBuffer());
+    const optimized = await optimizeImage(original, file.type, preset);
+    body = optimized?.buffer ?? original;
+    if (optimized) sizeBytes = optimized.bytes;
+  }
+
+  // Path: <slug>/<kind>/<timestamp>.<ext> — easy to inspect in Blob browser;
+  // doesn't collide across reuploads.
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
   const pathname = `${slug}/${kind}/${Date.now()}.${ext}`;
 
-  const blob = await put(pathname, file, {
+  const blob = await put(pathname, body, {
     access: "public",
-    contentType: file.type,
+    contentType,
   });
 
   // For gallery photos, append at the end of the sort order.
@@ -149,8 +173,8 @@ export async function uploadAsset(
     locationId,
     kind,
     blobUrl: blob.url,
-    contentType: file.type,
-    sizeBytes: file.size,
+    contentType,
+    sizeBytes,
     sortOrder,
   });
 

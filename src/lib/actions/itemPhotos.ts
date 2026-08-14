@@ -7,6 +7,7 @@ import { recordAudit } from "@/lib/audit";
 import { getDb, items } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
+import { IMAGE_PRESETS, optimizeImage } from "@/lib/media/optimize";
 
 // Per-tour photos live in items.photoUrls (jsonb string[]); the customer tour
 // page renders photoUrls[0] as the hero (pickTourImage). Uploads go to Vercel
@@ -61,7 +62,13 @@ export async function uploadItemPhoto(
 
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
   const pathname = `${slug}/items/${itemId}/${Date.now()}.${ext}`;
-  const blob = await put(pathname, file, { access: "public", contentType: file.type });
+  // Optimize tour photos (resize/recompress, format preserved) before storing.
+  const original = Buffer.from(await file.arrayBuffer());
+  const optimized = await optimizeImage(original, file.type, IMAGE_PRESETS.tour_photo);
+  const blob = await put(pathname, optimized?.buffer ?? original, {
+    access: "public",
+    contentType: file.type,
+  });
 
   await db
     .update(items)

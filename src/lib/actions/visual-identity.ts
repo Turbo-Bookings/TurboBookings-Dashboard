@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { put } from "@vercel/blob";
 import { Vibrant } from "node-vibrant/node";
 import { getDb, locations } from "@/lib/db";
+import { IMAGE_PRESETS, optimizeImage } from "@/lib/media/optimize";
 
 // node-vibrant returns a Palette with up to 6 named swatches. We surface
 // them all to the UI so the operator/VA can pick whichever matches the
@@ -65,7 +66,16 @@ export async function uploadLogo(
   const ext = file.name.split(".").pop() ?? "bin";
   const pathname = `logos/${slug}/${Date.now()}.${ext}`;
 
-  const blob = await put(pathname, file, {
+  // Optimize raster logos (resize/recompress, format preserved so transparency
+  // is kept). SVGs pass through untouched.
+  const original = Buffer.from(await file.arrayBuffer());
+  const optimized =
+    file.type === "image/svg+xml"
+      ? null
+      : await optimizeImage(original, file.type, IMAGE_PRESETS.logo);
+  const body = optimized?.buffer ?? original;
+
+  const blob = await put(pathname, body, {
     access: "public",
     contentType: file.type,
   });
@@ -73,7 +83,7 @@ export async function uploadLogo(
   let swatches: ExtractedSwatch[] = [];
   if (file.type !== "image/svg+xml") {
     try {
-      const buffer = Buffer.from(await file.arrayBuffer());
+      const buffer = body;
       const palette = await Vibrant.from(buffer).getPalette();
       swatches = SWATCH_LABELS.flatMap((name) => {
         const swatch = palette[name];
