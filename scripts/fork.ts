@@ -48,9 +48,13 @@ async function main() {
   const args = process.argv.slice(2);
   const slug = args.find((a) => !a.startsWith("--"));
   const push = args.includes("--push");
+  // Custom-booking locations (e.g. Dallas) run on the custom booking system via
+  // a /book/* rewrite instead of FareHarbor, so they don't have FareHarbor
+  // account fields. Skip the FareHarbor validation + print the /book follow-ups.
+  const customBooking = args.includes("--custom-booking");
 
   if (!slug) {
-    fail("Usage: npm run fork -- <slug> [--push]");
+    fail("Usage: npm run fork -- <slug> [--custom-booking] [--push]");
   }
 
   const url = process.env.DATABASE_URL;
@@ -66,7 +70,7 @@ async function main() {
   const loc = locRows[0];
   if (!loc) fail(`Location not found: ${slug}`);
 
-  validateLocation(loc!);
+  validateLocation(loc!, { customBooking });
 
   const assetRows = await db
     .select()
@@ -148,7 +152,7 @@ async function main() {
   }
 
   // 10. Print follow-up checklist
-  printFollowUps({ slug: slug!, push, repoUrl, loc: loc! });
+  printFollowUps({ slug: slug!, push, repoUrl, loc: loc!, customBooking });
 }
 
 main().catch((err) => {
@@ -160,16 +164,24 @@ main().catch((err) => {
 // Validation
 // ---------------------------------------------------------------------------
 
-function validateLocation(loc: Location): void {
+function validateLocation(
+  loc: Location,
+  opts: { customBooking?: boolean } = {},
+): void {
   const required: Array<[string, unknown]> = [
     ["brandDisplayName", loc.brandDisplayName],
     ["brandLocationLabel", loc.brandLocationLabel],
     ["brandLegalName", loc.brandLegalName],
     ["domainApex", loc.domainApex],
     ["domainCanonical", loc.domainCanonical],
-    ["fareharborShortname", loc.fareharborShortname],
-    ["fareharborDefaultFlowId", loc.fareharborDefaultFlowId],
   ];
+  // FareHarbor fields are only required for FareHarbor-backed locations.
+  if (!opts.customBooking) {
+    required.push(
+      ["fareharborShortname", loc.fareharborShortname],
+      ["fareharborDefaultFlowId", loc.fareharborDefaultFlowId],
+    );
+  }
   const missing = required.filter(([, v]) => !v).map(([k]) => k);
   if (missing.length > 0) {
     fail(`Location is missing required fields: ${missing.join(", ")}`);
@@ -414,11 +426,13 @@ function printFollowUps({
   push,
   repoUrl,
   loc,
+  customBooking,
 }: {
   slug: string;
   push: boolean;
   repoUrl: string | null;
   loc: Location;
+  customBooking?: boolean;
 }): void {
   log("\n────────────────────────────────────────────────\n");
   log(`✓ Fork complete for ${loc.brandDisplayName} (${slug})\n`);
@@ -430,15 +444,27 @@ function printFollowUps({
     log(`Repo: ${repoUrl}\n\n`);
   }
 
-  log("Remaining manual steps (auto-Vercel-provisioning lands in a follow-up):\n");
-  log("  1. Create a Vercel project from the GitHub repo at https://vercel.com/new\n");
-  log(`  2. Connect Neon + Vercel Blob marketplace integrations on the project\n`);
-  log("  3. Provision a Vercel Edge Config and connect it to the project\n");
-  log("  4. Set env vars from .env.local.example (Resend, Twilio, FareHarbor secrets — paste in the dashboard's Integrations tab once VERCEL_API_TOKEN is configured)\n");
-  log("  5. Configure DNS — apex + www → Vercel; send. subdomain for Resend\n");
-  log("  6. Submit FareHarbor webhook URL via the dashboard's Setup tab\n");
-  log("  7. Verify Meta domain + GA4 + (optional) GTM in the dashboard's Tracking tab\n");
-  log(`  8. When healthy, transition status to "launched" in the dashboard Settings tab\n\n`);
+  if (customBooking) {
+    log("Custom-booking location — wire the site to the booking system:\n");
+    log(`  1. next.config.ts: add a rewrite /book/:path* → https://book.turbobookings.net/${slug}/:path*\n`);
+    log("  2. Repoint every 'Book' CTA off FareHarbor to /book/... (src/lib/booking.ts) and demote the book-click event from InitiateCheckout to a custom BookClick\n");
+    log("  3. Delete the FareHarbor-only tracking (src/app/api/webhooks/fareharbor, BookingLinkDecorator, /api/booking-intent) — the booking app owns Purchase\n");
+    log("  4. Set the fresh Meta pixel + GA4 IDs in the tracking components\n");
+    log("  5. Create a Vercel project, set env (tracking IDs, base URL), deploy a preview\n");
+    log("  6. Configure DNS — apex + www → Vercel; send. subdomain for Resend\n");
+    log(`  7. In the dashboard Tracking tab: set pixel/GA4/Ads IDs, flip meta_capi_purchase_enabled ON, paste the META_CAPI_TOKEN secret\n`);
+    log(`  8. When healthy, transition status to "launched" in the dashboard Settings tab\n\n`);
+  } else {
+    log("Remaining manual steps (auto-Vercel-provisioning lands in a follow-up):\n");
+    log("  1. Create a Vercel project from the GitHub repo at https://vercel.com/new\n");
+    log(`  2. Connect Neon + Vercel Blob marketplace integrations on the project\n`);
+    log("  3. Provision a Vercel Edge Config and connect it to the project\n");
+    log("  4. Set env vars from .env.local.example (Resend, Twilio, FareHarbor secrets — paste in the dashboard's Integrations tab once VERCEL_API_TOKEN is configured)\n");
+    log("  5. Configure DNS — apex + www → Vercel; send. subdomain for Resend\n");
+    log("  6. Submit FareHarbor webhook URL via the dashboard's Setup tab\n");
+    log("  7. Verify Meta domain + GA4 + (optional) GTM in the dashboard's Tracking tab\n");
+    log(`  8. When healthy, transition status to "launched" in the dashboard Settings tab\n\n`);
+  }
 
   log("Files you may still want to delete manually before launch:\n");
   log("  · src/app/[locale]/blog/why-takeovers-is-miamis-best-atv-tour/  (Miami-only SEO page)\n");
