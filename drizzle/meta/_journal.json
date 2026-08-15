@@ -176,6 +176,13 @@
       "when": 1786505700253,
       "tag": "0024_chief_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786812890054,
+      "tag": "0025_dark_manta",
+      "breakpoints": true
     }
   ]
 }

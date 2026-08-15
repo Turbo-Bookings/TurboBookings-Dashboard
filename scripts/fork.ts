@@ -136,7 +136,7 @@ async function main() {
   log("✓ Template cloned\n");
 
   // 4. Write src/config/site.ts
-  writeSiteConfig(targetDir, loc!);
+  writeSiteConfig(targetDir, loc!, { customBooking, slug: slug! });
   log("✓ Generated src/config/site.ts\n");
 
   // 5. Update package.json + README
@@ -233,7 +233,11 @@ function validateLocation(
 // src/config/site.ts generator
 // ---------------------------------------------------------------------------
 
-function writeSiteConfig(targetDir: string, loc: Location): void {
+function writeSiteConfig(
+  targetDir: string,
+  loc: Location,
+  opts: { customBooking?: boolean; slug: string } = { slug: "" },
+): void {
   const tourCatalog = (loc.fareharborTourCatalog ?? []) as TourCatalogItem[];
   const itemsBlock = tourCatalog
     .map((t) => {
@@ -290,6 +294,13 @@ export type SiteConfig = {
     tiktok: string;
     facebook: string;
   };
+  /** Only set on custom-booking forks (not FareHarbor sites). Drives the
+   * email-capture popup: which location to read config/post leads for, and the
+   * booking-app origin that serves /api/popup-config + /api/leads. */
+  customBooking?: {
+    slug: string;
+    bookingOrigin: string;
+  };
 };
 
 export const siteConfig: SiteConfig = {
@@ -327,7 +338,13 @@ ${itemsBlock}
     instagram: ${JSON.stringify(loc.socialsInstagram ?? "")},
     tiktok: ${JSON.stringify(loc.socialsTiktok ?? "")},
     facebook: ${JSON.stringify(loc.socialsFacebook ?? "")},
-  },
+  },${
+    opts.customBooking
+      ? `\n  customBooking: {\n    slug: ${JSON.stringify(opts.slug)},\n    bookingOrigin: ${JSON.stringify(
+          process.env.BOOKING_APP_URL ?? "https://book.turbobookings.net",
+        )},\n  },`
+      : ""
+  }
 };
 `;
   writeFileSafe(`${targetDir}/src/config/site.ts`, content);

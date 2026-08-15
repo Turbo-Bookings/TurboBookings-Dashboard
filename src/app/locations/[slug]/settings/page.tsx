@@ -7,6 +7,7 @@ import {
   LineChart,
   ListChecks,
   Mail,
+  MailPlus,
   Boxes,
   Palette,
   Percent,
@@ -72,6 +73,7 @@ export default async function SettingsPage({
       desc: "Your branded booking experience.",
       items: [
         { label: "Branding & Tours", desc: "Logo, colors, fonts, media, tour content", href: b, icon: Palette, tone: "orange" },
+        { label: "Email Popup", desc: "Signup popup to grow your list + lift ad match", href: `${b}/settings/popup`, icon: MailPlus, tone: "violet" },
       ],
     },
     {

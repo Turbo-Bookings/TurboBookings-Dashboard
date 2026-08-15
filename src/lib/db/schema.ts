@@ -282,6 +282,72 @@ export type TrackingConfig = typeof trackingConfig.$inferSelect;
 export type NewTrackingConfig = typeof trackingConfig.$inferInsert;
 
 // ---------------------------------------------------------------------------
+// Email-capture popup (Klaviyo-style) shown on the marketing site. Content is
+// operator-editable in the dashboard and read by the marketing site at request
+// time (via the booking app's /api/popup-config), so edits go live without a
+// site redeploy. One row per location.
+// ---------------------------------------------------------------------------
+export const popupConfig = pgTable("popup_config", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  locationId: uuid("location_id")
+    .notNull()
+    .references(() => locations.id, { onDelete: "cascade" })
+    .unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  headline: text("headline").notNull().default("Get 10% off your ride"),
+  subhead: text("subhead")
+    .notNull()
+    .default("Join our list for a one-time discount + first dibs on deals."),
+  offer: text("offer"), // optional eyebrow, e.g. "LIMITED TIME"
+  buttonLabel: text("button_label").notNull().default("Get my code"),
+  successMessage: text("success_message")
+    .notNull()
+    .default("You're in! Check your inbox for the code."),
+  // Optional discount code revealed on success (also emailed by marketing flow).
+  incentiveCode: text("incentive_code"),
+  imageUrl: text("image_url"),
+  // Trigger timing: show after N seconds, and/or on exit intent.
+  delaySeconds: integer("delay_seconds").notNull().default(8),
+  exitIntent: boolean("exit_intent").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export type PopupConfig = typeof popupConfig.$inferSelect;
+export type NewPopupConfig = typeof popupConfig.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Captured marketing leads (email subscribers) from the popup. Deduped per
+// location+email. On capture the booking app also fires a Meta CAPI `Lead`
+// event with the hashed email for EMQ + retargeting. Distinct from `customers`
+// (who have bookings) — a lead may never book.
+// ---------------------------------------------------------------------------
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    email: text("email").notNull(), // stored lowercased
+    source: text("source").notNull().default("popup"),
+    // Browser Meta signals captured at submit, for CAPI match quality.
+    fbp: text("fbp"),
+    fbc: text("fbc"),
+    // Shared event_id with the client Pixel `Lead` fire, for dedup.
+    leadEventId: text("lead_event_id"),
+    unsubscribedAt: timestamp("unsubscribed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    locationEmailIdx: uniqueIndex("leads_location_email_idx").on(t.locationId, t.email),
+  }),
+);
+
+export type Lead = typeof leads.$inferSelect;
+export type NewLead = typeof leads.$inferInsert;
+
+// ---------------------------------------------------------------------------
 // Per-location encrypted secrets. Generic key/value so we don't need a
 // migration to add a new secret kind — set whatever well-known key the
 // integration expects (META_CAPI_TOKEN, FAREHARBOR_WEBHOOK_SECRET, etc.)
