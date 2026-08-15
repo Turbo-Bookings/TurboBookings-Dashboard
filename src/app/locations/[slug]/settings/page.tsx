@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import {
   CalendarX,
   ClipboardCheck,
+  CreditCard,
   History,
   LineChart,
   ListChecks,
@@ -56,6 +57,7 @@ export default async function SettingsPage({
       desc: "What you charge and collect.",
       items: [
         { label: "Taxes & Fees", desc: "Tax rate, processing fee, deposit", href: `${b}/settings/taxes-fees`, icon: Receipt, tone: "emerald" },
+        { label: "Billing & Retainer", desc: "Card on file + monthly retainer", href: `${b}/settings/billing`, icon: CreditCard, tone: "blue" },
       ],
     },
     {

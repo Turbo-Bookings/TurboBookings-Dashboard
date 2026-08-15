@@ -32,6 +32,15 @@ export const chargeModeEnum = pgEnum("charge_mode", [
   "absorbed_by_client",
 ]);
 
+// Monthly platform-retainer subscription state (Stripe). `inactive` = never
+// started; `past_due` = a retainer invoice failed (dunning).
+export const retainerStatusEnum = pgEnum("retainer_status", [
+  "inactive",
+  "active",
+  "past_due",
+  "canceled",
+]);
+
 // Reservation deposit calculation mode. No `none` — a non-zero online
 // transaction is required so the platform fee can be collected. Operator
 // configures per location; per-item override is V1.5.
@@ -146,6 +155,18 @@ export const locations = pgTable("locations", {
   platformFeeMode: chargeModeEnum("platform_fee_mode")
     .notNull()
     .default("passed_to_customer"),
+
+  // Monthly platform retainer — a fixed management fee we charge the operator's
+  // OWN business card on the PLATFORM Stripe account (separate from the 6%
+  // per-booking fee above). Billed via a Stripe Subscription; the operator saves
+  // the card (SetupIntent), an admin sets the amount + billing day and starts it.
+  retainerCents: integer("retainer_cents"), // null = not configured
+  retainerBillingDay: integer("retainer_billing_day"), // 1–28
+  retainerStatus: retainerStatusEnum("retainer_status").notNull().default("inactive"),
+  stripePlatformCustomerId: text("stripe_platform_customer_id"), // cus_… on the platform account
+  stripeSubscriptionId: text("stripe_subscription_id"), // sub_…
+  retainerCardBrand: text("retainer_card_brand"),
+  retainerCardLast4: text("retainer_card_last4"),
 
   // Tax rate per location (FL is 700 = 7%; varies by state).
   taxRateBps: integer("tax_rate_bps").notNull().default(0),

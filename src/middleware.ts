@@ -9,6 +9,8 @@ const isPublicRoute = createRouteMatcher([
   // Vercel cron routes — authenticate via CRON_SECRET header inside the
   // handler, not via Clerk.
   "/api/cron/(.*)",
+  // Stripe webhooks — verified via the Stripe signature, not Clerk.
+  "/api/webhooks/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

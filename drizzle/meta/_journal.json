@@ -197,6 +197,13 @@
       "when": 1786833134222,
       "tag": "0027_special_apocalypse",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786834485974,
+      "tag": "0028_regular_titanium_man",
+      "breakpoints": true
     }
   ]
 }
