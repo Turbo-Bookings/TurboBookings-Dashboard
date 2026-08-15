@@ -20,7 +20,7 @@ import {
   resources,
 } from "@/lib/db";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
-import { validateDiscountForBooking } from "@/lib/booking/discount";
+import { validateDiscountForBooking, type DiscountLine } from "@/lib/booking/discount";
 import { getItemPricing } from "@/lib/data/items";
 import { getWholeBookingFieldsForItem } from "@/lib/data/customFields";
 import { getLocationBySlug } from "@/lib/data/locations";
@@ -170,13 +170,15 @@ export async function getTourBookingData(
   };
 }
 
-// Validate a discount code from the booking form (live preview).
+// Validate a discount code from the booking form (live preview). `opts` mirrors
+// the authoritative path so per-item + day-of-week codes preview correctly.
 export async function applyDiscountPreview(
   slug: string,
   itemId: string,
   ctIds: string[],
   subtotalCents: number,
   code: string,
+  opts?: { lines?: DiscountLine[]; availabilityId?: string },
 ): Promise<
   | { ok: true; appliedAmountCents: number; label: string; code: string }
   | { ok: false; error: string }
@@ -185,12 +187,23 @@ export async function applyDiscountPreview(
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
+  let tourStartsAt: Date | undefined;
+  if (opts?.availabilityId) {
+    tourStartsAt = (
+      await getDb()
+        .select({ startsAt: availabilities.startsAt })
+        .from(availabilities)
+        .where(eq(availabilities.id, opts.availabilityId))
+        .limit(1)
+    )[0]?.startsAt;
+  }
   const r = await validateDiscountForBooking(
     location.id,
     code,
     itemId,
     ctIds,
     Math.max(0, Math.round(subtotalCents)),
+    { lines: opts?.lines, tourStartsAt, timezone: location.timezone ?? "America/Chicago" },
   );
   if (!r.ok) return { ok: false, error: r.error };
   return { ok: true, appliedAmountCents: r.appliedAmountCents, label: r.label, code: code.trim() };
@@ -214,12 +227,28 @@ async function computePricing(location: Location, payload: Payload) {
   let discount: { discountCodeId: string; appliedAmountCents: number } | null = null;
   let discountError: string | null = null;
   if (payload.discountCode && payload.discountCode.trim()) {
+    const slot = (
+      await getDb()
+        .select({ startsAt: availabilities.startsAt })
+        .from(availabilities)
+        .where(eq(availabilities.id, payload.availabilityId))
+        .limit(1)
+    )[0];
     const r = await validateDiscountForBooking(
       location.id,
       payload.discountCode,
       payload.itemId,
       qlines.map((l) => l.ct),
       baseSubtotal,
+      {
+        lines: qlines.map((l) => ({
+          customerTypeId: l.ct,
+          quantity: l.q,
+          unitPriceCents: byCt.get(l.ct)!.priceCents,
+        })),
+        tourStartsAt: slot?.startsAt,
+        timezone: location.timezone ?? "America/Chicago",
+      },
     );
     if (r.ok) discount = { discountCodeId: r.discountCodeId, appliedAmountCents: r.appliedAmountCents };
     else discountError = r.error;

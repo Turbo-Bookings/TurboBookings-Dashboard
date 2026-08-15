@@ -80,11 +80,29 @@ event, env-gated pixel, and FareHarbor-machinery removal.
 
 ## 4. Content pass (the one manual step)
 
-The generator produces a working, branded site, but the **copy** is still the
-template's. Rebrand the homepage + core pages (pricing/FAQ/groups/policies) to
-this company: tour count/prices, hero copy, drop unused locales/sections, real
-review numbers. Use the location's real config as the source of truth (don't
-invent policies). Commit to `develop`.
+The generator applies **brand identity automatically** — it reads the location's
+`visual_primary_color` / `visual_accent_color` from the dashboard and rewrites
+the template's Miami palette across the whole site (globals `@theme`,
+`lib/tokens.ts`, component color literals, favicon, `themeColor`), and injects
+the deposit `$` amount into the marketing copy. So **set the brand colors in the
+dashboard before generating** (or set them later and re-run `npm run fork --
+<slug> --assets-only` to re-apply). Fonts are still a manual step (pick the
+display font in `layout.tsx` + `globals.css`).
+
+The **prose** is still the template's. Rebrand the homepage + core pages
+(pricing/FAQ/groups/policies) to this company: tour count/prices, hero copy, drop
+unused locales/sections, real review numbers, **contact phone/address**. Use the
+location's real config as the source of truth (don't invent policies).
+
+**Then run the brand linter** — it fails on any leftover Miami placeholders
+(red hex, `$50`, Miami phone/address, `takeoversmiami`, Oswald):
+
+```bash
+npm run lint:brand   # in the fork repo; must pass before launch
+```
+
+The fork CLI runs it automatically at the end of a generate and prints anything
+left to fix. Commit to `develop`.
 
 ## 5. Vercel project (git-linked)
 

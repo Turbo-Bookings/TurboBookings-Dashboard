@@ -208,7 +208,10 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
 
   async function applyCode() {
     setDiscountErr(null);
-    const r = await applyDiscountPreview(slug, itemId, activeLines.map((p) => p.ct), baseSubtotal, codeInput);
+    const r = await applyDiscountPreview(slug, itemId, activeLines.map((p) => p.ct), baseSubtotal, codeInput, {
+      lines: activeLines.map((p) => ({ customerTypeId: p.ct, quantity: qty[p.ct] ?? 0, unitPriceCents: p.priceCents })),
+      availabilityId: slotId || undefined,
+    });
     if (r.ok) setDiscount({ cents: r.appliedAmountCents, label: r.label, code: r.code });
     else {
       setDiscount(null);

@@ -1340,6 +1340,14 @@ export const discountAmountKindEnum = pgEnum("discount_amount_kind", [
   "percent", // basis points (10000 = 100%)
 ]);
 
+// Whether a code discounts each qualifying line separately (per_item — a fixed
+// amount comes off EVERY qualifying item × its quantity) or once off the order
+// total. For percent codes the two modes are mathematically identical.
+export const discountApplyModeEnum = pgEnum("discount_apply_mode", [
+  "order_total",
+  "per_item",
+]);
+
 export const discountCodes = pgTable(
   "discount_codes",
   {
@@ -1362,6 +1370,13 @@ export const discountCodes = pgTable(
       .default([]),
     appliesToCustomerTypeIds: jsonb("applies_to_customer_type_ids")
       .$type<string[]>()
+      .notNull()
+      .default([]),
+    applyMode: discountApplyModeEnum("apply_mode").notNull().default("order_total"),
+    // Days of week the code is valid, by the TOUR date in the location's tz.
+    // 0=Sun … 6=Sat (JS getDay convention). Empty = valid any day.
+    validDaysOfWeek: jsonb("valid_days_of_week")
+      .$type<number[]>()
       .notNull()
       .default([]),
     validFrom: timestamp("valid_from", { withTimezone: true }),

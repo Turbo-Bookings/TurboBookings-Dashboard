@@ -19,6 +19,8 @@ export type DiscountFormState = {
     code: string;
     amountKind: string; // "fixed" | "percent"
     amount: string; // dollars (fixed) or percent (percent)
+    applyMode: string; // "order_total" | "per_item"
+    validDaysOfWeek: number[]; // 0=Sun … 6=Sat; empty = any day
     maxUses: string;
     active: boolean;
     validFrom: string;
@@ -32,6 +34,10 @@ function parse(formData: FormData): DiscountFormState["values"] {
     code: String(formData.get("code") ?? "").trim().toUpperCase(),
     amountKind: String(formData.get("amountKind") ?? "fixed"),
     amount: String(formData.get("amount") ?? "").trim(),
+    applyMode: String(formData.get("applyMode") ?? "order_total"),
+    validDaysOfWeek: [...new Set(formData.getAll("validDaysOfWeek").map(Number))]
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6)
+      .sort((a, b) => a - b),
     maxUses: String(formData.get("maxUses") ?? "").trim(),
     active: formData.get("active") != null,
     validFrom: String(formData.get("validFrom") ?? "").trim(),
@@ -61,6 +67,10 @@ function toRow(v: DiscountFormState["values"]) {
     amountKind: v.amountKind as "fixed" | "percent",
     amountValue:
       v.amountKind === "percent" ? Math.round(amt * 100) : Math.round(amt * 100),
+    applyMode: (v.applyMode === "per_item" ? "per_item" : "order_total") as
+      | "per_item"
+      | "order_total",
+    validDaysOfWeek: v.validDaysOfWeek,
     maxUses: v.maxUses ? Number(v.maxUses) : null,
     active: v.active,
     appliesToItemIds: v.appliesToItemIds,

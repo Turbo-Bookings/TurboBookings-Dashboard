@@ -51,7 +51,13 @@ export function CustomFieldForm({
 
       <div>
         <label className="block text-sm font-medium">Help text (optional)</label>
-        <input name="helpText" defaultValue={v?.helpText ?? ""} className={input} />
+        <textarea
+          name="helpText"
+          defaultValue={v?.helpText ?? ""}
+          rows={3}
+          className={input}
+          placeholder={"Add extra guidance for the customer.\nLine breaks are preserved."}
+        />
       </div>
 
       {kind === "dropdown" && (

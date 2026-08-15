@@ -101,9 +101,10 @@ async function main() {
     if (!existsSync(targetDir)) {
       fail(`Repo not found: ${targetDir}. Run a full fork first (without --assets-only).`);
     }
-    log(`Re-syncing assets → ${targetDir}\n`);
+    log(`Re-syncing assets + brand → ${targetDir}\n`);
     await downloadAllAssets(targetDir, groupedAssets, loc!, itemRows);
     log("✓ Assets re-synced under /public/images/\n");
+    applyBrandIdentity(targetDir, loc!);
     if (push) {
       await run("git", ["add", "public/images"], { cwd: targetDir });
       await run("git", ["commit", "-m", "Re-sync brand assets from dashboard"], {
@@ -139,6 +140,9 @@ async function main() {
   writeSiteConfig(targetDir, loc!, { customBooking, slug: slug! });
   log("✓ Generated src/config/site.ts\n");
 
+  // 4b. Apply brand identity (colors + deposit copy) from the dashboard.
+  applyBrandIdentity(targetDir, loc!);
+
   // 5. Update package.json + README
   patchPackageJson(targetDir, slug!);
   writeReadme(targetDir, loc!);
@@ -155,6 +159,17 @@ async function main() {
     log("→ Applying custom-booking transform (/book rewrite, CTA repoint)…\n");
     applyCustomBookingTransform(targetDir, slug!);
     log("✓ Site wired to the custom booking system\n");
+  }
+
+  // 6c. Brand linter — surfaces any Miami placeholders that still need a manual
+  //     content pass (prose isn't auto-generated). Non-fatal: the operator fixes
+  //     what it reports, then re-runs `npm run lint:brand`.
+  try {
+    log("→ Checking for leftover template placeholders (lint:brand)…\n");
+    await run("node", ["scripts/lint-brand.mjs"], { cwd: targetDir });
+    log("✓ No Miami placeholders remain\n");
+  } catch {
+    log("  ! Brand linter found leftovers (see above) — finish the content pass, then re-run `npm run lint:brand`.\n");
   }
 
   // 7. (Phase 2 polish) Remove Miami-specific SEO pages, drop ES locale if
@@ -597,6 +612,42 @@ function patchFile(
     }
   }
   writeFileSync(path, src);
+}
+
+// Apply the location's brand identity from the dashboard onto the cloned site:
+// swap the template's Miami palette (primary/gold/neon) for the location's
+// visual_primary_color / visual_accent_color across the whole src tree (globals
+// @theme, lib/tokens, component literals, favicon, themeColor), and inject the
+// deposit dollar amount into the marketing copy. Fonts remain a documented
+// manual step (arbitrary next/font names); the brand linter flags leftovers.
+function applyBrandIdentity(targetDir: string, loc: Location): void {
+  const src = `${targetDir}/src`;
+  const primary = (loc.visualPrimaryColor ?? "").trim();
+  const accent = (loc.visualAccentColor ?? primary).trim();
+  if (primary) {
+    let n = 0;
+    n += replaceInTree(src, /#c8102e/gi, primary);
+    n += replaceInTree(src, /#8a0a1e/gi, primary); // darker Miami red (gradients)
+    if (accent) {
+      n += replaceInTree(src, /#d4a853/gi, accent); // gold
+      n += replaceInTree(src, /#39ff14/gi, accent); // neon
+    }
+    patchFile(
+      `${targetDir}/src/app/icon.svg`,
+      [{ find: "#C8102E", replace: primary.toUpperCase() }],
+      "Favicon color",
+    );
+    log(`✓ Brand colors applied — primary ${primary}${accent ? `, accent ${accent}` : ""} (${n} file refs)\n`);
+  } else {
+    log("  ! Brand: no visual_primary_color on the location — kept the template palette. Set brand colors in the dashboard, then re-run with --assets-only to apply.\n");
+  }
+  // Deposit dollar amount in marketing copy (per-unit / flat deposits only).
+  // "$$" in the replacement escapes to a literal "$" in String.replace.
+  if (loc.depositAmountCents != null && loc.depositMode !== "full") {
+    const dollars = Math.round(loc.depositAmountCents / 100);
+    const n = replaceInTree(src, /\$50\b/g, `$$${dollars}`);
+    if (n) log(`✓ Deposit copy set to $${dollars} (${n} file(s))\n`);
+  }
 }
 
 function applyCustomBookingTransform(targetDir: string, slug: string): void {

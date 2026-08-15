@@ -8,12 +8,25 @@ const EMPTY: DiscountFormState["values"] = {
   code: "",
   amountKind: "fixed",
   amount: "",
+  applyMode: "order_total",
+  validDaysOfWeek: [],
   maxUses: "",
   active: true,
   validFrom: "",
   validUntil: "",
   appliesToItemIds: [],
 };
+
+// Display order Mon→Sun; values use JS getDay (0=Sun … 6=Sat).
+const DOW = [
+  { v: 1, label: "Mon" },
+  { v: 2, label: "Tue" },
+  { v: 3, label: "Wed" },
+  { v: 4, label: "Thu" },
+  { v: 5, label: "Fri" },
+  { v: 6, label: "Sat" },
+  { v: 0, label: "Sun" },
+];
 
 const input =
   "mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
@@ -58,6 +71,17 @@ export function DiscountCodeForm({
         </div>
       </div>
 
+      <div>
+        <label className="block text-sm font-medium">Apply discount</label>
+        <select name="applyMode" defaultValue={v.applyMode} className={input}>
+          <option value="order_total">Off the order total (once)</option>
+          <option value="per_item">Per item (each qualifying rider)</option>
+        </select>
+        <p className="mt-1 text-xs text-zinc-500">
+          Per-item applies a fixed amount to every qualifying rider × quantity. (No effect on percent codes.)
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium">Max uses</label>
@@ -81,6 +105,28 @@ export function DiscountCodeForm({
           <label className="block text-sm font-medium">Valid until</label>
           <input type="date" name="validUntil" defaultValue={v.validUntil} className={input} />
           {err.validUntil && <p className="mt-1 text-xs text-red-600">{err.validUntil}</p>}
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium">Valid days</label>
+        <p className="text-xs text-zinc-500">By the tour date. Leave all unchecked for any day.</p>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {DOW.map((d) => (
+            <label
+              key={d.v}
+              className="flex cursor-pointer items-center gap-1.5 rounded-md border border-zinc-300 px-2.5 py-1 text-sm has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50 dark:border-zinc-700 dark:has-[:checked]:bg-blue-950"
+            >
+              <input
+                type="checkbox"
+                name="validDaysOfWeek"
+                value={d.v}
+                defaultChecked={v.validDaysOfWeek.includes(d.v)}
+                className="h-3.5 w-3.5"
+              />
+              {d.label}
+            </label>
+          ))}
         </div>
       </div>
 

@@ -37,6 +37,8 @@ export default async function EditDiscountPage({ params }: Props) {
           code: code.code,
           amountKind: code.amountKind,
           amount: String(code.amountValue / 100),
+          applyMode: code.applyMode,
+          validDaysOfWeek: code.validDaysOfWeek,
           maxUses: code.maxUses ? String(code.maxUses) : "",
           active: code.active,
           validFrom: dateInput(code.validFrom),
