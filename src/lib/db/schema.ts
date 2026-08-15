@@ -309,6 +309,9 @@ export const popupConfig = pgTable("popup_config", {
   // Trigger timing: show after N seconds, and/or on exit intent.
   delaySeconds: integer("delay_seconds").notNull().default(8),
   exitIntent: boolean("exit_intent").notNull().default(true),
+  // After a visitor dismisses (closes without subscribing), don't show again on
+  // that browser for this many days. Subscribers are suppressed permanently.
+  suppressDays: integer("suppress_days").notNull().default(30),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

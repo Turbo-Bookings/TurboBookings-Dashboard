@@ -1,5 +1,6 @@
 "use server";
 
+import { put } from "@vercel/blob";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
@@ -22,6 +23,7 @@ export type PopupValues = {
   imageUrl: string;
   delaySeconds: string;
   exitIntent: boolean;
+  suppressDays: string;
 };
 
 export type PopupState =
@@ -39,7 +41,11 @@ const DEFAULTS: PopupValues = {
   imageUrl: "",
   delaySeconds: "8",
   exitIntent: true,
+  suppressDays: "30",
 };
+
+const ALLOWED_IMG = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+const MAX_IMG_BYTES = 5 * 1024 * 1024;
 
 export async function getPopupValues(slug: string): Promise<PopupValues> {
   const location = await getLocationBySlug(slug);
@@ -59,10 +65,9 @@ export async function getPopupValues(slug: string): Promise<PopupValues> {
     imageUrl: row.imageUrl ?? "",
     delaySeconds: String(row.delaySeconds),
     exitIntent: row.exitIntent,
+    suppressDays: String(row.suppressDays),
   };
 }
-
-const URL_RE = /^https?:\/\//;
 
 export async function updatePopup(
   slug: string,
@@ -78,23 +83,46 @@ export async function updatePopup(
     buttonLabel: str("buttonLabel"),
     successMessage: str("successMessage"),
     incentiveCode: str("incentiveCode"),
-    imageUrl: str("imageUrl"),
+    // Existing image (from the hidden field); may be replaced/removed below.
+    imageUrl: str("currentImageUrl"),
     delaySeconds: str("delaySeconds"),
     exitIntent: formData.get("exitIntent") === "on",
+    suppressDays: str("suppressDays"),
   };
 
   if (!values.headline) return { ok: false, error: "Headline is required.", values };
   if (!values.buttonLabel) return { ok: false, error: "Button label is required.", values };
-  if (values.imageUrl && !URL_RE.test(values.imageUrl))
-    return { ok: false, error: "Image URL must start with http:// or https://", values };
   const delay = Number(values.delaySeconds || "0");
   if (!Number.isInteger(delay) || delay < 0 || delay > 120)
     return { ok: false, error: "Delay must be a whole number of seconds (0–120).", values };
+  const suppress = Number(values.suppressDays || "0");
+  if (!Number.isInteger(suppress) || suppress < 0 || suppress > 365)
+    return { ok: false, error: "‘Don’t show again’ must be a whole number of days (0–365).", values };
 
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found", values };
   const deny = await denyIfCannot("manage_config", slug);
   if (deny) return { ok: false, error: deny, values };
+
+  // Image: remove, replace via upload, or keep the current one.
+  if (formData.get("removeImage") === "on") {
+    values.imageUrl = "";
+  } else {
+    const file = formData.get("imageFile");
+    if (file instanceof File && file.size > 0) {
+      if (!ALLOWED_IMG.has(file.type))
+        return { ok: false, error: "Image must be PNG, JPEG, WebP, or GIF.", values };
+      if (file.size > MAX_IMG_BYTES)
+        return { ok: false, error: "Image must be 5 MB or smaller.", values };
+      const ext = file.name.split(".").pop() ?? "bin";
+      const blob = await put(
+        `popup/${slug}/${Date.now()}.${ext}`,
+        Buffer.from(await file.arrayBuffer()),
+        { access: "public", contentType: file.type },
+      );
+      values.imageUrl = blob.url;
+    }
+  }
 
   const row = {
     locationId: location.id,
@@ -108,6 +136,7 @@ export async function updatePopup(
     imageUrl: values.imageUrl || null,
     delaySeconds: delay,
     exitIntent: values.exitIntent,
+    suppressDays: suppress,
     updatedAt: new Date(),
   };
 

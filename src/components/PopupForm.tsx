@@ -48,8 +48,27 @@ export function PopupForm({
           <input id="buttonLabel" name="buttonLabel" defaultValue={v.buttonLabel} className={input} />
         </div>
         <div>
-          <label className={label} htmlFor="imageUrl">Image URL (optional)</label>
-          <input id="imageUrl" name="imageUrl" defaultValue={v.imageUrl} placeholder="https://…" className={input} />
+          <label className={label} htmlFor="imageFile">Image (optional)</label>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            A banner shown at the top of the popup. PNG/JPEG/WebP/GIF, up to 5 MB.
+          </p>
+          {v.imageUrl && (
+            <div className="mt-2 flex items-center gap-3">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={v.imageUrl} alt="Current popup image" className="h-16 w-28 rounded-md border border-zinc-200 object-cover dark:border-zinc-700" />
+              <label className="flex items-center gap-1.5 text-sm text-zinc-600 dark:text-zinc-300">
+                <input type="checkbox" name="removeImage" className="h-4 w-4" /> Remove image
+              </label>
+            </div>
+          )}
+          <input type="hidden" name="currentImageUrl" value={v.imageUrl} />
+          <input
+            id="imageFile"
+            name="imageFile"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="mt-2 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium hover:file:bg-zinc-200 dark:text-zinc-300 dark:file:bg-zinc-800"
+          />
         </div>
       </section>
 
@@ -76,6 +95,14 @@ export function PopupForm({
           <input type="checkbox" name="exitIntent" defaultChecked={v.exitIntent} className="h-4 w-4" />
           <span className="text-sm">Also show on exit intent (mouse leaves toward the tab bar)</span>
         </label>
+        <div>
+          <label className={label} htmlFor="suppressDays">Don’t show again for (days)</label>
+          <input id="suppressDays" name="suppressDays" defaultValue={v.suppressDays} inputMode="numeric" className={`${input} w-32`} />
+          <p className="mt-1 text-xs text-zinc-500">
+            After someone closes the popup without signing up, hide it on their device for this many days.
+            Anyone who has already subscribed never sees it again.
+          </p>
+        </div>
       </section>
 
       {state && !state.ok && <p className="text-xs font-medium text-red-600 dark:text-red-400">{state.error}</p>}

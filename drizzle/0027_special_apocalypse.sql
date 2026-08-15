@@ -1,0 +1,1 @@
+ALTER TABLE "popup_config" ADD COLUMN "suppress_days" integer DEFAULT 30 NOT NULL;
