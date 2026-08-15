@@ -11,8 +11,10 @@ import {
   bookingLines,
   bookingReschedules,
   bookings,
+  customerTypes,
   customers,
   getDb,
+  itemCustomerTypes,
   items,
   paymentMethodsOnFile,
   payments,
@@ -619,6 +621,118 @@ export async function addVehicles(
   return { ok: true };
 }
 
+// Add a rider of ANY customer type to an existing booking — even a type not on
+// the original reservation (e.g. add a Double Rider to a Single-Rider booking).
+// Capacity-checked like addVehicles; the extra rides on the balance due at the
+// venue (no online fee/tax). If a line for that type already exists we bump its
+// quantity rather than creating a duplicate line. Operators may add "hidden"
+// (comp / affiliate) types too, since this is an operator-only surface.
+export async function addLine(
+  slug: string,
+  bookingId: string,
+  customerTypeId: string,
+  qty: number,
+): Promise<Result> {
+  const deny = await denyIfCannot("manage_bookings", slug);
+  if (deny) return { ok: false, error: deny };
+  if (!Number.isInteger(qty) || qty < 1) return { ok: false, error: "Invalid quantity" };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const db = getDb();
+  const booking = (
+    await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.locationId, location.id)))
+      .limit(1)
+  )[0];
+  if (!booking) return { ok: false, error: "Booking not found" };
+  if (booking.status !== "active") return { ok: false, error: "Booking is not active" };
+  const item = (await db.select().from(items).where(eq(items.id, booking.itemId)).limit(1))[0];
+  if (!item) return { ok: false, error: "Tour not found" };
+
+  // The customer type must be offered on this tour; that row carries the price.
+  const ict = (
+    await db
+      .select({ price: itemCustomerTypes.priceCents, sortOrder: itemCustomerTypes.sortOrder })
+      .from(itemCustomerTypes)
+      .where(and(eq(itemCustomerTypes.itemId, booking.itemId), eq(itemCustomerTypes.customerTypeId, customerTypeId)))
+      .limit(1)
+  )[0];
+  if (!ict) return { ok: false, error: "That rider type isn't offered on this tour" };
+  const unitPriceCents = ict.price;
+
+  try {
+    await withTxn(async (tx) => {
+      const slot = (
+        await tx.select().from(availabilities).where(eq(availabilities.id, booking.availabilityId)).for("update")
+      )[0];
+      if (!slot) throw new Error("Slot not found");
+      const bookedRows = await tx
+        .select({ qty: bookingLines.quantity })
+        .from(bookings)
+        .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+        .where(and(eq(bookings.availabilityId, booking.availabilityId), eq(bookings.status, "active")));
+      const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
+      let remaining: number;
+      if (item.capacityMode === "fixed") {
+        let base = slot.capacityOverride;
+        if (base == null && slot.scheduleId) {
+          const sc = (await tx.select({ c: availabilitySchedules.capacityPerSlot }).from(availabilitySchedules).where(eq(availabilitySchedules.id, slot.scheduleId)).limit(1))[0];
+          base = sc?.c ?? null;
+        }
+        remaining = fixedRemaining(base, booked);
+      } else {
+        const rr = await tx.select({ rr: resourceRequirements, r: resources }).from(resourceRequirements).innerJoin(resources, eq(resourceRequirements.resourceId, resources.id)).where(eq(resourceRequirements.itemId, booking.itemId));
+        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
+        for (const { rr: req, r } of rr) {
+          const cur = byRes.get(r.id);
+          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
+          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
+        }
+        remaining = resourceRemaining([...byRes.values()].map<ResourcePool>((x) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: booked })));
+      }
+      if (qty > remaining) throw new Error("Not enough capacity in this slot");
+
+      // Reuse an existing line for the same type rather than duplicating it.
+      const existing = (
+        await tx
+          .select()
+          .from(bookingLines)
+          .where(and(eq(bookingLines.bookingId, booking.id), eq(bookingLines.customerTypeId, customerTypeId)))
+          .limit(1)
+      )[0];
+      if (existing) {
+        await tx.update(bookingLines).set({ quantity: existing.quantity + qty, updatedAt: new Date() }).where(eq(bookingLines.id, existing.id));
+      } else {
+        await tx.insert(bookingLines).values({
+          bookingId: booking.id,
+          customerTypeId,
+          quantity: qty,
+          unitPriceCents,
+          sortOrder: ict.sortOrder,
+        });
+      }
+
+      const delta = qty * unitPriceCents;
+      await tx
+        .update(bookings)
+        .set({
+          subtotalCents: booking.subtotalCents + delta,
+          totalCents: booking.totalCents + delta,
+          balanceDueCents: booking.balanceDueCents + delta,
+          updatedAt: new Date(),
+        })
+        .where(eq(bookings.id, booking.id));
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not add rider" };
+  }
+  await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty } });
+  revalidate(slug, booking.id);
+  return { ok: true };
+}
+
 // Remove vehicles from a line (can't go below already checked-in/no-show units).
 export async function removeVehicles(
   slug: string,
@@ -955,6 +1069,9 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     detail,
     refund,
     rescheduleSlots: tour && tour.ok ? tour.slots : [],
+    // All rider types offered on this tour (incl. hidden/comp types), so an
+    // operator can add one that isn't on the original reservation.
+    riderTypes: tour && tour.ok ? tour.pricing : [],
     tz: location.timezone ?? "America/Chicago",
     hasCardOnFile: !!detail.cardOnFile,
   };
@@ -1010,6 +1127,50 @@ export async function searchBookings(slug: string, q: string): Promise<BookingSe
     customerName: [r.first, r.last].filter(Boolean).join(" ") || "—",
     itemName: r.itemName,
     startsAt: r.startsAt,
+    status: r.status,
+  }));
+}
+
+// Most-recently-created bookings (by createdAt) for the quick-view panel —
+// Name, tour date/time, total, tour type. Newest first.
+export type RecentBookingHit = {
+  id: string;
+  displayNumber: string;
+  customerName: string;
+  itemName: string;
+  startsAt: Date;
+  totalCents: number;
+  status: string;
+};
+export async function listRecentBookings(slug: string): Promise<RecentBookingHit[]> {
+  const location = await getLocationBySlug(slug);
+  if (!location) return [];
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: bookings.id,
+      displayNumber: bookings.displayNumber,
+      first: customers.firstName,
+      last: customers.lastName,
+      itemName: items.name,
+      startsAt: availabilities.startsAt,
+      totalCents: bookings.totalCents,
+      status: bookings.status,
+    })
+    .from(bookings)
+    .innerJoin(customers, eq(bookings.customerId, customers.id))
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .where(eq(bookings.locationId, location.id))
+    .orderBy(desc(bookings.createdAt))
+    .limit(15);
+  return rows.map((r) => ({
+    id: r.id,
+    displayNumber: r.displayNumber,
+    customerName: [r.first, r.last].filter(Boolean).join(" ") || "—",
+    itemName: r.itemName,
+    startsAt: r.startsAt,
+    totalCents: r.totalCents,
     status: r.status,
   }));
 }

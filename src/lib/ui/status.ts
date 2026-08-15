@@ -48,7 +48,7 @@ export function checkInTone(status: string): Tone {
 export function checkInLabel(status: string): string {
   return (
     {
-      not_yet: "Not yet",
+      not_yet: "No status",
       checked_in: "All checked in",
       no_show: "No-show",
       partial: "Partially checked in",

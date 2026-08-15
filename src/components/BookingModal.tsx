@@ -11,6 +11,7 @@ import { useCaps } from "@/components/CapabilitiesProvider";
 import { Badge } from "@/components/ui/Badge";
 import {
   addBookingAdjustment,
+  addLine,
   addVehicles,
   editBookingTotal,
   getBookingModalData,
@@ -89,7 +90,7 @@ function Body({
   reload: () => void;
 }) {
   const caps = useCaps();
-  const { detail, refund, rescheduleSlots, tz, hasCardOnFile } = data;
+  const { detail, refund, rescheduleSlots, riderTypes, tz, hasCardOnFile } = data;
   const b = detail.booking;
   const cust = detail.customer;
   const when = detail.slot
@@ -131,6 +132,9 @@ function Body({
               <LineCheckIn slug={slug} lineId={l.id} ctName={l.ctName} quantity={l.quantity} checkedInUnits={l.checkedInUnits} noShowUnits={l.noShowUnits} onChanged={reload} />
             </div>
           ))}
+          {b.status === "active" && caps.manage_bookings && riderTypes.length > 0 && (
+            <AddRider slug={slug} bookingId={b.id} riderTypes={riderTypes} reload={reload} />
+          )}
         </div>
       </Section>
 
@@ -139,8 +143,18 @@ function Body({
         <dl className="space-y-1 text-sm">
           <Row label="Subtotal" value={usd(b.subtotalCents)} />
           {b.discountCents > 0 && <Row label="Discount" value={`−${usd(b.discountCents)}`} />}
-          {b.platformFeeCents > 0 && <Row label="Processing fee" value={usd(b.platformFeeCents)} />}
-          {b.taxCents > 0 && <Row label="Tax (paid online)" value={usd(b.taxCents)} />}
+          {/* Platform processing fee is Turbo-internal — operators see it bundled
+              with tax (as the customer does at checkout); admins see it itemized. */}
+          {caps.manage_platform ? (
+            <>
+              {b.platformFeeCents > 0 && <Row label="Processing fee" value={usd(b.platformFeeCents)} />}
+              {b.taxCents > 0 && <Row label="Tax (paid online)" value={usd(b.taxCents)} />}
+            </>
+          ) : (
+            (b.platformFeeCents + b.taxCents) > 0 && (
+              <Row label="Taxes & fees" value={usd(b.platformFeeCents + b.taxCents)} />
+            )
+          )}
           <Row label="Total" value={usd(b.totalCents)} strong />
           <Row label="Paid" value={usd(b.depositPaidCents)} />
           {b.balanceDueCents > 0 && <Row label="Balance at venue" value={usd(b.balanceDueCents)} muted />}
@@ -244,6 +258,75 @@ function VehicleEditor({ slug, lineId, reload }: { slug: string; lineId: string;
       <button type="button" disabled={pending} onClick={() => act(() => addVehicles(slug, lineId, 1))} className="rounded-md border border-zinc-300 p-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800" title="Add a vehicle"><Plus className="h-3.5 w-3.5" /></button>
       {err && <span className="text-xs text-red-600">{err}</span>}
     </span>
+  );
+}
+
+// Add a rider of any type offered on the tour — including a type not on the
+// original reservation (e.g. add a Double Rider to a Single-Rider booking).
+function AddRider({
+  slug,
+  bookingId,
+  riderTypes,
+  reload,
+}: {
+  slug: string;
+  bookingId: string;
+  riderTypes: { ct: string; label: string; priceCents: number }[];
+  reload: () => void;
+}) {
+  const [ctId, setCtId] = useState(riderTypes[0]?.ct ?? "");
+  const [qty, setQty] = useState(1);
+  const [pending, start] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+
+  function submit() {
+    setErr(null);
+    start(async () => {
+      const r = await addLine(slug, bookingId, ctId, qty);
+      if (!r.ok) setErr(r.error ?? "Failed");
+      else {
+        setQty(1);
+        reload();
+      }
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-dashed border-zinc-300 p-3 dark:border-zinc-700">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-sm font-medium text-zinc-600 dark:text-zinc-300">
+          <Plus className="h-3.5 w-3.5" /> Add rider
+        </span>
+        <select
+          value={ctId}
+          onChange={(e) => setCtId(e.target.value)}
+          className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        >
+          {riderTypes.map((t) => (
+            <option key={t.ct} value={t.ct}>
+              {t.label} · {usd(t.priceCents)}
+            </option>
+          ))}
+        </select>
+        <input
+          type="number"
+          min={1}
+          value={qty}
+          onChange={(e) => setQty(Math.max(1, Math.floor(Number(e.target.value) || 1)))}
+          className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        />
+        <button
+          type="button"
+          disabled={pending || !ctId}
+          onClick={submit}
+          className="rounded-md bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+        >
+          Add
+        </button>
+        {err && <span className="text-xs text-red-600">{err}</span>}
+      </div>
+      <p className="mt-1 text-xs text-zinc-400">Added riders bill to the balance due at the venue.</p>
+    </div>
   );
 }
 

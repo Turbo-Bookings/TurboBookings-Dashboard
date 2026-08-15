@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { RecentBookings } from "@/components/RecentBookings";
 import { SlotPopover } from "@/components/SlotPopover";
 import { ViewToggle } from "@/app/locations/[slug]/bookings/list/page";
 import { gridForDate, type GridSlot } from "@/lib/data/bookings";
@@ -73,6 +74,7 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
             <Link href={mk({ date: next })} className={navCls} aria-label="Next">
               <ChevronRight className="h-4 w-4" />
             </Link>
+            <RecentBookings slug={slug} tz={tz} />
             <Link href={`${base}/new`} data-tour="bookings-new" className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
               <Plus className="h-4 w-4" /> New booking
             </Link>

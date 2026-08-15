@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { bookingsReport } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { can } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export default async function DashboardPage({
     bookingsReport(loc.id, todayStart, todayEnd),
     bookingsReport(loc.id, todayEnd, next7End),
   ]);
+  // Platform processing fees are Turbo-internal revenue — only admins see them.
+  const showFees = await can("manage_platform", slug);
   const b = `/locations/${slug}`;
 
   const quickLinks = [
@@ -70,7 +73,12 @@ export default async function DashboardPage({
         <StatTile label="Today" value={String(today30.bookings)} sub={`${today30.pax} pax`} tone="blue" icon={CalendarDays} />
         <StatTile label="Next 7 days" value={String(upcoming7.bookings)} sub={`${upcoming7.pax} pax`} tone="violet" icon={CalendarClock} />
         <StatTile label="Balance to collect" value={usd(r.balanceDueCents)} sub="at venue (30d)" tone="orange" icon={Landmark} />
-        <StatTile label="Tax + fees (30d)" value={usd(r.taxCents + r.feesCents)} tone="zinc" icon={Wallet} />
+        <StatTile
+          label={showFees ? "Tax + fees (30d)" : "Tax (30d)"}
+          value={usd(r.taxCents + (showFees ? r.feesCents : 0))}
+          tone="zinc"
+          icon={Wallet}
+        />
       </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">

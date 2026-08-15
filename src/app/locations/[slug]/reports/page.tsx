@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { bookingsReport } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { can } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,8 @@ export default async function ReportsPage({ params, searchParams }: Props) {
   const to = DateTime.fromISO(toKey, { zone: tz }).plus({ days: 1 }).startOf("day").toUTC().toJSDate();
 
   const r = await bookingsReport(loc.id, from, to);
+  // Platform processing fees are Turbo-internal revenue — only admins see them.
+  const showFees = await can("manage_platform", slug);
   const base = `/locations/${slug}/reports`;
 
   return (
@@ -67,12 +70,14 @@ export default async function ReportsPage({ params, searchParams }: Props) {
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Balance at venue" value={usd(r.balanceDueCents)} sub="left to collect" tone="orange" icon={Landmark} />
-        <StatTile label="Processing fees" value={usd(r.feesCents)} tone="zinc" icon={Receipt} />
+        {showFees && (
+          <StatTile label="Processing fees" value={usd(r.feesCents)} tone="zinc" icon={Receipt} />
+        )}
         <StatTile label="Tax (online)" value={usd(r.taxCents)} sub="on amount paid today" tone="zinc" icon={Percent} />
         <StatTile label="Refunded" value={usd(r.refundedCents)} tone="zinc" icon={RotateCcw} />
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Active bookings only · by tour date. Tour sales = charged total − processing fee − online tax.
+        Active bookings only · by tour date. Tour sales = collected online + balance at venue, net of online tax and fees.
       </p>
 
       <h3 className="mt-6 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">By tour</h3>

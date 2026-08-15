@@ -14,6 +14,8 @@ import {
 } from "@/lib/actions/manualBooking";
 import { computeBooking } from "@/lib/pricing/breakdown";
 import type { ChargeMode, DepositMode } from "@/lib/pricing/quote";
+import { useCaps } from "@/components/CapabilitiesProvider";
+import { BookingCalendar } from "@/components/BookingCalendar";
 
 type ItemOpt = { id: string; name: string };
 type Slot = { id: string; startsAt: string; remaining: number };
@@ -64,11 +66,13 @@ const input =
 
 export function NewBookingForm({ slug, tz, items, location, publishableKey, stripeAccount, configured, lockedItem, lockedSlot }: Props) {
   const router = useRouter();
+  const caps = useCaps();
   const [itemId, setItemId] = useState(lockedItem?.id ?? "");
   const [slots, setSlots] = useState<Slot[]>([]);
   const [pricing, setPricing] = useState<Price[]>([]);
   const [fields, setFields] = useState<Field[]>([]);
   const [slotId, setSlotId] = useState(lockedSlot?.id ?? "");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -87,10 +91,29 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const fmtSlot = useMemo(
-    () => new Intl.DateTimeFormat("en-US", { timeZone: tz, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+  // "YYYY-MM-DD" in the location tz (en-CA yields ISO-ordered parts).
+  const fmtDayKey = useMemo(
+    () => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }),
     [tz],
   );
+  const fmtTime = useMemo(
+    () => new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" }),
+    [tz],
+  );
+  // Group availability by tz-local day so the calendar can show which days are
+  // bookable and the time step can list that day's slots.
+  const slotsByDay = useMemo(() => {
+    const map = new Map<string, Slot[]>();
+    for (const s of slots) {
+      const key = fmtDayKey.format(new Date(s.startsAt));
+      const arr = map.get(key);
+      if (arr) arr.push(s);
+      else map.set(key, [s]);
+    }
+    return map;
+  }, [slots, fmtDayKey]);
+  const availableDays = useMemo(() => [...slotsByDay.keys()].sort(), [slotsByDay]);
+  const daySlots = selectedDay ? (slotsByDay.get(selectedDay) ?? []) : [];
 
   async function loadData(id: string) {
     const r = await getTourBookingData(slug, id);
@@ -104,6 +127,7 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   function onTour(id: string) {
     setItemId(id);
     setSlotId("");
+    setSelectedDay(null);
     setQty({});
     setDiscount(null);
     setAcks(new Set());
@@ -243,14 +267,48 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
           {!lockedSlot && (
             <div>
               <label className="block text-sm font-medium">Date &amp; time</label>
-              <select className={`mt-1 ${input}`} value={slotId} onChange={(e) => setSlotId(e.target.value)}>
-                <option value="">Select a time…</option>
-                {slots.map((s) => (
-                  <option key={s.id} value={s.id} disabled={s.remaining <= 0}>
-                    {fmtSlot.format(new Date(s.startsAt))} ({s.remaining} left)
-                  </option>
-                ))}
-              </select>
+              {availableDays.length === 0 ? (
+                <p className="mt-1 text-sm text-zinc-500">No open dates for this tour.</p>
+              ) : (
+                <div className="mt-1 space-y-3">
+                  <BookingCalendar
+                    availableDays={availableDays}
+                    selected={selectedDay}
+                    onSelect={(key) => {
+                      setSelectedDay(key);
+                      setSlotId("");
+                    }}
+                  />
+                  {selectedDay && (
+                    <div className="flex flex-wrap gap-2">
+                      {daySlots.map((s) => {
+                        const on = s.id === slotId;
+                        const full = s.remaining <= 0;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            disabled={full}
+                            onClick={() => setSlotId(s.id)}
+                            className={`rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                              on
+                                ? "border-blue-600 bg-blue-600 text-white"
+                                : full
+                                  ? "cursor-not-allowed border-zinc-200 text-zinc-300 dark:border-zinc-800 dark:text-zinc-600"
+                                  : "border-zinc-300 text-zinc-700 hover:border-blue-300 hover:bg-blue-50/40 dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-blue-800 dark:hover:bg-blue-950/20"
+                            }`}
+                          >
+                            {fmtTime.format(new Date(s.startsAt))}
+                            <span className={`ml-1.5 text-xs ${on ? "text-blue-100" : "text-zinc-400"}`}>
+                              {full ? "full" : `${s.remaining} left`}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -343,11 +401,21 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
               )}
               {discountErr && <p className="mt-1 text-xs text-red-600">{discountErr}</p>}
 
-              {c.feeCents > 0 && (
-                <div className="mt-2 flex justify-between text-zinc-500"><span>Processing fee</span><span>{usd(c.feeCents)}</span></div>
-              )}
-              {c.onlineTaxCents > 0 && (
-                <div className="flex justify-between text-zinc-500"><span>Tax (on amount paid now)</span><span>{usd(c.onlineTaxCents)}</span></div>
+              {/* Platform fee is Turbo-internal — operators see it bundled with
+                  tax (as the customer does at checkout); admins see it itemized. */}
+              {caps.manage_platform ? (
+                <>
+                  {c.feeCents > 0 && (
+                    <div className="mt-2 flex justify-between text-zinc-500"><span>Processing fee</span><span>{usd(c.feeCents)}</span></div>
+                  )}
+                  {c.onlineTaxCents > 0 && (
+                    <div className="flex justify-between text-zinc-500"><span>Tax (on amount paid now)</span><span>{usd(c.onlineTaxCents)}</span></div>
+                  )}
+                </>
+              ) : (
+                (c.feeCents + c.onlineTaxCents) > 0 && (
+                  <div className="mt-2 flex justify-between text-zinc-500"><span>Taxes &amp; fees</span><span>{usd(c.feeCents + c.onlineTaxCents)}</span></div>
+                )
               )}
               <div className="mt-1 flex justify-between border-t border-zinc-100 pt-1 font-semibold dark:border-zinc-800"><span>Total</span><span>{usd(total)}</span></div>
               {dueNow !== total && (

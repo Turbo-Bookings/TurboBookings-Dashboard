@@ -8,6 +8,7 @@ import { getBookingDetail } from "@/lib/data/bookings";
 import { getCancellationRefund } from "@/lib/booking/refund";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { can } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,8 @@ export default async function BookingDetailPage({ params }: Props) {
   if (!loc) notFound();
   const d = await getBookingDetail(id, loc.id);
   if (!d || !d.booking) notFound();
+  // Platform processing fee is Turbo-internal revenue — only admins see it.
+  const showFees = await can("manage_platform", slug);
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
   const refund = await getCancellationRefund(loc.id, id);
@@ -121,8 +124,18 @@ export default async function BookingDetailPage({ params }: Props) {
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Pricing</h3>
         <dl className="mt-2 space-y-1 text-sm">
           <Row label="Subtotal" value={usd(b.subtotalCents)} />
-          {b.taxCents > 0 && <Row label="Tax" value={usd(b.taxCents)} />}
-          {b.platformFeeCents > 0 && <Row label="Platform fee" value={usd(b.platformFeeCents)} />}
+          {/* Platform fee is Turbo-internal — operators see it bundled with tax
+              (as the customer does at checkout); admins see it itemized. */}
+          {showFees ? (
+            <>
+              {b.taxCents > 0 && <Row label="Tax" value={usd(b.taxCents)} />}
+              {b.platformFeeCents > 0 && <Row label="Platform fee" value={usd(b.platformFeeCents)} />}
+            </>
+          ) : (
+            (b.taxCents + b.platformFeeCents) > 0 && (
+              <Row label="Taxes & fees" value={usd(b.taxCents + b.platformFeeCents)} />
+            )
+          )}
           {b.discountCents > 0 && <Row label="Discount" value={`-${usd(b.discountCents)}`} />}
           <Row label="Total" value={usd(b.totalCents)} strong />
           <Row label="Paid online" value={usd(b.depositPaidCents)} />

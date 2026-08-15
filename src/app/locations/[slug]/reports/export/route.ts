@@ -1,6 +1,7 @@
 import { DateTime } from "luxon";
 import { listBookingsForCsv } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
+import { can } from "@/lib/auth/roles";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -26,6 +27,8 @@ export async function GET(
   const from = DateTime.fromISO(fromKey, { zone: tz }).startOf("day").toUTC().toJSDate();
   const to = DateTime.fromISO(toKey, { zone: tz }).plus({ days: 1 }).startOf("day").toUTC().toJSDate();
 
+  // Platform processing fee is Turbo-internal — only admins get the Fee column.
+  const showFees = await can("manage_platform", slug);
   const rows = await listBookingsForCsv(loc.id, from, to);
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
@@ -36,7 +39,12 @@ export async function GET(
     minute: "2-digit",
   });
 
-  const header = ["Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Pax", "Sales", "Discount", "Fee", "Tax (online)", "Total", "Paid (online)", "Balance (venue)", "Refunded"];
+  const header = [
+    "Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Pax",
+    "Sales", "Discount",
+    ...(showFees ? ["Fee"] : []),
+    "Tax (online)", "Total", "Paid (online)", "Balance (venue)", "Refunded",
+  ];
   const lines = [header.map(cell).join(",")];
   for (const r of rows) {
     lines.push(
@@ -51,7 +59,7 @@ export async function GET(
         r.pax,
         (r.salesCents / 100).toFixed(2),
         (r.discountCents / 100).toFixed(2),
-        (r.feeCents / 100).toFixed(2),
+        ...(showFees ? [(r.feeCents / 100).toFixed(2)] : []),
         (r.taxCents / 100).toFixed(2),
         (r.totalCents / 100).toFixed(2),
         (r.paidCents / 100).toFixed(2),

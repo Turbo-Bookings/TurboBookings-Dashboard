@@ -27,6 +27,7 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
 import { emitEvent } from "@/lib/events/emit";
+import { notifyManualBookingEmails } from "@/lib/booking/notifyManualBookingEmails";
 import { computeBooking, type AmountMode, type PaymentMethod } from "@/lib/pricing/breakdown";
 import { getStripe, stripeConfigured } from "@/lib/stripe/client";
 
@@ -519,6 +520,9 @@ export async function createDirectBooking(
       source_surface: "dashboard",
       data: { booking_id: bookingId, source: "direct" },
     });
+    // Send the customer their confirmation (+ arm reminders) via the booking
+    // app, same as an online booking. Best-effort — never blocks the booking.
+    await notifyManualBookingEmails(bookingId);
     return { ok: true, bookingId };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not create booking" };

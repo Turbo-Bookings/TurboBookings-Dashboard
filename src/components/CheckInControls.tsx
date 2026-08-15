@@ -6,7 +6,7 @@ import { setBookingCheckIn, setLineCheckInCounts } from "@/lib/actions/bookings"
 
 type UnitStatus = "not_yet" | "checked_in" | "no_show";
 const OPTIONS: { value: UnitStatus; label: string }[] = [
-  { value: "not_yet", label: "Not yet" },
+  { value: "not_yet", label: "No status" },
   { value: "checked_in", label: "Checked in" },
   { value: "no_show", label: "No-show" },
 ];
