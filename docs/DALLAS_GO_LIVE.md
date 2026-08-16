@@ -104,6 +104,41 @@ Purge is small and safe. Note cards-on-file hang off the **customer**, not the b
 `ensurePlatformCustomer` short-circuits on the stale `cus_` and `startRetainer` is blocked by the
 guard at `actions/billing.ts:135`, so without it the operator **cannot re-add a card in live mode**.
 
+### FareHarbor bookings — IMPORTED 2026-08-16 ✅
+185 upcoming Dallas bookings (Aug 17 – Nov 6) migrated off FareHarbor into the storefront DB.
+Command: `npm run import:fh -- --file=<export.csv> --slug=dtown [--commit]` (dry run by default).
+
+| | |
+|---|---|
+| Created | **185**, booking numbers `0004`–`0188`, 0 errors, 0 duplicates |
+| ATV units | 422 — 365 Single Rider, 57 Double Rider |
+| Slots | **185/185 matched an existing slot; none created** |
+| Capacity | no slot exceeds the 30-ATV pool |
+| Booking value | $59,113.97 |
+| Collected by FareHarbor | $8,470.00 |
+| **Balance due at the venue** | **$50,643.97** — staff collect this at check-in |
+| Emails sent | **none** (no confirmation, no reminders, no review) |
+
+The rider split isn't in the FareHarbor export — it's recovered from the money by solving
+`a + b = units, $120a + $190b = subtotal`. 184 of 185 resolve exactly; booking `#372422570`
+(discounted) falls back to all-singles with a subtotal override so the customer is never asked a
+different amount.
+
+**Reminders are deliberately NOT armed.** When the new system is live and FareHarbor's own reminders
+are switched off, run `npm run import:fh -- --slug=dtown --arm-reminders --commit` to schedule
+24h/2h reminders for these bookings (no confirmation, no review). Only reminders still in the future
+are armed.
+
+**Reporting:** imported bookings carry `source = 'api'` and are excluded from "Collected online" and
+the sales-tax report — that money and tax went through FareHarbor, not us. They appear on their own
+"Imported (pre-existing)" tile. Their balance due IS counted, because it's real money still to collect.
+
+**Rollback** (if ever needed):
+```sql
+delete from bookings where location_id = (select id from locations where slug='dtown')
+  and external_ref is not null;   -- lines + payments cascade
+```
+
 ### 6.0 — Fix first (blocking) 🧑
 - **Booking-app Stripe webhook is dead in production.** `bookingsystem` prod has no
   `STRIPE_WEBHOOK_SECRET`, so `POST /api/webhooks/stripe` short-circuits with `webhook not configured`
