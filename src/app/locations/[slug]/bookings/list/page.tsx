@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { CalendarRange, List, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
@@ -92,7 +93,7 @@ export default async function BookingsListPage({ params, searchParams }: Props) 
                   · {r.customerName}
                 </p>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  {r.itemName} · {fmt.format(r.startsAt)} · {r.source}
+                  {r.itemName} · {fmt.format(r.startsAt)} · {sourceLabel(r.source)}
                 </p>
               </div>
               <span className="text-sm">{usd(r.totalCents)}</span>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { BookingActions } from "@/components/BookingActions";
@@ -60,7 +61,7 @@ export default async function BookingDetailPage({ params }: Props) {
             #{b.displayNumber} · {item?.name ?? "Tour"}
           </h2>
           <p className="mt-1 text-sm text-zinc-500">
-            {when} · {b.source} · <span className="font-medium">{b.status}</span>
+            {when} · {sourceLabel(b.source)} · <span className="font-medium">{b.status}</span>
           </p>
         </div>
       </div>

@@ -17,7 +17,8 @@
     "clerk:import-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-import-roles.ts",
     "stripe:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/stripe-live-preflight.ts",
     "check:csv": "node --import tsx scripts/check-csv-parser.ts",
-    "check:fh": "node --import tsx scripts/check-fareharbor-parse.ts"
+    "check:fh": "node --import tsx scripts/check-fareharbor-parse.ts",
+    "import:fh": "node --env-file-if-exists=.env.local --import tsx scripts/import-fareharbor.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.0",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { sourceLabel } from "@/lib/bookingSource";
 import Link from "next/link";
 import { DateTime } from "luxon";
 import { Mail, Minus, Plus, X } from "lucide-react";
@@ -117,7 +118,7 @@ function Body({
         <span className="text-zinc-500">{when}</span>
         <Badge tone={bookingTone(b.status)}>{b.status}</Badge>
         <Badge tone={checkInTone(checkin)}>{checkInLabel(checkin)}</Badge>
-        <span className="ml-auto text-xs text-zinc-400">{b.source}</span>
+        <span className="ml-auto text-xs text-zinc-400">{sourceLabel(b.source)}</span>
       </div>
 
       {/* Vehicles + per-vehicle check-in + add/remove */}

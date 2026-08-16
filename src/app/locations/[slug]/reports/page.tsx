@@ -70,11 +70,37 @@ export default async function ReportsPage({ params, searchParams }: Props) {
       </form>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Bookings" value={String(r.bookings)} sub={`${r.onlineCount} online · ${r.directCount} direct`} tone="blue" icon={Ticket} />
+        <StatTile
+          label="Bookings"
+          value={String(r.bookings)}
+          sub={
+            `${r.onlineCount} online · ${r.directCount} direct` +
+            (r.importedCount ? ` · ${r.importedCount} imported` : "")
+          }
+          tone="blue"
+          icon={Ticket}
+        />
         <StatTile label="Pax" value={String(r.pax)} tone="violet" icon={Users} />
         <StatTile label="Tour sales" value={usd(r.salesCents)} sub="net of discounts" tone="emerald" icon={DollarSign} />
-        <StatTile label="Collected online" value={usd(r.collectedCents)} tone="amber" icon={Wallet} />
+        <StatTile
+          label="Collected online"
+          value={usd(r.collectedCents)}
+          sub={r.importedCount ? "excludes imported" : undefined}
+          tone="amber"
+          icon={Wallet}
+        />
       </div>
+      {r.importedCount > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatTile
+            label="Imported (pre-existing)"
+            value={usd(r.importedCollectedCents)}
+            sub={`${r.importedCount} booking${r.importedCount === 1 ? "" : "s"} · collected by the previous system`}
+            tone="zinc"
+            icon={Wallet}
+          />
+        </div>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile label="Balance at venue" value={usd(r.balanceDueCents)} sub="left to collect" tone="orange" icon={Landmark} />
         {showFees && (

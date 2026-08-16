@@ -17,10 +17,13 @@ export type FieldKey =
   | "customerPhone"
   | "riderTypeName"
   | "quantity"
+  | "subtotalCents"
+  | "taxCents"
   | "totalCents"
+  | "paidCents"
+  | "dueCents"
   | "status"
-  | "notes"
-  | "paidAt";
+  | "notes";
 
 /**
  * Header aliases, normalized (lowercase, alphanumerics only). Used to
@@ -38,12 +41,15 @@ export const HEADER_ALIASES: Record<FieldKey, string[]> = {
   customerName: ["contact", "contactname", "customer", "customername", "name", "leadcustomer"],
   customerEmail: ["contactemail", "customeremail", "email", "emailaddress"],
   customerPhone: ["contactphone", "customerphone", "phone", "phonenumber", "mobile"],
-  riderTypeName: ["customertype", "customertypename", "ridertype", "type", "tickettype"],
-  quantity: ["quantity", "qty", "customers", "pax", "numberofcustomers", "guests"],
-  totalCents: ["total", "subtotal", "amount", "totalpaid", "bookingtotal", "receivedtotal", "amountpaid"],
-  status: ["status", "bookingstatus", "cancelled", "canceled", "iscancelled"],
+  riderTypeName: ["customertype", "customertypename", "ridertype", "tickettype"],
+  quantity: ["ofpax", "pax", "quantity", "qty", "numberofcustomers", "guests", "customers"],
+  subtotalCents: ["subtotal", "itemsubtotal"],
+  taxCents: ["totaltax", "tax", "taxes", "salestax"],
+  totalCents: ["total", "bookingtotal", "grandtotal"],
+  paidCents: ["totalpaid", "amountpaid", "paid", "receivedtotal", "received"],
+  dueCents: ["amountdue", "balancedue", "balance", "due"],
+  status: ["cancelled", "canceled", "iscancelled", "status", "bookingstatus"],
   notes: ["notes", "note", "internalnote", "comments", "specialrequests"],
-  paidAt: ["paidat", "paymentdate", "createdat", "bookeddate", "bookingdate"],
 };
 
 export type ColumnMapping = Partial<Record<FieldKey, string>>;
@@ -57,14 +63,25 @@ export function suggestMapping(headers: string[]): ColumnMapping {
   const norm = headers.map((h) => ({ raw: h, key: normalizeHeader(h) }));
   const used = new Set<string>();
   const out: ColumnMapping = {};
+  const fields = Object.entries(HEADER_ALIASES) as [FieldKey, string[]][];
 
-  for (const [field, aliases] of Object.entries(HEADER_ALIASES) as [FieldKey, string[]][]) {
-    let hit = norm.find((h) => !used.has(h.raw) && aliases.includes(h.key));
-    if (!hit) {
-      hit = norm.find(
-        (h) => !used.has(h.raw) && aliases.some((a) => h.key.includes(a) || a.includes(h.key)),
-      );
+  // TWO PASSES, and the order matters. Exact matches claim their header first
+  // across every field, because containment is greedy in a way that silently
+  // steals columns: "Total Tax" contains "total", so a one-pass loop would let
+  // `totalCents` swallow the tax column before `taxCents` ever looked at it —
+  // and the money would be wrong with no error anywhere.
+  for (const [field, aliases] of fields) {
+    const hit = norm.find((h) => !used.has(h.raw) && aliases.includes(h.key));
+    if (hit) {
+      out[field] = hit.raw;
+      used.add(hit.raw);
     }
+  }
+  for (const [field, aliases] of fields) {
+    if (out[field]) continue;
+    const hit = norm.find(
+      (h) => !used.has(h.raw) && aliases.some((a) => h.key.includes(a) || a.includes(h.key)),
+    );
     if (hit) {
       out[field] = hit.raw;
       used.add(hit.raw);

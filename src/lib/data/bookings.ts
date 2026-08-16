@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, lt, ne, or, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
 import {
   auditLog,
@@ -508,13 +508,20 @@ export type BookingsReport = {
   // (true tour sales, net of discount) = totalCents − platformFeeCents − taxCents;
   // that identity holds for every booking regardless of override/discount.
   salesCents: number; // Σ tour sales (adjusted subtotal, net of discount)
-  collectedCents: number; // Σ collected online so far (deposit_paid)
+  collectedCents: number; // Σ WE collected online (deposit_paid), imports excluded
   balanceDueCents: number; // Σ remaining to collect at the venue
   feesCents: number; // Σ processing fee (card, passed)
-  taxCents: number; // Σ tax collected online (on the amount paid online)
+  taxCents: number; // Σ tax WE collected online, imports excluded
   refundedCents: number; // Σ refunded
   onlineCount: number;
   directCount: number;
+  // Bookings migrated in from a previous system (source = "api"). Their money
+  // was collected by THAT system, never by us, so it is reported on its own
+  // line and kept out of collectedCents / taxCents — otherwise the dashboard
+  // would claim we took payments and tax we never touched. Their balance due
+  // IS included above, because that is real money staff still collect.
+  importedCount: number;
+  importedCollectedCents: number;
   byTour: { name: string; bookings: number; pax: number; salesCents: number; collectedCents: number }[];
 };
 
@@ -562,15 +569,24 @@ export async function bookingsReport(
   const pax = await paxByBooking(rows.map((r) => r.id));
   const byTour = new Map<string, { name: string; bookings: number; pax: number; salesCents: number; collectedCents: number }>();
   let totalPax = 0, sales = 0, collected = 0, balance = 0, fees = 0, tax = 0, refunded = 0, online = 0, direct = 0;
+  let imported = 0, importedCollected = 0;
   for (const r of rows) {
     const p = pax.get(r.id) ?? 0;
     const adjusted = r.totalCents - r.feeCents - r.taxCents; // true tour sales
+    // Migrated from a previous system — the deposit and its tax were collected
+    // by that system, so they must not land in our "collected online" figures.
+    const isImported = r.source === "api";
     totalPax += p;
     sales += adjusted;
-    collected += r.paidCents;
+    if (isImported) {
+      imported++;
+      importedCollected += r.paidCents;
+    } else {
+      collected += r.paidCents;
+      tax += r.taxCents;
+    }
     balance += r.balanceDueCents;
     fees += r.feeCents;
-    tax += r.taxCents;
     refunded += r.refundedCents;
     if (r.source === "online") online++;
     else if (r.source === "direct") direct++;
@@ -578,7 +594,7 @@ export async function bookingsReport(
     t.bookings++;
     t.pax += p;
     t.salesCents += adjusted;
-    t.collectedCents += r.paidCents;
+    if (!isImported) t.collectedCents += r.paidCents;
     byTour.set(r.itemName, t);
   }
   return {
@@ -592,6 +608,8 @@ export async function bookingsReport(
     refundedCents: refunded,
     onlineCount: online,
     directCount: direct,
+    importedCount: imported,
+    importedCollectedCents: importedCollected,
     byTour: [...byTour.values()].sort((a, b) => b.salesCents - a.salesCents),
   };
 }
@@ -710,6 +728,11 @@ export async function taxReport(
         eq(bookings.status, "active"),
         gte(availabilities.startsAt, from),
         lt(availabilities.startsAt, to),
+        // Exclude bookings migrated from a previous system: their deposit and
+        // its tax were collected by THAT system's processor, not through us.
+        // This report is the basis for a remittance decision, so it must only
+        // ever show tax that actually passed through TurboBookings.
+        ne(bookings.source, "api"),
       ),
     );
   let collected = 0, tax = 0;
@@ -768,6 +791,9 @@ export async function listTaxRowsForCsv(
         eq(bookings.status, "active"),
         gte(availabilities.startsAt, from),
         lt(availabilities.startsAt, to),
+        // Must match taxReport's filter exactly, or the CSV export would
+        // disagree with the on-screen figure it is meant to back up.
+        ne(bookings.source, "api"),
       ),
     )
     .orderBy(asc(availabilities.startsAt));
