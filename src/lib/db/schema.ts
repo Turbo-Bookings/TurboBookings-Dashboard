@@ -1088,6 +1088,12 @@ export const bookings = pgTable(
 
     createdByUserId: text("created_by_user_id"), // Clerk user_id, null for online
 
+    // Identifier from the system this booking was migrated FROM, prefixed by
+    // source (e.g. "fh:AB12CD" for FareHarbor). Null for bookings we created.
+    // Unique per location so re-running an import is a no-op rather than a
+    // double-insert — this is the importer's only idempotency key.
+    externalRef: text("external_ref"),
+
     // Pricing snapshot at booking time. Doesn't update if item prices change.
     subtotalCents: integer("subtotal_cents").notNull(),
     // Operator-entered subtotal override (custom rate); null = computed from
@@ -1120,6 +1126,13 @@ export const bookings = pgTable(
     displayNumberIdx: uniqueIndex("bookings_location_display_idx").on(
       t.locationId,
       t.displayNumber,
+    ),
+    // NULLs are distinct in Postgres, so this constrains only imported rows —
+    // every booking we created ourselves keeps external_ref NULL and is
+    // unaffected.
+    externalRefIdx: uniqueIndex("bookings_location_external_ref_idx").on(
+      t.locationId,
+      t.externalRef,
     ),
   }),
 );

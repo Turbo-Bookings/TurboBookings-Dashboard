@@ -204,6 +204,13 @@
       "when": 1786834485974,
       "tag": "0028_regular_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786914449259,
+      "tag": "0029_zippy_grey_gargoyle",
+      "breakpoints": true
     }
   ]
 }
