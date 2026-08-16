@@ -61,11 +61,65 @@
 - [ ] (Optional) RBAC: a director/basic_user Clerk account sees only its surfaces.
 
 ## Phase 6 — Flip to LIVE 🧑 + 🤖 (only after Phase 5 is clean)
-1. 🧑 complete Stripe **live** Connect onboarding for the real Dallas business (real bank/business details).
-2. 🧑 swap Stripe keys to `pk_live`/`sk_live` on booking app **and** dashboard prod env; redeploy; remove test keys.
-3. 🤖 flip Dallas status `draft` → `launched`.
-4. 👥 one real-card test booking end-to-end, then refund it.
-5. 🧑 go public (ads / share).
+
+### Pre-flight — verified state 2026-08-16 🤖
+| Check | Result |
+|---|---|
+| Dashboard prod `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | present, **last written 85d ago** (initial setup) — never touched since; Phase 6 has never run ⇒ still **test** |
+| Booking-app prod `STRIPE_SECRET_KEY` / publishable | present, **last written 85d ago** ⇒ still **test** |
+| Can we read the values back to prove it? | **No.** Both projects have these marked **Sensitive** in Vercel — the value is unreadable via CLI, REST API, and the Vercel UI. Only overwrite is possible. Confirm mode from the **Stripe** side instead (see below). |
+| Dashboard prod `STRIPE_WEBHOOK_SECRET` | **set** (added 19h ago = the TEST-mode retainer endpoint). Probe: signed POST → `bad signature` (reaches verification). |
+| Booking-app prod `STRIPE_WEBHOOK_SECRET` | ❌ **NOT SET IN ANY ENV.** Probe: signed POST → `webhook not configured`. **Blocking — see 6.0.** |
+| Booking-app prod `ADMIN_ENCRYPTION_KEY` | ✅ already set (2d ago) — this runbook item is done |
+| Dashboard prod Clerk | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_test_…` → frontend API `welcome-muskrat-17.clerk.accounts.dev` = a Clerk **development** instance. Deferred by choice; see "Deferred". |
+| `dashboard.turbobookings.net` / `book.turbobookings.net` | ✅ both resolve to Vercel, HTTP 200 |
+| `dtownatvrentals.com` | ❌ still on the **old Duda site** (`www` → `multiscreensite.com`); the forked Dallas site is only on `dtown-atv-rentals-site.vercel.app`. Domain is not attached to any Vercel project. **Phase 4.4 DNS is NOT done.** |
+| `book.dtownatvrentals.com` | ❌ no DNS record yet |
+| Dashboard `main` vs `develop` | `main` is **2 commits behind** (sales-tax report + docs) — production is not running the latest build |
+| Booking-app `main` vs `develop` | in sync ✅ |
+
+**How to prove test-mode from Stripe (10 seconds, 🧑):** Stripe Dashboard → toggle **Live mode** →
+Developers → *API request logs*. **Zero** live-mode requests ⇒ both prod apps are still on test keys.
+(Test-mode logs should show recent traffic from prod.) Do this before touching anything.
+
+### 6.0 — Fix first (blocking) 🧑
+- **Booking-app Stripe webhook is dead in production.** `bookingsystem` prod has no
+  `STRIPE_WEBHOOK_SECRET`, so `POST /api/webhooks/stripe` short-circuits with `webhook not configured`
+  and Stripe's `payment_intent.succeeded` never commits the booking. Today it only works because the
+  success-page fallback also commits — meaning **if a customer closes the tab right after paying, no
+  booking row is written, no confirmation email is sent, and the oversell auto-refund never fires.**
+  This must be a real webhook endpoint before real money moves. Fixed as part of 6.3 below.
+
+### 6.1 — Order of operations
+1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
+   Then 🤖 repoints `BOOKING_ORIGIN` / `BOOKING_APP` in `dtown-atv-rentals-site` (`next.config.ts` +
+   `src/lib/booking.ts`) off `book.turbobookings.net/dtown`. This is what makes booking cookies
+   **first-party** (same registrable domain) — do it *before* ad spend, not after.
+2. 🧑 **Point `dtownatvrentals.com` + `www` at Vercel** and attach to `dtown-atv-rentals-site`
+   (replaces the current Duda page). Verify the branded site serves on the apex.
+3. 👥 **Promote code:** merge dashboard `develop` → `main` (2 commits) so prod runs the latest build.
+   *Requires explicit go-ahead — nothing merges to `main` without it.*
+4. 🧑 **Stripe live Connect onboarding** for the real Dallas business (bank + business details) on the
+   **live** platform account. Note the new live `acct_…`.
+5. 🧑 **Swap Stripe keys to live** — `sk_live`/`pk_live` in **both** Vercel projects (Production scope):
+   `bookingsystem` and `turbo-bookings-dashboard`. Redeploy both.
+6. 🧑 **Create the LIVE-mode webhooks** (test-mode endpoints do **not** carry over):
+   | Endpoint | Events | Secret goes to |
+   |---|---|---|
+   | `https://book.dtownatvrentals.com/api/webhooks/stripe` (or `book.turbobookings.net` until step 1 lands) | `payment_intent.succeeded` — **check "listen to events on Connected accounts"** | `bookingsystem` → `STRIPE_WEBHOOK_SECRET` (Production) — *new var, see 6.0* |
+   | `https://dashboard.turbobookings.net/api/webhooks/stripe` | `customer.subscription.created/updated/deleted`, `invoice.payment_failed`/`succeeded` | `turbo-bookings-dashboard` → `STRIPE_WEBHOOK_SECRET` (Production) — replaces the test value |
+   Redeploy both after setting the secrets. Verify each with Stripe's **Send test webhook** → expect **200**.
+7. 🧑 **Re-add the retainer card in live mode** (the test-mode customer/subscription does not carry over):
+   operator saves the card again, admin re-sets $3,250 / day 15, confirm `retainer_status` → `active`.
+8. 🤖 **Update the Dallas connected account** to the live `acct_…` and flip location `draft` → `launched`.
+9. 👥 **One real-card booking end-to-end**, then refund it: confirm the charge lands in the Dallas live
+   Stripe balance, the platform 6% fee lands on the platform account, the manifest shows the booking,
+   the confirmation email arrives, and the refund returns to the card.
+10. 🧑 Go public (ads / share).
+
+### Rollback
+Steps 5–8 are reversible: put the `sk_test`/`pk_test` values back, flip the location to `draft`, redeploy.
+Anything already charged on a live card must be refunded in Stripe — it does not roll back with the env.
 
 ### Test → live key swap
 | Service | Variable | Where | Now | Phase 6 |
@@ -79,6 +133,9 @@
 > **Secrets:** set every value directly in Vercel project env — never paste live secret keys into chat or commit them.
 
 ### Deferred / not blocking launch
-- Clerk **production** instance for the dashboard (operator chose to keep the test instance for the soft launch).
+- Clerk **production** instance for the dashboard (operator chose to keep the test instance for the soft
+  launch). Confirmed still a **dev** instance as of 2026-08-16 (`…clerk.accounts.dev`). Caveats while
+  deferred: dev instances are capped (~100 users), sign-in runs through the `.accounts.dev` host, and
+  sessions/JWTs are dev-grade. Fine for operator + a handful of staff; revisit before client logins scale.
 - Wiring the Railway brain's `BRAIN_WEBHOOK_*` (until then booking events queue; no transactional email/SMS sends).
 - Priced quantity add-ons (post-launch, per the roadmap).
