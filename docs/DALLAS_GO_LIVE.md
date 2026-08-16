@@ -82,6 +82,28 @@
 Developers → *API request logs*. **Zero** live-mode requests ⇒ both prod apps are still on test keys.
 (Test-mode logs should show recent traffic from prod.) Do this before touching anything.
 
+### Stale test-mode state — measured 2026-08-16 🤖
+`npm run stripe:preflight` audits this (dry run by default; `--slug=<loc> --commit` purges).
+
+| | dtown | htown | miami |
+|---|---|---|---|
+| status | **`building`** (not `draft` — this doc was wrong) | `launched` | `launched` |
+| Connect account | test `acct_` | none | none |
+| retainer | `active`, test `cus_`+`sub_`, visa ••••4242 | inactive | inactive |
+| bookings | 3 (2 active, 1 cancelled) | 0 | 0 |
+| payments w/ test `pi_` | 3 · $114.40 | 0 | 0 |
+| cards on file (test `pm_`) | 3 | 0 | 0 |
+| authorized holds | **none** ✅ nothing to drain | 0 | 0 |
+
+Purge is small and safe. Note cards-on-file hang off the **customer**, not the booking
+(`added_from_booking_id` is nullable + set-null), so a booking-scoped delete would leave all 3 behind
+— the script scopes them by the location's customers.
+
+**Also clear the retainer columns** (`stripe_platform_customer_id`, `stripe_subscription_id`,
+`retainer_card_brand`, `retainer_card_last4`, `retainer_status='inactive'`). Mandatory, not cosmetic:
+`ensurePlatformCustomer` short-circuits on the stale `cus_` and `startRetainer` is blocked by the
+guard at `actions/billing.ts:135`, so without it the operator **cannot re-add a card in live mode**.
+
 ### 6.0 — Fix first (blocking) 🧑
 - **Booking-app Stripe webhook is dead in production.** `bookingsystem` prod has no
   `STRIPE_WEBHOOK_SECRET`, so `POST /api/webhooks/stripe` short-circuits with `webhook not configured`
@@ -111,11 +133,25 @@ Developers → *API request logs*. **Zero** live-mode requests ⇒ both prod app
    Redeploy both after setting the secrets. Verify each with Stripe's **Send test webhook** → expect **200**.
 7. 🧑 **Re-add the retainer card in live mode** (the test-mode customer/subscription does not carry over):
    operator saves the card again, admin re-sets $3,250 / day 15, confirm `retainer_status` → `active`.
-8. 🤖 **Update the Dallas connected account** to the live `acct_…` and flip location `draft` → `launched`.
+8. 🤖 **Update the Dallas connected account** to the live `acct_…` and flip location
+   `building` → `launched`.
 9. 👥 **One real-card booking end-to-end**, then refund it: confirm the charge lands in the Dallas live
    Stripe balance, the platform 6% fee lands on the platform account, the manifest shows the booking,
    the confirmation email arrives, and the refund returns to the card.
 10. 🧑 Go public (ads / share).
+
+### Code changes that shipped with this cutover (on `develop`)
+- **Application fee is clamped** to the charge in the customer checkout
+  (`bookingsystem/src/lib/actions/checkout.ts`). It was computed on the full adjusted subtotal while
+  the charge is only what's due online — under `platform_fee_mode = 'absorbed_by_client'` it could
+  exceed `amount` and Stripe would reject the PaymentIntent outright.
+- **No silent platform-account fallback.** `dashboard/src/lib/stripe/payments.ts` used to fall back to
+  the platform account when a location had no connected `acct_`, so refunds came out of *our* balance
+  and holds authorized against the wrong merchant — with no application fee taken on charges. All
+  payment ops now fail loudly. This matters precisely during the window between clearing the stale
+  test `acct_` and finishing live onboarding.
+- Schema drift fixed: `payments.stripe_payment_intent_id` is nullable (since migration 0016); the
+  booking engine still declared it `notNull`.
 
 ### Rollback
 Steps 5–8 are reversible: put the `sk_test`/`pk_test` values back, flip the location to `draft`, redeploy.
@@ -127,15 +163,47 @@ Anything already charged on a live card must be refunded in Stripe — it does n
 | Stripe | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | booking app + dashboard | `pk_test_…` | `pk_live_…` |
 | Stripe | `STRIPE_SECRET_KEY` | booking app + dashboard | `sk_test_…` | `sk_live_…` |
 | Stripe Connect | connected account | dashboard → Integrations | test acct | live onboarding |
-| Clerk | publishable/secret | dashboard | `pk_test_…` | later (optional) |
+| Clerk | publishable/secret | dashboard | `pk_test_…` (dev instance) | `pk_live_…` — see Phase 7 |
 | Brain pipe | `BRAIN_WEBHOOK_URL`/`_SECRET` | booking app | unset → queues | Railway URL when ready |
 
 > **Secrets:** set every value directly in Vercel project env — never paste live secret keys into chat or commit them.
 
+## Phase 7 — Clerk dev → PRODUCTION instance 🧑 + 🤖
+
+Code-side this is **only an env swap** — no Clerk Organizations, no Clerk webhook, no hardcoded hosts,
+and `grep process.env.*CLERK` in `src` returns nothing (the SDK reads the two vars implicitly).
+The risk is entirely in the **data**: a production instance starts empty, and all RBAC lives in Clerk
+`publicMetadata` with nothing mirrored in Postgres.
+
+**Measured 2026-08-16 via `npm run clerk:export-roles` — smaller than feared:**
+
+| Account | Global role | Per-location grants |
+|---|---|---|
+| `selmen@turbobookings.net` | `master` | none |
+| `oscar@turbobookings.net` | `admin` | none |
+
+Two accounts, both global, **zero `locationRoles` to replay**, no pending invitations.
+
+1. 🤖 `npm run clerk:export-roles -- --out=<path>` against the **dev** instance. **Do this first** —
+   after cutover the grants are gone. (Already run once; re-run for a fresh backup at cutover time.)
+2. 🧑 Create the Clerk **production** instance; add the DNS records Clerk issues on `turbobookings.net`
+   (frontend API + accounts portal + DKIM/mail CNAMEs).
+3. 🧑 Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` + `CLERK_SECRET_KEY` (Production scope), redeploy.
+4. 🧑 **Break the bootstrap lockout before anything else:** sign up, then set
+   `publicMetadata.role = "master"` by hand in the Clerk dashboard. Role resolution **fails closed**
+   (`roles.ts:50-57`) and `RoleGate` blocks anyone with no role — so until a master exists, *nobody*
+   can administer anything, including re-granting roles.
+5. 🤖 `npm run clerk:import-roles -- --in=<path>` (dry run; add `--commit` to apply) against the
+   production instance. Existing users are merge-updated; everyone else gets an invitation with the
+   role pre-baked into `publicMetadata` so it applies at sign-up.
+6. 🧑 Verify: master sees all locations; sign out and back in cleanly.
+
+**Known cosmetic fallout:** `audit_log.user_id` rows keep dev-instance IDs. `ActivityFeed` already
+try/catches the lookup and degrades to an 8-char stub — no crash. `bookings.created_by_user_id` and
+`booking_reschedules.performed_by_user_id` are write-only (never read back), so they're harmless.
+
 ### Deferred / not blocking launch
-- Clerk **production** instance for the dashboard (operator chose to keep the test instance for the soft
-  launch). Confirmed still a **dev** instance as of 2026-08-16 (`…clerk.accounts.dev`). Caveats while
-  deferred: dev instances are capped (~100 users), sign-in runs through the `.accounts.dev` host, and
-  sessions/JWTs are dev-grade. Fine for operator + a handful of staff; revisit before client logins scale.
+*(The Clerk production cutover was previously deferred here — it is now **Phase 7** above, at the
+operator's direction.)*
 - Wiring the Railway brain's `BRAIN_WEBHOOK_*` (until then booking events queue; no transactional email/SMS sends).
 - Priced quantity add-ons (post-launch, per the roadmap).
