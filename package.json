@@ -14,7 +14,8 @@
     "db:seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
     "fork": "node --env-file-if-exists=.env.local --import tsx scripts/fork.ts",
     "clerk:export-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-export-roles.ts",
-    "clerk:import-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-import-roles.ts"
+    "clerk:import-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-import-roles.ts",
+    "stripe:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/stripe-live-preflight.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.0",
