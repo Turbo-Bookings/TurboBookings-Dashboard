@@ -3,12 +3,25 @@ import type Stripe from "stripe";
 import { getStripe } from "./client";
 
 // Payment operations for the operator backend. All run against the location's
-// connected account when present (`{ stripeAccount }`), else the platform
-// account (test/un-onboarded fallback) — mirror of the customer-flow charge path.
+// connected account (`{ stripeAccount }`).
+//
+// There is deliberately NO platform-account fallback: with no connected
+// account, every one of these would run on OUR account with real money — a
+// refund would come out of the platform balance, and a hold would authorize a
+// customer's card against the wrong merchant. That window is real (between
+// clearing a stale test `acct_` and finishing live Connect onboarding), so we
+// fail loudly instead.
 
 type Acct = string | null | undefined;
-function reqOpts(account: Acct): Stripe.RequestOptions | undefined {
-  return account ? { stripeAccount: account } : undefined;
+
+function reqOpts(account: Acct, op: string): Stripe.RequestOptions {
+  if (!account) {
+    throw new Error(
+      `Cannot ${op}: this location has no connected Stripe account. ` +
+        `Finish Stripe Connect onboarding under Integrations first.`,
+    );
+  }
+  return { stripeAccount: account };
 }
 
 // Full (or partial, when amountCents given) refund of a captured PaymentIntent.
@@ -22,7 +35,7 @@ export async function refundPayment(
       payment_intent: paymentIntentId,
       ...(amountCents != null ? { amount: amountCents } : {}),
     },
-    reqOpts(account),
+    reqOpts(account, "issue a refund"),
   );
 }
 
@@ -43,7 +56,7 @@ export async function createManualHold(params: {
       payment_method: params.paymentMethodId,
       metadata: params.metadata,
     },
-    reqOpts(params.account),
+    reqOpts(params.account, "place a security hold"),
   );
 }
 
@@ -55,7 +68,7 @@ export async function captureHold(
   return getStripe().paymentIntents.capture(
     paymentIntentId,
     amountCents != null ? { amount_to_capture: amountCents } : undefined,
-    reqOpts(account),
+    reqOpts(account, "capture a security hold"),
   );
 }
 
@@ -66,6 +79,6 @@ export async function releaseHold(
   return getStripe().paymentIntents.cancel(
     paymentIntentId,
     undefined,
-    reqOpts(account),
+    reqOpts(account, "release a security hold"),
   );
 }

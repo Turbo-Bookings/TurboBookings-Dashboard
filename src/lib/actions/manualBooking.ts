@@ -290,7 +290,15 @@ export async function createOperatorIntent(
   const due = p.c.dueNowCents;
   if (due < 50) return { ok: false, error: "Amount too low to charge" };
   const connected = location.stripeAccountId || null;
-  const appFee = connected ? Math.min(p.c.applicationFeeCents, due) : undefined;
+  // No connected account would charge the PLATFORM account instead, with no
+  // application fee taken. Refuse rather than silently misroute the money.
+  if (!connected)
+    return {
+      ok: false,
+      error:
+        "This location has no connected Stripe account. Finish Stripe Connect onboarding under Integrations before charging a card.",
+    };
+  const appFee = Math.min(p.c.applicationFeeCents, due);
   try {
     const pi = await getStripe().paymentIntents.create(
       {
@@ -299,9 +307,9 @@ export async function createOperatorIntent(
         automatic_payment_methods: { enabled: true },
         setup_future_usage: "off_session",
         metadata: { location_id: location.id, item_id: payload.itemId, availability_id: payload.availabilityId, source: "direct" },
-        ...(appFee != null ? { application_fee_amount: appFee } : {}),
+        application_fee_amount: appFee,
       },
-      connected ? { stripeAccount: connected } : undefined,
+      { stripeAccount: connected },
     );
     return { ok: true, clientSecret: pi.client_secret as string, stripeAccount: connected };
   } catch (e) {
@@ -353,10 +361,15 @@ export async function createDirectBooking(
   let piId: string | null = null;
   let last4: string | null = null;
   if (method === "card" && paymentIntentId) {
+    // The intent was created on the connected account (createOperatorIntent
+    // refuses without one), so retrieve it there. Without the account header
+    // Stripe would 404 with a confusing "No such payment_intent".
+    if (!location.stripeAccountId)
+      return { ok: false, error: "This location has no connected Stripe account." };
     const pi = await getStripe().paymentIntents.retrieve(
       paymentIntentId,
       { expand: ["payment_method"] },
-      location.stripeAccountId ? { stripeAccount: location.stripeAccountId } : undefined,
+      { stripeAccount: location.stripeAccountId },
     );
     if (pi.status !== "succeeded") return { ok: false, error: "Payment not completed" };
     paid = pi.amount_received ?? pi.amount;
