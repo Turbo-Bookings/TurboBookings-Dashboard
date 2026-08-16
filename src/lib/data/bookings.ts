@@ -672,3 +672,112 @@ export async function listBookingsForCsv(
     refundedCents: r.refundedCents,
   }));
 }
+
+// ---------- Tax report ----------
+//
+// Sales tax TurboBookings actually collected ONLINE, on the deposits charged
+// through us (bookings.taxCents = tax on the amount paid online at booking time).
+// We deliberately do NOT recompute full liability on the total tour price: the
+// balance is collected at the venue by the operator (and may never be, on a
+// no-show), so full-price tax would overstate what moved through our system.
+// How the operator handles venue-collected tax is their own books.
+
+export type TaxReport = {
+  bookings: number;
+  collectedOnlineCents: number; // total deposits charged online
+  taxCollectedOnlineCents: number; // tax portion of those deposits
+  byTour: Array<{ name: string; bookings: number; collectedCents: number; taxCents: number }>;
+};
+
+export async function taxReport(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<TaxReport> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      itemName: items.name,
+      paidCents: bookings.depositPaidCents,
+      taxCents: bookings.taxCents,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        gte(availabilities.startsAt, from),
+        lt(availabilities.startsAt, to),
+      ),
+    );
+  let collected = 0, tax = 0;
+  const byTour = new Map<string, { name: string; bookings: number; collectedCents: number; taxCents: number }>();
+  for (const r of rows) {
+    collected += r.paidCents;
+    tax += r.taxCents;
+    const t = byTour.get(r.itemName) ?? { name: r.itemName, bookings: 0, collectedCents: 0, taxCents: 0 };
+    t.bookings++;
+    t.collectedCents += r.paidCents;
+    t.taxCents += r.taxCents;
+    byTour.set(r.itemName, t);
+  }
+  return {
+    bookings: rows.length,
+    collectedOnlineCents: collected,
+    taxCollectedOnlineCents: tax,
+    byTour: [...byTour.values()].sort((a, b) => b.taxCents - a.taxCents),
+  };
+}
+
+export type TaxCsvRow = {
+  displayNumber: string;
+  startsAt: Date;
+  itemName: string;
+  customerName: string;
+  email: string;
+  collectedOnlineCents: number;
+  taxCollectedOnlineCents: number;
+};
+
+export async function listTaxRowsForCsv(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<TaxCsvRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      displayNumber: bookings.displayNumber,
+      startsAt: availabilities.startsAt,
+      itemName: items.name,
+      first: customers.firstName,
+      last: customers.lastName,
+      email: customers.emailLower,
+      paidCents: bookings.depositPaidCents,
+      taxCents: bookings.taxCents,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .innerJoin(items, eq(bookings.itemId, items.id))
+    .innerJoin(customers, eq(bookings.customerId, customers.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        gte(availabilities.startsAt, from),
+        lt(availabilities.startsAt, to),
+      ),
+    )
+    .orderBy(asc(availabilities.startsAt));
+  return rows.map((r) => ({
+    displayNumber: r.displayNumber,
+    startsAt: r.startsAt,
+    itemName: r.itemName,
+    customerName: [r.first, r.last].filter(Boolean).join(" ") || "",
+    email: r.email,
+    collectedOnlineCents: r.paidCents,
+    taxCollectedOnlineCents: r.taxCents,
+  }));
+}
