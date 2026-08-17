@@ -1,6 +1,7 @@
 "use server";
 import { assertCan } from "@/lib/auth/roles";
 
+import { randomBytes } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -18,11 +19,15 @@ import { stripeConfigured } from "@/lib/stripe/client";
 // Returns the dashboard URL that Stripe redirects back to after onboarding.
 // Same URL handles both `return_url` (onboarding finished) and `refresh_url`
 // (link expired) — the UI shows whichever state the account is in.
-function buildReturnUrl(slug: string): string {
-  const base =
+function dashboardBaseUrl(): string {
+  return (
     process.env.NEXT_PUBLIC_DASHBOARD_URL ??
-    "https://dashboard.turbobookings.net";
-  return `${base}/locations/${slug}/integrations?stripe=callback`;
+    "https://dashboard.turbobookings.net"
+  );
+}
+
+function buildReturnUrl(slug: string): string {
+  return `${dashboardBaseUrl()}/locations/${slug}/integrations?stripe=callback`;
 }
 
 // True only when Stripe positively reports the account does not exist for the
@@ -57,6 +62,80 @@ async function accountIsMissing(accountId: string): Promise<boolean> {
     });
     return false;
   }
+}
+
+// How long an operator onboarding link stays valid. Long enough to email and
+// have the owner get to it in their own time; short enough that a leaked link
+// isn't indefinitely useful.
+const ONBOARDING_TOKEN_TTL_DAYS = 14;
+
+/**
+ * Mint (or re-mint) the shareable no-login onboarding URL for a location.
+ *
+ * Returns the full URL to hand to the location owner. Rotating is deliberate:
+ * calling this again invalidates the previous link, so a mis-sent link can be
+ * revoked by simply generating a new one.
+ */
+export async function createOperatorOnboardingLink(
+  slug: string,
+): Promise<{ url: string; expiresAt: Date }> {
+  await assertCan("manage_config", slug);
+
+  const db = getDb();
+  const rows = await db
+    .select({ id: locations.id })
+    .from(locations)
+    .where(eq(locations.slug, slug))
+    .limit(1);
+  const loc = rows[0];
+  if (!loc) throw new Error(`Location not found: ${slug}`);
+
+  // 32 bytes of base64url ≈ 43 chars. This is the only thing protecting the
+  // ability to attach a bank account to this location, so it must not be
+  // guessable and must not be derived from the slug.
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(
+    Date.now() + ONBOARDING_TOKEN_TTL_DAYS * 24 * 60 * 60_000,
+  );
+
+  await db
+    .update(locations)
+    .set({
+      connectOnboardingToken: token,
+      connectOnboardingTokenExpiresAt: expiresAt,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(locations.id, loc.id));
+
+  await recordAudit({
+    slug,
+    action: "stripe.onboarding_link_created",
+    summary: `Generated a Stripe onboarding link for the operator (expires ${expiresAt.toISOString().slice(0, 10)})`,
+    payload: { expiresAt: expiresAt.toISOString() },
+  });
+
+  revalidatePath(`/locations/${slug}/integrations`);
+  return { url: `${dashboardBaseUrl()}/connect/${token}`, expiresAt };
+}
+
+/** Revoke the shareable onboarding link without issuing a new one. */
+export async function revokeOperatorOnboardingLink(slug: string): Promise<void> {
+  await assertCan("manage_config", slug);
+  const db = getDb();
+  await db
+    .update(locations)
+    .set({
+      connectOnboardingToken: null,
+      connectOnboardingTokenExpiresAt: null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(locations.slug, slug));
+  await recordAudit({
+    slug,
+    action: "stripe.onboarding_link_revoked",
+    summary: "Revoked the operator Stripe onboarding link",
+  });
+  revalidatePath(`/locations/${slug}/integrations`);
 }
 
 // Kicks off Stripe Connect onboarding for a location:

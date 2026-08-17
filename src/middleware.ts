@@ -11,6 +11,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/cron/(.*)",
   // Stripe webhooks — verified via the Stripe signature, not Clerk.
   "/api/webhooks/(.*)",
+  // Operator Stripe-onboarding hand-off. Deliberately public: the whole point
+  // is that a location owner needs NO account here — they click one link and
+  // land in Stripe. Authenticated by the unguessable, expiring, revocable token
+  // in the path (see src/app/connect/[token]/page.tsx).
+  "/connect/(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

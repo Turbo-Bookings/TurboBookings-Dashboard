@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { AccountStatus } from "@/lib/stripe/connect";
 import {
+  createOperatorOnboardingLink,
   disconnectStripeAccount,
   openStripeDashboardForLocation,
   startStripeConnectOnboarding,
@@ -29,6 +30,15 @@ export function StripeConnectCard({
   stripeConfigured,
 }: Props) {
   const [pending, startTransition] = useTransition();
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  function handleGenerateLink() {
+    startTransition(async () => {
+      const res = await createOperatorOnboardingLink(slug);
+      setShareUrl(res.url);
+    });
+  }
 
   function handleStart() {
     startTransition(async () => {
@@ -105,14 +115,59 @@ export function StripeConnectCard({
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={handleStart}
-          disabled={pending}
-          className="mt-4 inline-flex items-center justify-center rounded-md bg-[#635bff] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#5546e0] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {pending ? "Redirecting to Stripe…" : "Connect Stripe"}
-        </button>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleStart}
+            disabled={pending}
+            className="inline-flex items-center justify-center rounded-md bg-[#635bff] px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#5546e0] focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending ? "Redirecting to Stripe…" : "Connect Stripe myself"}
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerateLink}
+            disabled={pending}
+            className="inline-flex items-center justify-center rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            {pending ? "Working…" : "Get a link to send the owner"}
+          </button>
+        </div>
+
+        {/* The share link. Stripe's own Account Links are single-use and expire
+            in ~5 minutes, so they can't be emailed; this is a durable URL that
+            mints a fresh one on each visit. The owner needs no login. */}
+        {shareUrl && (
+          <div className="mt-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-950/40">
+            <p className="text-xs font-medium text-emerald-900 dark:text-emerald-100">
+              Send this to the business owner
+            </p>
+            <p className="mt-1 text-[11px] text-emerald-800 dark:text-emerald-300">
+              They don&apos;t need an account or a password — the link takes them
+              straight into Stripe. Valid for 14 days. Generating a new link
+              replaces this one.
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                readOnly
+                value={shareUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 rounded border border-emerald-300 bg-white px-2 py-1 font-mono text-[11px] text-zinc-800 dark:border-emerald-800 dark:bg-zinc-900 dark:text-zinc-100"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(shareUrl);
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 2000);
+                }}
+                className="rounded border border-emerald-300 px-2 py-1 text-[11px] font-medium text-emerald-900 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-100 dark:hover:bg-emerald-900/40"
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

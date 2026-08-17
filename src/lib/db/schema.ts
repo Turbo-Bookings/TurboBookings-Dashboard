@@ -149,6 +149,24 @@ export const locations = pgTable("locations", {
   // stripeAccountId is the connected `acct_...` ID from Stripe Connect Standard.
   stripeAccountId: text("stripe_account_id"),
 
+  // A no-login onboarding link we hand to the location owner.
+  //
+  // Stripe Account Links are single-use and expire in ~5 minutes, so they can't
+  // be emailed. The alternative — giving the owner a dashboard login — means
+  // making a non-technical business owner create a Clerk account and find their
+  // way back to our domain, which is where operators get lost. Instead this
+  // token backs a public route that mints a FRESH Account Link on every visit
+  // and redirects straight into Stripe. One durable URL, no account required.
+  //
+  // This is a capability URL: whoever holds it can onboard THIS location's
+  // Stripe account (i.e. attach a bank account that receives its payouts), so
+  // it is long+random, rotatable, expires, and stops working once the account
+  // can accept charges.
+  connectOnboardingToken: text("connect_onboarding_token").unique(),
+  connectOnboardingTokenExpiresAt: timestamp("connect_onboarding_token_expires_at", {
+    withTimezone: true,
+  }),
+
   // Platform fee — our cut on each booking. Defaults to 6% (600 bps).
   // Master role can override per client.
   platformFeeBps: integer("platform_fee_bps").notNull().default(600),
