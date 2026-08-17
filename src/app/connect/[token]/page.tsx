@@ -145,9 +145,15 @@ export default async function ConnectOnboardingPage({
   // return_url and refresh_url both come back HERE, so an expired or
   // already-used link self-heals: Stripe bounces the owner back and we mint a
   // new one. That's the whole reason this page can be a durable URL.
-  const selfUrl = `${
-    process.env.NEXT_PUBLIC_DASHBOARD_URL ?? "https://dashboard.turbobookings.net"
-  }/connect/${token}`;
+  // Blank-safe: an env var set to "" is not undefined, so `??` would leave us
+  // with an origin-less URL that Stripe would reject.
+  const configuredBase = process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim();
+  const base = (
+    configuredBase && configuredBase.length > 0
+      ? configuredBase
+      : "https://dashboard.turbobookings.net"
+  ).replace(/\/+$/, "");
+  const selfUrl = `${base}/connect/${token}`;
 
   const link = await createOnboardingLink({
     accountId,

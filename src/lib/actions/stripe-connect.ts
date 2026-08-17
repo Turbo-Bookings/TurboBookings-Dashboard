@@ -19,11 +19,24 @@ import { stripeConfigured } from "@/lib/stripe/client";
 // Returns the dashboard URL that Stripe redirects back to after onboarding.
 // Same URL handles both `return_url` (onboarding finished) and `refresh_url`
 // (link expired) — the UI shows whichever state the account is in.
+// The canonical public origin for links we hand to third parties.
+//
+// `??` is deliberately NOT used: an env var set to an empty string is not
+// undefined, so `?? default` would yield "" and produce a bare "/connect/<token>"
+// with no origin — an unusable link, sent to a business owner, with no error
+// anywhere. Trim and treat blank as unset.
+//
+// This must be the branded domain. Operators are asked for an EIN, SSN and bank
+// account on the far side of this link; a *.vercel.app origin reads as phishing
+// and is a reason for a cautious owner to refuse (or worse, for an incautious
+// one to stop noticing).
 function dashboardBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_DASHBOARD_URL ??
-    "https://dashboard.turbobookings.net"
-  );
+  const configured = process.env.NEXT_PUBLIC_DASHBOARD_URL?.trim();
+  const base =
+    configured && configured.length > 0
+      ? configured
+      : "https://dashboard.turbobookings.net";
+  return base.replace(/\/+$/, ""); // no trailing slash — we concatenate paths
 }
 
 function buildReturnUrl(slug: string): string {
