@@ -29,10 +29,21 @@ type Meta = { role?: unknown; locationRoles?: Record<string, unknown> };
 export type RoleGrant = {
   email: string;
   name: string;
-  /** Global role (master/admin), or null. */
+  /** Global dashboard role (master/admin), or null. Readability only. */
   role: Role | null;
-  /** Per-location grants, keyed by `locations.id` UUID. */
+  /** Per-location dashboard grants, keyed by `locations.id` UUID. Readability only. */
   locationRoles: Record<string, Role>;
+  /**
+   * The COMPLETE publicMetadata object, replayed verbatim.
+   *
+   * This is the authoritative field — do not narrow it to the dashboard's own
+   * keys. The ads cockpit (a separate app on this same Clerk instance) stores
+   * its permission under `cockpitRole`, where absent means least-privilege, so
+   * cherry-picking `role`/`locationRoles` would silently strip the creative
+   * director's cockpit access at cutover. Any future app adding its own key is
+   * covered for free.
+   */
+  publicMetadata: Record<string, unknown>;
   /** Where this came from — users are re-invited, invitations re-sent. */
   origin: "user" | "invitation";
   /** Dev-instance user id. Informational only; it does NOT carry over. */
@@ -75,8 +86,11 @@ async function main() {
     const { data } = await clerk.users.getUserList({ limit, offset });
     if (data.length === 0) break;
     for (const u of data) {
-      const { role, locationRoles } = grantsFrom((u.publicMetadata ?? {}) as Meta);
-      if (!role && Object.keys(locationRoles).length === 0) continue;
+      const meta = (u.publicMetadata ?? {}) as Record<string, unknown>;
+      const { role, locationRoles } = grantsFrom(meta as Meta);
+      // Export anyone carrying ANY publicMetadata, not just a dashboard role —
+      // a cockpit-only user (cockpitRole, no dashboard role) must survive too.
+      if (Object.keys(meta).length === 0) continue;
       const email =
         u.emailAddresses.find((e) => e.id === u.primaryEmailAddressId)?.emailAddress ??
         u.emailAddresses[0]?.emailAddress;
@@ -89,6 +103,7 @@ async function main() {
         name: [u.firstName, u.lastName].filter(Boolean).join(" "),
         role,
         locationRoles,
+        publicMetadata: meta,
         origin: "user",
         devUserId: u.id,
       });
@@ -100,13 +115,15 @@ async function main() {
   // Pending invitations — these are lost on cutover and must be re-sent.
   const { data: invites } = await clerk.invitations.getInvitationList({ status: "pending" });
   for (const inv of invites) {
-    const { role, locationRoles } = grantsFrom((inv.publicMetadata ?? {}) as Meta);
-    if (!role && Object.keys(locationRoles).length === 0) continue;
+    const meta = (inv.publicMetadata ?? {}) as Record<string, unknown>;
+    const { role, locationRoles } = grantsFrom(meta as Meta);
+    if (Object.keys(meta).length === 0) continue;
     grants.push({
       email: inv.emailAddress,
       name: "",
       role,
       locationRoles,
+      publicMetadata: meta,
       origin: "invitation",
     });
   }
@@ -125,8 +142,12 @@ async function main() {
   console.table(
     grants.map((g) => ({
       email: g.email,
-      global: g.role ?? "—",
+      dashboard: g.role ?? "—",
       locations: Object.keys(g.locationRoles).length,
+      cockpitRole: (g.publicMetadata.cockpitRole as string | undefined) ?? "—",
+      "other keys": Object.keys(g.publicMetadata)
+        .filter((k) => !["role", "locationRoles", "cockpitRole"].includes(k))
+        .join(", ") || "—",
       origin: g.origin,
     })),
   );

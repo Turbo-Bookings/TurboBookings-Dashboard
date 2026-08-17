@@ -205,19 +205,51 @@ Anything already charged on a live card must be refunded in Stripe — it does n
 
 ## Phase 7 — Clerk dev → PRODUCTION instance 🧑 + 🤖
 
+### ⚠️ This is NOT a dashboard-only change — audited in the Clerk dashboard 2026-08-17
+
+The **ads cockpit** (Railway) runs on the **same Clerk instance** — same publishable key
+(`pk_test_d2VsY29t…` → `welcome-muskrat-17.clerk.accounts.dev`); `cockpit/web/.env.production` says so
+outright. `cockpit/auth.py` derives the JWT issuer from that key and validates every token against it,
+so switching the dashboard alone **locks users out of the cockpit**. Both must move in one window.
+
+**Blockers found by inspection (not assumption):**
+
+| Blocker | Evidence | Cost |
+|---|---|---|
+| **Google OAuth uses Clerk's SHARED credentials** | Configure → SSO connections shows `Shared credentials` + Clerk's own notice: *"You'll need to add custom credentials for your SSO connections in production"* | Own Google Cloud OAuth client: project, consent screen, client ID/secret, redirect URI. Minutes if you stay internal/testing; **days** if Google has to verify an external consent screen. |
+| **`COCKPIT_OWNER_IDS` is an allowlist of Clerk USER IDs** | `cockpit/auth.py:38` — `sub in OWNER_IDS → role = "owner"` | Clerk user IDs do **not** survive a dev→prod move. After cutover the allowlist matches nobody, and with session claims empty (below) the owner falls back to `"creative"` — locked out of approvals, analyst, factpack, build, market. **Must be repopulated with the new prod user IDs.** |
+| **Session token claims are empty (`{}`)** | Configure → Sessions → Customize session token | `auth.py` reads `cockpitRole` from a token claim and finds nothing, which is exactly why the owner allowlist exists. Nothing to migrate, but don't expect the claim path to work. |
+| **`VITE_CLERK_PUBLISHABLE_KEY` is baked in at build time** | `cockpit/web/.env.production`, Vite `VITE_` prefix | The cockpit SPA needs a **rebuild + redeploy**, not just an env change. |
+| **Hobby plan with Pro features enabled** | Sessions → `Maximum lifetime` (7 days) is ON and badged `Pro`; the clone dialog warns *"Usage of premium features will require a plan upgrade"* | Decide the plan before cloning, or lose the setting. |
+| DNS + SSL for the prod custom domain | Clerk issues CNAMEs for `turbobookings.net` | 15 min – a few hours of propagation/verification. |
+
+**Cockpit cutover checklist (same window as the dashboard):**
+1. `VITE_CLERK_PUBLISHABLE_KEY` → `pk_live_…`, then **rebuild** the SPA and redeploy.
+2. `CLERK_PUBLISHABLE_KEY` / `CLERK_ISSUER` → prod, so JWKS + issuer validation point at the new instance.
+3. **`COCKPIT_OWNER_IDS` → the new prod Clerk user ID(s).** Get them from the prod instance after sign-up.
+4. Verify: owner reaches `/api/approvals`; the creative director still reaches analyst chat/thread/last.
+
+**Current instance (2026-08-17):** 3 users — `selmen@` (dashboard `master`, `cockpitRole: owner`),
+`oscar@` (dashboard `admin`, no cockpitRole → cockpit least-privilege), `joshuelespinoza@gmail.com`
+(no publicMetadata at all → cockpit `creative` by default, no dashboard access). Access mode
+**Invite-only**. So re-registration is trivial in volume; the risk is entirely in the wiring above.
+
+
 Code-side this is **only an env swap** — no Clerk Organizations, no Clerk webhook, no hardcoded hosts,
 and `grep process.env.*CLERK` in `src` returns nothing (the SDK reads the two vars implicitly).
 The risk is entirely in the **data**: a production instance starts empty, and all RBAC lives in Clerk
 `publicMetadata` with nothing mirrored in Postgres.
 
-**Measured 2026-08-16 via `npm run clerk:export-roles` — smaller than feared:**
+**Measured via `npm run clerk:export-roles`:**
 
-| Account | Global role | Per-location grants |
-|---|---|---|
-| `selmen@turbobookings.net` | `master` | none |
-| `oscar@turbobookings.net` | `admin` | none |
+| Account | Dashboard role | Per-location | `cockpitRole` |
+|---|---|---|---|
+| `selmen@turbobookings.net` | `master` | none | **`owner`** |
+| `oscar@turbobookings.net` | `admin` | none | — (least privilege) |
 
-Two accounts, both global, **zero `locationRoles` to replay**, no pending invitations.
+Zero `locationRoles` to replay, no pending invitations. The export now captures the **entire**
+`publicMetadata` object rather than just the dashboard's own keys — it previously dropped
+`cockpitRole`, which would have silently demoted the cockpit owner to creative-only at cutover.
 
 1. 🤖 `npm run clerk:export-roles -- --out=<path>` against the **dev** instance. **Do this first** —
    after cutover the grants are gone. (Already run once; re-run for a fresh backup at cutover time.)

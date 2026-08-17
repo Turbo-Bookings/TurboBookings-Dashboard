@@ -30,6 +30,20 @@ const COMMIT = process.argv.includes("--commit");
 
 type Outcome = "updated_user" | "invited" | "skipped_nochange" | "error";
 
+/** Human summary of what a grant carries, for the run table. */
+function describe(g: RoleGrant, meta: Record<string, unknown>): string {
+  const bits: string[] = [];
+  if (meta.role) bits.push(`dashboard:${String(meta.role)}`);
+  const locs = Object.keys((meta.locationRoles as Record<string, unknown>) ?? {}).length;
+  if (locs) bits.push(`${locs} location(s)`);
+  if (meta.cockpitRole) bits.push(`cockpit:${String(meta.cockpitRole)}`);
+  const others = Object.keys(meta).filter(
+    (k) => !["role", "locationRoles", "cockpitRole"].includes(k),
+  );
+  if (others.length) bits.push(`+${others.join(",")}`);
+  return bits.length ? bits.join(" · ") : "(no metadata)";
+}
+
 async function main() {
   const secret = process.env.CLERK_SECRET_KEY;
   if (!secret) throw new Error("CLERK_SECRET_KEY is not set");
@@ -52,9 +66,16 @@ async function main() {
   );
 
   for (const g of grants) {
-    const publicMetadata: Record<string, unknown> = {};
-    if (g.role) publicMetadata.role = g.role;
-    if (Object.keys(g.locationRoles).length) publicMetadata.locationRoles = g.locationRoles;
+    // Replay the WHOLE publicMetadata object, not just the dashboard's keys.
+    // The ads cockpit reads `cockpitRole` off this same instance and treats an
+    // absent value as least-privilege, so narrowing here would quietly demote
+    // the creative director. Falls back to the narrow fields for backups taken
+    // before the export started capturing the full object.
+    const publicMetadata: Record<string, unknown> = { ...(g.publicMetadata ?? {}) };
+    if (g.role && publicMetadata.role == null) publicMetadata.role = g.role;
+    if (Object.keys(g.locationRoles ?? {}).length && publicMetadata.locationRoles == null) {
+      publicMetadata.locationRoles = g.locationRoles;
+    }
 
     try {
       const { data: existing } = await clerk.users.getUserList({
@@ -73,7 +94,7 @@ async function main() {
         results.push({
           email: g.email,
           outcome: "updated_user",
-          detail: `${g.role ?? "—"} + ${Object.keys(g.locationRoles).length} location(s)`,
+          detail: describe(g, publicMetadata),
         });
       } else {
         if (COMMIT) {
@@ -86,7 +107,7 @@ async function main() {
         results.push({
           email: g.email,
           outcome: "invited",
-          detail: `${g.role ?? "—"} + ${Object.keys(g.locationRoles).length} location(s)`,
+          detail: describe(g, publicMetadata),
         });
       }
     } catch (e) {
