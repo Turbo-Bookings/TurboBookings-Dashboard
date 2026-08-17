@@ -279,6 +279,15 @@ export const trackingConfig = pgTable("tracking_config", {
   ga4MeasurementId: text("ga4_measurement_id"),
   gtmContainerId: text("gtm_container_id"),
   googleAdsConversionId: text("google_ads_conversion_id"),
+  // The Google Ads conversion LABEL for a completed booking, e.g. the
+  // "abcDEF123" in send_to: "AW-<id>/abcDEF123". Required alongside the
+  // conversion id — gtag needs both to attribute a Purchase.
+  //
+  // Without this, migrating a location off FareHarbor silently kills its Ads
+  // Purchase signal: Miami's only Purchase conversion today fires from a GTM
+  // tag INSIDE the FareHarbor lightframe, which disappears with the cutover,
+  // and smart bidding degrades within days of losing it.
+  googleAdsPurchaseLabel: text("google_ads_purchase_label"),
 
   // Feature flag — defaults OFF because FareHarbor's own CAPI integration is
   // canonical for Purchase. Operators flip on only when running custom

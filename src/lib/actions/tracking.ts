@@ -87,6 +87,7 @@ export async function updateTracking(
   const ga4MeasurementId = clean(formData.get("ga4MeasurementId"));
   const gtmContainerId = clean(formData.get("gtmContainerId"));
   const googleAdsConversionId = clean(formData.get("googleAdsConversionId"));
+  const googleAdsPurchaseLabel = clean(formData.get("googleAdsPurchaseLabel"));
   const serverSideGtmEndpoint = clean(formData.get("serverSideGtmEndpoint"));
   const metaCapiPurchaseEnabled =
     formData.get("metaCapiPurchaseEnabled") === "on";
@@ -100,6 +101,14 @@ export async function updateTracking(
     errors.gtmContainerId = "GTM ID must look like GTM-ABC1234";
   if (googleAdsConversionId && !ADS_RE.test(googleAdsConversionId))
     errors.googleAdsConversionId = "Google Ads ID must look like AW-12345678";
+  // The pair is useless split — gtag can't attribute a conversion with only one
+  // half, and a half-configured location would silently send nothing.
+  if (googleAdsPurchaseLabel && !googleAdsConversionId)
+    errors.googleAdsConversionId =
+      "Set the Google Ads ID too — the purchase label can't be used on its own";
+  if (googleAdsConversionId && !googleAdsPurchaseLabel)
+    errors.googleAdsPurchaseLabel =
+      "Set the purchase label too, or no Ads conversion will be sent";
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
 
@@ -122,6 +131,7 @@ export async function updateTracking(
       ga4MeasurementId,
       gtmContainerId,
       googleAdsConversionId,
+      googleAdsPurchaseLabel,
       serverSideGtmEndpoint,
       metaCapiPurchaseEnabled,
       updatedAt: sql`now()`,

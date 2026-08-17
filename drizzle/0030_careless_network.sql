@@ -1,0 +1,1 @@
+ALTER TABLE "tracking_config" ADD COLUMN "google_ads_purchase_label" text;

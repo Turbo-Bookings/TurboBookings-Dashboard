@@ -149,6 +149,15 @@ export function TrackingForm({ location, config }: Props) {
             hint="Starts with AW-. From Google Ads → Tools → Conversions."
             placeholder="AW-12345678"
           />
+          <TrackingField
+            label="Google Ads purchase label"
+            name="googleAdsPurchaseLabel"
+            defaultValue={config?.googleAdsPurchaseLabel ?? ""}
+            error={errors.googleAdsPurchaseLabel}
+            verification={verification.googleAdsPurchaseLabel}
+            hint="The part after the slash in the conversion's send_to. Required with the ID above — without both, no Ads conversion is sent when a booking completes."
+            placeholder="AbC-D_efGhIjKlMnOp"
+          />
         </div>
       )}
 
