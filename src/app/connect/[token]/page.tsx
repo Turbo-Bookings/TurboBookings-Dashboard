@@ -131,15 +131,50 @@ export default async function ConnectOnboardingPage({
     );
   }
 
+  // Creating a live connected account fails until OUR platform account has
+  // finished Stripe's Connect setup (platform profile + identity verification +
+  // Stripe's own review). That is a fault on our side, not the owner's, so never
+  // show them a raw 500 — they'd assume they broke something, or that the link
+  // is a scam.
+  let platformNotReady = false;
   if (!accountId) {
-    accountId = await createConnectAccount({
-      email: loc.contactSupportEmail ?? undefined,
-      locationSlug: loc.slug,
-    });
-    await db
-      .update(locations)
-      .set({ stripeAccountId: accountId })
-      .where(eq(locations.id, loc.id));
+    try {
+      accountId = await createConnectAccount({
+        email: loc.contactSupportEmail ?? undefined,
+        locationSlug: loc.slug,
+      });
+      await db
+        .update(locations)
+        .set({ stripeAccountId: accountId })
+        .where(eq(locations.id, loc.id));
+    } catch (err) {
+      console.error("connect onboarding: could not create account", {
+        slug: loc.slug,
+        err,
+      });
+      platformNotReady = true;
+    }
+  }
+
+  if (platformNotReady || !accountId) {
+    return (
+      <Shell
+        title="Almost ready — one step on our side"
+        body={
+          <>
+            <p>
+              We&apos;re finishing the last of our payment-provider setup for{" "}
+              {name}. Nothing is wrong with your link, and there&apos;s nothing
+              you need to do right now.
+            </p>
+            <p>
+              Please try this same link again a little later — it stays valid. We
+              &apos;ll let you know as soon as it&apos;s ready.
+            </p>
+          </>
+        }
+      />
+    );
   }
 
   // return_url and refresh_url both come back HERE, so an expired or
