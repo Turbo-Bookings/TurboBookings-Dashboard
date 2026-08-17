@@ -29,7 +29,7 @@
  * dashboard BEFORE the key swap — deleting the row here does not release the
  * customer's authorization at Stripe.
  */
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   bookingHolds,
   bookings,
@@ -146,19 +146,38 @@ async function main() {
   const [loc] = await db.select().from(locations).where(eq(locations.slug, slug)).limit(1);
   if (!loc) throw new Error(`no location with slug "${slug}"`);
 
+  // Purge ONLY bookings carrying a test-mode Stripe payment intent.
+  //
+  // This used to target every booking for the location, which was correct when
+  // dtown held 3 test bookings and nothing else. It is now actively dangerous:
+  // 185 real FareHarbor bookings worth $59k were imported into dtown, and they
+  // are exactly the rows that must survive. Two independent guards:
+  //   1. must have a payment row with a stripe_payment_intent_id (imported
+  //      bookings use paymentGateway 'other' with a NULL intent)
+  //   2. must NOT carry an external_ref (imported bookings all do)
   const targets = await db
-    .select({ id: bookings.id })
+    .selectDistinct({ id: bookings.id })
     .from(bookings)
-    .where(eq(bookings.locationId, loc.id));
+    .innerJoin(payments, eq(payments.bookingId, bookings.id))
+    .where(
+      and(
+        eq(bookings.locationId, loc.id),
+        isNotNull(payments.stripePaymentIntentId),
+        isNull(bookings.externalRef),
+      ),
+    );
   const ids = targets.map((t) => t.id);
 
   // Cards on file hang off the CUSTOMER, not the booking (addedFromBookingId is
-  // nullable and set-null on delete), so scope them by the location's customers
-  // or the stale test-mode pm_ rows would survive the purge.
-  const custRows = await db
-    .select({ id: customers.id })
-    .from(customers)
-    .where(eq(customers.locationId, loc.id));
+  // nullable and set-null on delete). Scope them to cards actually attached to
+  // a booking we're purging, so an imported customer's records are untouched.
+  const custRows = ids.length
+    ? await db
+        .selectDistinct({ id: customers.id })
+        .from(customers)
+        .innerJoin(bookings, eq(bookings.customerId, customers.id))
+        .where(and(eq(customers.locationId, loc.id), inArray(bookings.id, ids)))
+    : [];
   const custIds = custRows.map((c) => c.id);
 
   head(`PURGE PLAN — ${slug}`);
@@ -185,6 +204,24 @@ async function main() {
       { table: "booking_holds", rows: nHolds },
       { table: "payment_methods_on_file", rows: nCards },
     ]);
+
+    // Belt and braces: prove no imported booking is in the target set before we
+    // touch anything. A regression here silently destroys migrated revenue.
+    const [{ imported }] = await db
+      .select({ imported: sql<number>`count(*)::int` })
+      .from(bookings)
+      .where(and(inArray(bookings.id, ids), isNotNull(bookings.externalRef)));
+    if (imported > 0) {
+      throw new Error(
+        `REFUSING TO PURGE: ${imported} target row(s) carry an external_ref, ` +
+          `i.e. they were migrated in from another system. Fix the target query.`,
+      );
+    }
+    const [{ kept }] = await db
+      .select({ kept: sql<number>`count(*)::int` })
+      .from(bookings)
+      .where(and(eq(bookings.locationId, loc.id), isNotNull(bookings.externalRef)));
+    console.log(`Imported bookings preserved: ${kept}`);
   }
   console.log("Retainer columns will be cleared on ALL locations (guards require it).");
 
