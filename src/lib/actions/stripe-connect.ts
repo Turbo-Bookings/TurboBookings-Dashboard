@@ -25,6 +25,40 @@ function buildReturnUrl(slug: string): string {
   return `${base}/locations/${slug}/integrations?stripe=callback`;
 }
 
+// True only when Stripe positively reports the account does not exist for the
+// current key (the test→live case, or an account deleted/rejected). Returns
+// FALSE on any other failure — a timeout or a 500 from Stripe must never be
+// read as "gone", or we'd orphan a live connected account and create a duplicate
+// that the operator then has to onboard again.
+async function accountIsMissing(accountId: string): Promise<boolean> {
+  try {
+    await fetchAccountStatus(accountId);
+    return false;
+  } catch (err) {
+    const e = err as {
+      type?: string;
+      code?: string;
+      statusCode?: number;
+      rawType?: string;
+    };
+    const invalidRequest =
+      e.type === "StripeInvalidRequestError" ||
+      e.rawType === "invalid_request_error";
+    const missing =
+      e.code === "resource_missing" ||
+      e.code === "account_invalid" ||
+      e.statusCode === 404;
+    if (invalidRequest && missing) return true;
+    // Anything else: assume the account is fine and let the caller proceed —
+    // the subsequent Account Link call will surface the real error.
+    console.error("stripe account existence check inconclusive", {
+      accountId,
+      err,
+    });
+    return false;
+  }
+}
+
 // Kicks off Stripe Connect onboarding for a location:
 //   1. If the location already has a stripe_account_id, reuse it
 //   2. Otherwise create a new Standard connected account, persist the id
@@ -50,7 +84,23 @@ export async function startStripeConnectOnboarding(slug: string): Promise<void> 
   const loc = rows[0];
   if (!loc) throw new Error(`Location not found: ${slug}`);
 
+  // Reuse the stored account only if it still resolves on the CURRENT key.
+  // After a test→live swap the saved test `acct_` is gone, and blindly reusing
+  // it makes the Account Link call fail — leaving the operator stuck with a
+  // "Connect Stripe" button that can never succeed. Only discard on a definitive
+  // "no such account"; a transient Stripe/network error must not cause us to
+  // abandon a perfectly good connected account and create a duplicate.
   let accountId = loc.stripeAccountId;
+  if (accountId && (await accountIsMissing(accountId))) {
+    await recordAudit({
+      slug,
+      action: "stripe.connect_account_stale",
+      summary: `Stored Stripe account ${accountId} no longer resolves (likely a test→live key change); creating a new one`,
+      payload: { previousAccountId: accountId },
+    });
+    accountId = null;
+  }
+
   if (!accountId) {
     accountId = await createConnectAccount({
       email: loc.contactSupportEmail ?? undefined,
@@ -94,7 +144,21 @@ export async function refreshStripeAccountStatus(
   const loc = rows[0];
   if (!loc?.stripeAccountId) return null;
 
-  return fetchAccountStatus(loc.stripeAccountId);
+  // Never let a Stripe lookup failure take down the Integrations page. The
+  // stored id can legitimately be unresolvable — most importantly right after a
+  // test→live key swap, when the saved test `acct_` no longer exists. That is
+  // exactly when the operator needs this page to reconnect, so it must render.
+  // A null return makes the card show its reconnect state.
+  try {
+    return await fetchAccountStatus(loc.stripeAccountId);
+  } catch (err) {
+    console.error("stripe account status lookup failed", {
+      slug,
+      accountId: loc.stripeAccountId,
+      err,
+    });
+    return null;
+  }
 }
 
 // Generates a fresh sign-in link to the client's own Stripe dashboard.

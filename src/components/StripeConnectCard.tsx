@@ -71,6 +71,10 @@ export function StripeConnectCard({
   }
 
   if (!accountId || !status) {
+    // An id stored but no status means Stripe couldn't resolve it on the current
+    // key — nearly always a test→live key change. Say so, rather than showing a
+    // bare "Not connected" that makes it look like data was lost.
+    const stale = !!accountId && !status;
     return (
       <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-start justify-between gap-3">
@@ -78,15 +82,26 @@ export function StripeConnectCard({
             <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
               Stripe Connect
             </h3>
-            <p className="mt-1 text-xs text-zinc-500">
-              Connect your Stripe account to accept bookings. We&apos;ll
-              redirect you to Stripe to verify identity, link a bank
-              account, and finish onboarding. Direct charges land in your
-              account; we collect the platform fee automatically.
-            </p>
+            {stale ? (
+              <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                The account previously connected here (
+                <code className="font-mono">{accountId}</code>) can&apos;t be
+                loaded with the current Stripe keys. That&apos;s expected right
+                after switching from test to live — test and live connected
+                accounts are separate. Reconnect to create the live account and
+                onboard it.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-zinc-500">
+                Connect your Stripe account to accept bookings. We&apos;ll
+                redirect you to Stripe to verify identity, link a bank
+                account, and finish onboarding. Direct charges land in your
+                account; we collect the platform fee automatically.
+              </p>
+            )}
           </div>
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            Not connected
+            {stale ? "Needs reconnect" : "Not connected"}
           </span>
         </div>
 
