@@ -32,9 +32,12 @@
 >    `attempt_count = 0`. Note the naming drift: dashboard reads `REPLIT_WEBHOOK_URL`,
 >    bookingsystem reads `BRAIN_WEBHOOK_URL ?? REPLIT_WEBHOOK_URL`. Deferred until after
 >    Dallas is live, by decision.
-> 4. **Ad-attribution verification** — `first_attribution_click_*` was null on the test
->    booking (direct visit). Verify 12–24h after the marketing site is live by checking
->    a real ad-click conversion carries gclid/fbclid through to the booking.
+> 4. **Post-launch tracking & events deep dive** — full checklist in
+>    `docs/POST_LAUNCH_TRACKING_DEEP_DIVE.md`. Run 12–24h after the site is live. Covers
+>    Meta Events Manager (Purchase value must read $120 not $28.60, and browser+server
+>    must dedupe to ONE event on `event_id`), ad-click attribution (still unproven —
+>    `first_attribution_click_*` was null on the test booking), CAPI payload quality,
+>    the booking.created pipe, and the email pipeline under real load.
 > 5. **Mobile-optimise the operator dashboard** — `manifest`, `bookings`,
 >    `bookings/[id]` have ~zero responsive classes and `Manifest.tsx` uses a raw
 >    `<table>` that will overflow on a phone. Plus new-booking notifications.
