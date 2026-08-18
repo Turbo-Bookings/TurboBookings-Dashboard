@@ -199,7 +199,7 @@ DB, re-pull `.env.local` before debugging anything else.**
 |---|---|
 | Purge test-mode bookings | ✅ 3 deleted (`0001`–`0003`), **185 imports verified intact** — `scripts/purge-test-bookings.ts` |
 | Arm reminders on imports | ✅ 354 armed (176 × 24h, 178 × 2h) — `scripts/backfill-import-reminders.ts` |
-| Reset retainer for live mode | ⏳ **script written, NOT yet run** — `scripts/reset-retainer-for-live.ts` |
+| Reset retainer for live mode | ✅ **done + independently verified** — `npm run retainer:reset -- dtown --commit` |
 
 **Reminder backfill notes.** All 185 imports had real email addresses (zero
 `@import.invalid`), so nothing was skipped for that reason. Confirmation and
@@ -214,7 +214,13 @@ There is **no location-level on/off switch** for this: `loadTemplate` returns
 Dallas has no rows. Inserting `scheduled_emails` rows *is* arming them. To
 suppress a type, create an `email_templates` row with `enabled = false`.
 
-**⚠️ Retainer reset is still outstanding and blocks step 7.** See below.
+**Retainer reset verified 2026-08-18:** `stripe_subscription_id`,
+`stripe_platform_customer_id`, `retainer_card_brand`, `retainer_card_last4` all
+cleared; status `active` → `inactive`; 3 × `4242` test cards removed;
+`retainer_cents` (325000) and `retainer_billing_day` (15) preserved; Connect
+account `acct_1U5aMoCxXcDic9eT` **untouched** (it must survive — it is Richard's
+live onboarding). Post-state: 185 imports, 0 native bookings, 354 reminders
+pending. `startRetainer()` will now run instead of refusing.
 
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
@@ -253,8 +259,12 @@ suppress a type, create an `email_templates` row with `enabled = false`.
    HMAC validation passed with zero side effects. Never probe the booking app with a signed
    `payment_intent.succeeded`: that hits the real commit path.
    *(Endpoint URL stays `book.turbobookings.net` until step 1's DNS lands; update it then.)*
-7. 🧑 **Re-add the retainer card in live mode.** ⚠️ **Run
-   `scripts/reset-retainer-for-live.ts dtown --commit` FIRST.** Dallas still holds
+7. 🧑 **Re-add the retainer card in live mode.** ✅ *Prerequisite reset done
+   2026-08-18.* Order matters: **card first, then Start retainer** —
+   `startSubscription()` throws `"No card on file"` when
+   `stripePlatformCustomerId` is null, which it now is. Adding the card creates
+   the live customer; Start writes the live `sub_…`, which is what reconnects the
+   webhook. Historical note: Dallas held
    test-mode `stripe_subscription_id` / `stripe_platform_customer_id`, and
    `startRetainer()` (`lib/actions/billing.ts:135`) refuses to run while a
    subscription ID is present and status is not `canceled` — so the UI will tell
