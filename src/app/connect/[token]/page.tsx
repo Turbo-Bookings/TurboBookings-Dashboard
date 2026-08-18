@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getDb, locations } from "@/lib/db";
 import { stripeConfigured } from "@/lib/stripe/client";
@@ -48,10 +48,13 @@ function Shell({
 
 export default async function ConnectOnboardingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ token: string }>;
+  searchParams: Promise<{ go?: string }>;
 }) {
   const { token } = await params;
+  const { go } = await searchParams;
 
   if (!stripeConfigured()) {
     return (
@@ -71,6 +74,7 @@ export default async function ConnectOnboardingPage({
       slug: locations.slug,
       brandDisplayName: locations.brandDisplayName,
       brandLegalName: locations.brandLegalName,
+      contactAddress: locations.contactAddress,
       contactSupportEmail: locations.contactSupportEmail,
       stripeAccountId: locations.stripeAccountId,
     })
@@ -101,6 +105,52 @@ export default async function ConnectOnboardingPage({
   }
 
   const name = loc.brandDisplayName ?? loc.brandLegalName ?? "your business";
+
+  // CONFIRMATION STEP. Owners of multiple locations get one link per location,
+  // and the two forms look identical once you're inside Stripe — on 2026-08-17
+  // an owner completed the Dallas link using his Houston business's details,
+  // which no amount of validation on our side can catch after the fact. Naming
+  // the business BEFORE the hand-off is the only place to prevent it.
+  //
+  // Gated behind ?go=1 so merely opening the link doesn't burn a Stripe
+  // Account Link (they're single-use and expire in ~5 minutes).
+  if (go !== "1") {
+    return (
+      <Shell
+        title="Set up payments"
+        body={
+          <>
+            <p>You&apos;re setting up card payments and payouts for:</p>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+              <p className="text-base font-semibold text-zinc-900">{name}</p>
+              {loc.brandLegalName && loc.brandLegalName !== name && (
+                <p className="text-sm text-zinc-600">{loc.brandLegalName}</p>
+              )}
+              {loc.contactAddress && (
+                <p className="mt-1 text-sm text-zinc-600">{loc.contactAddress}</p>
+              )}
+            </div>
+            <p className="text-sm">
+              <strong>Please check this is the right business.</strong> If you
+              operate more than one location, use that location&apos;s own link —
+              the details you enter next (EIN, bank account) must belong to the
+              business named above.
+            </p>
+            <p>
+              Stripe will ask for your business details, your ID, and the bank
+              account that should receive payouts. It takes about 10 minutes.
+            </p>
+            <a
+              href="?go=1"
+              className="inline-flex items-center justify-center rounded-md bg-[#635bff] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#5546e0]"
+            >
+              Continue to Stripe
+            </a>
+          </>
+        }
+      />
+    );
+  }
 
   // Already done? Don't hand out another onboarding link — say so and stop.
   let accountId = loc.stripeAccountId;
@@ -143,10 +193,28 @@ export default async function ConnectOnboardingPage({
         email: loc.contactSupportEmail ?? undefined,
         locationSlug: loc.slug,
       });
-      await db
+      // Claim the row ONLY if it's still empty. Two near-simultaneous visits
+      // (a link preview or prefetch alongside the real click) would otherwise
+      // each see a null id, each create an account, and the second write would
+      // orphan the first — which is exactly what happened on 2026-08-17,
+      // leaving two connected accounts a minute apart.
+      const claimed = await db
         .update(locations)
         .set({ stripeAccountId: accountId })
-        .where(eq(locations.id, loc.id));
+        .where(and(eq(locations.id, loc.id), isNull(locations.stripeAccountId)))
+        .returning({ id: locations.id });
+
+      if (claimed.length === 0) {
+        // Someone else won the race. Use THEIR account and abandon ours (it is
+        // an empty shell — no capabilities, no charges), so the owner and the
+        // database agree on a single account.
+        const [current] = await db
+          .select({ acct: locations.stripeAccountId })
+          .from(locations)
+          .where(eq(locations.id, loc.id))
+          .limit(1);
+        if (current?.acct) accountId = current.acct;
+      }
     } catch (err) {
       console.error("connect onboarding: could not create account", {
         slug: loc.slug,
@@ -188,7 +256,9 @@ export default async function ConnectOnboardingPage({
       ? configuredBase
       : "https://dashboard.turbobookings.net"
   ).replace(/\/+$/, "");
-  const selfUrl = `${base}/connect/${token}`;
+  // Carries ?go=1 so Stripe's return/refresh bounce lands back INSIDE the flow
+  // rather than replaying the confirmation step on every hop.
+  const selfUrl = `${base}/connect/${token}?go=1`;
 
   const link = await createOnboardingLink({
     accountId,
