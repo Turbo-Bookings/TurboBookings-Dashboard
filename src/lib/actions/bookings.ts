@@ -1139,6 +1139,8 @@ export type RecentBookingHit = {
   customerName: string;
   itemName: string;
   startsAt: Date;
+  /** When the booking was CREATED (distinct from startsAt, the tour time). */
+  createdAt: Date;
   totalCents: number;
   status: string;
 };
@@ -1156,6 +1158,12 @@ export async function listRecentBookings(slug: string): Promise<RecentBookingHit
       startsAt: availabilities.startsAt,
       totalCents: bookings.totalCents,
       status: bookings.status,
+      // bookings.created_at is `timestamp WITHOUT time zone` holding UTC. Left
+      // alone, node-postgres parses it in the SERVER's local zone, so rendering
+      // it in the location's timezone is only correct while the server happens
+      // to run UTC. Cast it here so the value is an unambiguous instant
+      // regardless of where this runs.
+      createdAt: sql<Date>`${bookings.createdAt} at time zone 'UTC'`,
     })
     .from(bookings)
     .innerJoin(customers, eq(bookings.customerId, customers.id))
@@ -1170,6 +1178,7 @@ export async function listRecentBookings(slug: string): Promise<RecentBookingHit
     customerName: [r.first, r.last].filter(Boolean).join(" ") || "—",
     itemName: r.itemName,
     startsAt: r.startsAt,
+    createdAt: r.createdAt,
     totalCents: r.totalCents,
     status: r.status,
   }));

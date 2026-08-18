@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
-import { bookingsReport } from "@/lib/data/bookings";
+import { bookingsReport, collectedOnlineCash } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 
@@ -40,10 +40,14 @@ export default async function DashboardPage({
   const todayStart = now.startOf("day").toUTC().toJSDate();
   const todayEnd = now.plus({ days: 1 }).startOf("day").toUTC().toJSDate();
   const next7End = now.plus({ days: 7 }).startOf("day").toUTC().toJSDate();
-  const [r, today30, upcoming7] = await Promise.all([
+  const [r, today30, upcoming7, cash30, cashToday] = await Promise.all([
     bookingsReport(loc.id, from, to),
     bookingsReport(loc.id, todayStart, todayEnd),
     bookingsReport(loc.id, todayEnd, next7End),
+    // Money is counted on a CASH basis (when Stripe captured it), not by tour
+    // date like the tiles above — see collectedOnlineCash for why.
+    collectedOnlineCash(loc.id, from, to),
+    collectedOnlineCash(loc.id, todayStart, todayEnd),
   ]);
   // Platform processing fees are Turbo-internal revenue — only admins see them.
   const showFees = await can("manage_platform", slug);
@@ -66,7 +70,13 @@ export default async function DashboardPage({
         <StatTile label="Bookings" value={String(r.bookings)} sub={`${r.onlineCount} online · ${r.directCount} direct`} tone="blue" icon={Ticket} />
         <StatTile label="Pax" value={String(r.pax)} tone="violet" icon={Users} />
         <StatTile label="Tour sales" value={usd(r.salesCents)} sub="net of discounts" tone="emerald" icon={DollarSign} />
-        <StatTile label="Collected online" value={usd(r.collectedCents)} tone="amber" icon={Wallet} />
+        <StatTile
+          label="Collected online"
+          value={usd(cash30.netCents)}
+          sub={`${usd(cashToday.netCents)} today · when charged`}
+          tone="amber"
+          icon={Wallet}
+        />
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -122,7 +132,10 @@ export default async function DashboardPage({
       </div>
 
       <p className="mt-6 text-xs text-zinc-400">
-        Revenue is by tour date, active bookings. Tour sales exclude processing fees and pass-through tax.
+        Bookings, pax and tour sales are by <strong>tour date</strong> (active bookings) — what is
+        actually running in the period. <strong>Collected online</strong> is by <strong>payment
+        date</strong>, net of refunds, so it matches what landed in Stripe: a booking taken today for
+        a tour next month counts today. Tour sales exclude processing fees and pass-through tax.
         Deeper KPIs (payouts, YoY, conversion, marketing ROAS) land once the brains pipe is live.
       </p>
     </section>

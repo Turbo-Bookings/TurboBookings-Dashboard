@@ -614,6 +614,77 @@ export async function bookingsReport(
   };
 }
 
+// ---------- Cash actually collected online ----------
+//
+// `bookingsReport` buckets everything by TOUR DATE, which is right for
+// operational figures (what is running, how many pax, what those tours sold
+// for). It is wrong for money: cash arrives when the booking is made, not when
+// the tour runs.
+//
+// That mismatch produced a genuinely alarming bug on 2026-08-18. Two real
+// bookings came in that morning — $233.00 collected, fees visibly landing in
+// Stripe — and the dashboard reported "Collected online: $0", because both tours
+// were scheduled for Aug 22 and Aug 31 and the tile's window is
+// `now - 30d → now + 1d` BY TOUR DATE. Future tours simply fell outside it. An
+// operator watching money hit their account while the dashboard says zero has no
+// way to tell a reporting quirk from a broken payment pipeline.
+//
+// So this is keyed on `payments.captured_at` — the moment Stripe took the money.
+// Deliberately uses that column and not `bookings.created_at`, which is
+// `timestamp WITHOUT time zone` and would compare incorrectly against a
+// timezone-aware bound depending on server timezone.
+//
+// Imported (`source = 'api'`) bookings are excluded: their deposits were
+// collected by the previous system and never moved through us.
+//
+// KNOWN LIMITATION: `payments.refunded_amount_cents` carries no timestamp, so a
+// refund is attributed to the date of the ORIGINAL capture rather than the date
+// it was issued. That keeps the net figure from ever overstating cash, at the
+// cost of slightly restating a past period when an old booking is refunded. Add
+// a `refunded_at` column if refund timing ever needs to be exact.
+export type CashCollected = {
+  payments: number;
+  grossCents: number;
+  refundedCents: number;
+  netCents: number;
+};
+
+export async function collectedOnlineCash(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<CashCollected> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      amountCents: payments.amountCents,
+      refundedCents: payments.refundedAmountCents,
+    })
+    .from(payments)
+    .innerJoin(bookings, eq(payments.bookingId, bookings.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        // Migrated bookings' deposits were taken by the old system.
+        ne(bookings.source, "api"),
+        gte(payments.capturedAt, from),
+        lt(payments.capturedAt, to),
+      ),
+    );
+  let gross = 0;
+  let refunded = 0;
+  for (const r of rows) {
+    gross += r.amountCents;
+    refunded += r.refundedCents;
+  }
+  return {
+    payments: rows.length,
+    grossCents: gross,
+    refundedCents: refunded,
+    netCents: gross - refunded,
+  };
+}
+
 export type CsvRow = {
   displayNumber: string;
   status: string;
