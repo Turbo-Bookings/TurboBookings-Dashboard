@@ -185,6 +185,23 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   const checkboxFields = fields.filter((f) => f.kind === "checkbox");
   const canSubmit = Boolean(itemId && slotId && totalQty > 0 && name.trim() && email.includes("@") && ackOk);
 
+  // Name exactly what is still missing, rather than a generic "complete the
+  // required fields". A manager taking a booking over the phone hit this with
+  // everything filled except the four acknowledgment checkboxes, which sit well
+  // above the payment section; the button simply stayed grey and he abandoned
+  // the dashboard and put the customer through the public website instead. A
+  // disabled control that will not say WHY is indistinguishable from a broken
+  // one — and the person hitting it is on a call with a customer.
+  const missing: string[] = [];
+  if (!itemId) missing.push("choose a tour");
+  if (!slotId) missing.push("choose a date & time");
+  if (totalQty <= 0) missing.push("add at least one rider");
+  if (!name.trim()) missing.push("customer name");
+  if (!email.includes("@")) missing.push("customer email");
+  for (const f of requiredAcks) {
+    if (!acks.has(f.id)) missing.push(`tick “${f.label}”`);
+  }
+
   function buildPayload(): Payload {
     return {
       itemId,
@@ -482,18 +499,37 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
               </p>
             ) : dueNow >= 50 ? (
               <Elements key={dueNow} stripe={stripePromise} options={{ mode: "payment", amount: dueNow, currency: "usd", setupFutureUsage: "off_session" }}>
-                <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} disabled={!canSubmit} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
+                <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} disabled={!canSubmit} missing={missing} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
               </Elements>
             ) : (
               <p className="text-sm text-zinc-500">Add riders to charge a card.</p>
             )
           ) : (
-            <button type="button" disabled={!canSubmit || submitting} onClick={bookNonCard} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-              {submitting ? "Booking…" : method === "groupon_ota" ? "Record Groupon/OTA booking" : "Book (pay at venue)"}
-            </button>
+            <>
+              <button type="button" disabled={!canSubmit || submitting} onClick={bookNonCard} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {submitting ? "Booking…" : method === "groupon_ota" ? "Record Groupon/OTA booking" : "Book (pay at venue)"}
+              </button>
+              <MissingList missing={missing} />
+            </>
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// Shown under a disabled submit button. Lists the exact outstanding items so an
+// operator on a phone call can fix them without hunting up the page.
+function MissingList({ missing }: { missing: string[] }) {
+  if (missing.length === 0) return null;
+  return (
+    <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
+      <p className="font-medium">Still needed before this can be booked:</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+        {missing.map((m) => (
+          <li key={m}>{m}</li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -503,6 +539,7 @@ function CardCheckout({
   getPayload,
   amountCents,
   disabled,
+  missing,
   onError,
   onDone,
 }: {
@@ -510,6 +547,7 @@ function CardCheckout({
   getPayload: () => Payload;
   amountCents: number;
   disabled: boolean;
+  missing: string[];
   onError: (e: string) => void;
   onDone: (bookingId: string) => void;
 }) {
@@ -559,7 +597,7 @@ function CardCheckout({
       <button type="button" disabled={busy || disabled} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
         {busy ? "Charging…" : `Charge ${usd(amountCents)} & book`}
       </button>
-      {disabled && <p className="text-center text-xs text-zinc-500">Complete name, email &amp; required acknowledgments to enable.</p>}
+      {disabled && <MissingList missing={missing} />}
     </div>
   );
 }
