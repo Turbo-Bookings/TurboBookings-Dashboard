@@ -149,6 +149,51 @@ delete from bookings where location_id = (select id from locations where slug='d
   booking row is written, no confirmation email is sent, and the oversell auto-refund never fires.**
   This must be a real webhook endpoint before real money moves. Fixed as part of 6.3 below.
 
+### 6.0b — Full state validation 2026-08-18 🤖
+Run against production Neon. **Green = verified working, not assumed.**
+
+| Check | Result |
+|---|---|
+| Both live webhook secrets | ✅ **signed** probe → `200 ok` on each (see 6.1 step 6 for method) |
+| Readiness gate | ✅ `/dtown` 200 · `/htown` 404 · `/miami` 404 |
+| Imported FareHarbor bookings | ✅ **185 intact**, all `status=active`, `source=api`, `external_ref` set |
+| Dallas catalog | ✅ 1 item `D-Town ATV Tour`, bookable + listed, **6,481 availabilities** |
+| Booking coverage | ✅ 188 bookings across 80 slots, through 2026-11-06 |
+| Reminder emails on imports | ✅ **0 pending** — import ran with reminders off, as intended |
+| `bookingsystem` main | ✅ in sync with develop, deployed |
+
+**Four things that are NOT clean and must be handled before/at go-live:**
+
+1. 🔴 **`retainer_status='active'` for Dallas is STALE and will not self-correct.**
+   `stripe_subscription_id=sub_1U4qwV…` / `stripe_platform_customer_id=cus_V50xwA…` are **test-mode**
+   objects. Now that the platform is on live keys, those IDs don't exist, and the live
+   `dashboard-retainer-subscriptions` endpoint will never emit an event carrying them — so
+   `setStatusBySubscription` can never match the row. The dashboard will keep displaying a healthy
+   retainer for a subscription that isn't billing anyone. Step 7 (re-add card in live mode) is what
+   fixes it; until then treat this field as **lying**.
+
+2. 🟠 **Three test-mode bookings sit in production Dallas data** — `0001` (cancelled), `0002`, `0003`
+   (both **active**), created 2026-08-09/11/14, each with a test-mode `pi_…`. They will appear on the
+   manifest as real bookings. Purge before go-live — target `external_ref IS NULL` **and** a payment
+   row exists, never a bare `external_ref IS NULL` (that would take the 185 imports with it).
+
+3. 🟠 **Turning reminders on will NOT backfill the 185 imported bookings.** `scheduled_emails` has zero
+   pending rows; the importer deliberately scheduled none. Flipping the switch arms *future* bookings
+   only. Decide explicitly whether the imported guests should get reminders — if yes, that needs a
+   backfill, not a toggle.
+
+4. 🟡 **Cockpit feed is dormant: 16 queued events, `max(attempt_count)=0`** — oldest 2026-06-28, newest
+   2026-08-17. Never attempted, because `BRAIN_WEBHOOK_URL` is unset. Expected, but it means the
+   revenue feed has *never* been exercised end-to-end; the first real test is when the Railway URL
+   lands. Budget time for it to fail the first time.
+
+**Also fixed on 2026-08-18:** local `.env.local` still held the **pre-rotation** Neon password, so
+every CLI script in this repo (importer, Stripe pre-flight, Clerk role sync) failed with
+`password authentication failed`. Refreshed from `vercel env pull`. This is the same drift class as
+the booking-app `DATABASE_URL` incident — a second instance, which is why the Phase 1 guardrails in
+`~/.claude/plans/we-are-still-currently-zippy-panda.md` matter. **If a script suddenly can't reach the
+DB, re-pull `.env.local` before debugging anything else.**
+
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
    Then 🤖 repoints `BOOKING_ORIGIN` / `BOOKING_APP` in `dtown-atv-rentals-site` (`next.config.ts` +
