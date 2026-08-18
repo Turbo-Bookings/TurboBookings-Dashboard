@@ -30,6 +30,12 @@ export async function refundPayment(
   account: Acct,
   amountCents?: number,
 ): Promise<Stripe.Refund> {
+  // NOTE: `refund_application_fee` is deliberately NOT set. On a Connect direct
+  // charge that means the refund comes wholly out of the connected account's
+  // balance and the platform keeps its 6% — the operator nets negative on a
+  // refunded booking. This is an intentional commercial term (non-refundable
+  // platform fee), decided 2026-08-18 and disclosed in the operator agreement.
+  // Do not add the flag without a deliberate decision to change revenue terms.
   return getStripe().refunds.create(
     {
       payment_intent: paymentIntentId,

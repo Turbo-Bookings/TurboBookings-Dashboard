@@ -16,13 +16,18 @@
 >    `docs/EMAIL_DELIVERY_TRACKING.md`. Confirmation emails are recorded NOWHERE, and
 >    `sent` never becomes `delivered` for any email. No UI renders email status at all.
 >    Build before the post-launch tracking deep-dive. Spans both repos.
-> 2. **Refunds do not reverse the platform fee** 🔴 *money issue* —
->    `src/lib/stripe/payments.ts:33` calls `refunds.create` without
->    `refund_application_fee: true`. On a Connect direct charge the full refund comes
+> 2. **Refunds do not reverse the platform fee — ✅ DECIDED 2026-08-18: keep the fee.**
+>    `src/lib/stripe/payments.ts:33` calls `refunds.create` WITHOUT
+>    `refund_application_fee: true`, so on a Connect direct charge the full refund comes
 >    out of the OPERATOR's balance while Turbo Bookings keeps its 6%. On booking #0189
->    that is $7.20 kept on a $28.60 refund the operator received ~$20.55 of — so the
->    operator goes NEGATIVE on every refunded booking. Decide deliberately: reverse the
->    fee (add the flag) or keep it as a non-refundable platform fee and tell operators.
+>    that was $7.20 kept on a $28.60 refund the operator netted ~$20.55 of — the operator
+>    goes NEGATIVE on every refunded booking.
+>    **This is intended behaviour, not a bug.** The 6% is a non-refundable platform fee;
+>    Selmen is making it explicit in the operator agreement. **Do NOT "fix" this by adding
+>    `refund_application_fee: true`** — that would silently change revenue terms.
+>    Remaining task: make sure the operator agreement language actually ships before
+>    Houston/Miami onboard, and consider surfacing it in the refund UI so staff aren't
+>    surprised.
 > 3. **Cockpit revenue feed** — `REPLIT_WEBHOOK_URL` unset; 17 events queued,
 >    `attempt_count = 0`. Note the naming drift: dashboard reads `REPLIT_WEBHOOK_URL`,
 >    bookingsystem reads `BRAIN_WEBHOOK_URL ?? REPLIT_WEBHOOK_URL`. Deferred until after
