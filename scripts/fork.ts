@@ -764,13 +764,45 @@ export type TourKey = string;
   );
   patchFile(
     `${src}/components/tracking/MetaPixel.tsx`,
-    [{ find: `  return (\n    <>\n      <Script\n        id="meta-pixel-base"`, replace: `  if (!PIXEL_ID) return null;\n\n  return (\n    <>\n      <Script\n        id="meta-pixel-base"` }],
+    [{ find: `  return (\n    <>\n      <Script\n        id="meta-pixel-base"`, replace: `  if (!PIXEL_ID) {\n    if (process.env.NODE_ENV === "production") {\n      console.error(\n        "[tracking] Meta Pixel NOT rendered — NEXT_PUBLIC_META_PIXEL_ID is unset. This site is not tracking conversions.",\n      );\n    }\n    return null;\n  }\n\n  return (\n    <>\n      <Script\n        id="meta-pixel-base"` }],
     "MetaPixel guard",
   );
   patchFile(
     `${src}/app/api/meta-capi/route.ts`,
     [{ find: `const PIXEL_ID = "516637097197570";`, replace: `const PIXEL_ID = process.env.META_PIXEL_ID ?? process.env.NEXT_PUBLIC_META_PIXEL_ID ?? "";` }],
     "meta-capi env-gate",
+  );
+
+  // 4b. Env-gate the GOOGLE ids too. Previously only Meta was gated, so every
+  //     fork silently inherited the TEMPLATE's live GA4 property and Ads
+  //     account — worse than no tracking: the new location's traffic and
+  //     conversions would be reported into Miami's property, corrupting the
+  //     data of a live business that has nothing to do with it.
+  patchFile(
+    `${src}/lib/google-tracking.ts`,
+    [
+      {
+        find: `export const GA_MEASUREMENT_ID = "G-W1737CSQ2C";\nexport const GOOGLE_ADS_ID = "AW-10789560857";\nexport const BOOK_CLICK_CONVERSION_LABEL = "CfiaCJ3JxaEcEJnE7pgo";`,
+        replace: `export const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID ?? "";\nexport const GOOGLE_ADS_ID = process.env.NEXT_PUBLIC_GOOGLE_ADS_ID ?? "";\nexport const BOOK_CLICK_CONVERSION_LABEL =\n  process.env.NEXT_PUBLIC_GOOGLE_ADS_BOOK_CLICK_LABEL ?? "";`,
+      },
+    ],
+    "google-tracking env-gate",
+  );
+  // gtag.js must load off EITHER id. Guarding on GA4 alone would silently kill
+  // the Ads tag for a location that runs Ads without a GA4 property.
+  patchFile(
+    `${src}/components/tracking/GoogleAnalytics.tsx`,
+    [
+      {
+        find: `  return (\n    <>\n      <Script\n        src={\`https://www.googletagmanager.com/gtag/js?id=\${GA_MEASUREMENT_ID}\`}`,
+        replace: `  const gtagId = GA_MEASUREMENT_ID || GOOGLE_ADS_ID;\n  if (!gtagId) {\n    if (process.env.NODE_ENV === "production") {\n      console.error(\n        "[tracking] No Google tag rendered — both NEXT_PUBLIC_GA_MEASUREMENT_ID and NEXT_PUBLIC_GOOGLE_ADS_ID are unset.",\n      );\n    }\n    return null;\n  }\n\n  return (\n    <>\n      <Script\n        src={\`https://www.googletagmanager.com/gtag/js?id=\${gtagId}\`}`,
+      },
+      {
+        find: `            gtag('config', '\${GA_MEASUREMENT_ID}', {\n              send_page_view: false\n            });`,
+        replace: `            \${GA_MEASUREMENT_ID ? \`gtag('config', '\${GA_MEASUREMENT_ID}', { send_page_view: false });\` : ""}`,
+      },
+    ],
+    "GoogleAnalytics env-gate + either-id loader",
   );
 
   // 5. Remove the FareHarbor-only machinery (dead without FareHarbor). The
@@ -861,6 +893,27 @@ function printFollowUps({
   } else if (repoUrl) {
     log(`Repo: ${repoUrl}\n\n`);
   }
+
+  // The single most consequential follow-up, and the one most easily skipped.
+  // A fork ships with every tracking id env-gated to "", so the site renders
+  // perfectly and reports nothing. Dallas reached production in exactly this
+  // state. Make it impossible to miss.
+  log("\n");
+  log("  ============================================================\n");
+  log("  ⚠️  TRACKING IS NOT CONFIGURED — THIS SITE REPORTS NOTHING\n");
+  log("  ============================================================\n");
+  log("  Set these in the new Vercel project (Production), then REDEPLOY —\n");
+  log("  they are build-time values, so setting them alone changes nothing:\n\n");
+  log("    NEXT_PUBLIC_META_PIXEL_ID                 (client pixel)\n");
+  log("    META_PIXEL_ID                             (server CAPI relay)\n");
+  log("    META_CAPI_TOKEN                           (secret — Integrations tab)\n");
+  log("    NEXT_PUBLIC_GA_MEASUREMENT_ID             (GA4)\n");
+  log("    NEXT_PUBLIC_GOOGLE_ADS_ID                 (Ads)\n");
+  log("    NEXT_PUBLIC_GOOGLE_ADS_BOOK_CLICK_LABEL   (Ads conversion label)\n\n");
+  log("  Use a FRESH pixel/property per location — never reuse another\n");
+  log("  location's, or you corrupt a live business's reporting.\n");
+  log("  Verify after deploy:  Dashboard → Tracking → Verify now\n");
+  log("  ============================================================\n\n");
 
   if (customBooking) {
     log("Custom-booking location — wire the site to the booking system:\n");
