@@ -58,11 +58,22 @@
 > - **Dallas built out (runbook Phases 1–4 substantially done):** prod domains attached
 >   (`book.`/`dashboard.turbobookings.net` resolve), Dallas branding + real catalog loaded, marketing
 >   site forked with `/book` rewrite + CTAs repointed, Meta/tracking verified in Events Manager.
-> - **Clerk PRODUCTION cutover — ❌ NOT DONE.** This line previously read "DONE"; it was wrong and
->   cost real time on 2026-08-18. Verified by decoding the key: Vercel **production** still carries
->   `pk_test_…` for `welcome-muskrat-17.clerk.accounts.dev` — a **development** instance. Dev instances
->   cap at 100 users, show development banners, and send invitees to `accounts.dev`. Plan:
->   `~/.claude/plans/we-are-still-currently-zippy-panda.md`. Grant map already exported.
+> - **Clerk PRODUCTION cutover — ✅ DONE 2026-08-18** (dashboard AND cockpit). Instance
+>   `ins_3I4xyxb19ROb3ta3nqlOI9dF54H` on the ROOT domain `turbobookings.net`, which is what makes
+>   sessions shared across `dashboard.` and `cockpit.` — verified: signing into the dashboard signs you
+>   into the cockpit. Google OAuth disabled (production needs custom credentials); everyone is on email.
+>   10 invitations sent with roles pre-baked, 0 errors. Cockpit moved to `cockpit.turbobookings.net`.
+>   Details + traps: `docs/DALLAS_GO_LIVE.md` §6.0d.
+>
+>   **Not yet proven:** the session-token claim. `cockpit/auth.py` grants `owner` from EITHER the JWT
+>   claim OR the `COCKPIT_OWNER_IDS` allowlist, and the owner is in the allowlist — so owner access does
+>   not prove the claim works. `media_buyer` comes ONLY from the claim, so the first media buyer assigned
+>   is the real test. Do not mistake that for a new bug.
+>
+>   **Follow-ups:** the cockpit SPA has NO sign-out UI (no `UserButton`/`SignOutButton` in `main.jsx`) —
+>   sign out from the dashboard instead; the old `cockpit-production-5480.up.railway.app` still serves but
+>   production Clerk will not authenticate from that origin; and do NOT delete the dev Clerk instance yet,
+>   it is the rollback path.
 > - **RBAC hardening:** operator role + `manage_platform` split; per-location capability resolver
 >   threaded through ~84 call sites; in-platform **Team/invite** page; driver.js guided tour.
 > - **Meta CAPI depth (Track B1–B3):** booking-app secret decrypt/resolveTokens; enriched CAPI
