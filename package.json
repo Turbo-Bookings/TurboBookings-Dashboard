@@ -23,7 +23,8 @@
     "bookings:purge-test": "node --env-file-if-exists=.env.local --import tsx scripts/purge-test-bookings.ts",
     "reminders:backfill": "node --env-file-if-exists=.env.local --import tsx scripts/backfill-import-reminders.ts",
     "emails:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-emails.ts",
-    "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts"
+    "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts",
+    "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.0",
