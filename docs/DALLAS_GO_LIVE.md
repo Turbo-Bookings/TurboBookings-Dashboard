@@ -194,6 +194,28 @@ the booking-app `DATABASE_URL` incident — a second instance, which is why the 
 `~/.claude/plans/we-are-still-currently-zippy-panda.md` matter. **If a script suddenly can't reach the
 DB, re-pull `.env.local` before debugging anything else.**
 
+### 6.0c — Test-data cleanup + reminder backfill, done 2026-08-18 🤖
+| Action | Result |
+|---|---|
+| Purge test-mode bookings | ✅ 3 deleted (`0001`–`0003`), **185 imports verified intact** — `scripts/purge-test-bookings.ts` |
+| Arm reminders on imports | ✅ 354 armed (176 × 24h, 178 × 2h) — `scripts/backfill-import-reminders.ts` |
+| Reset retainer for live mode | ⏳ **script written, NOT yet run** — `scripts/reset-retainer-for-live.ts` |
+
+**Reminder backfill notes.** All 185 imports had real email addresses (zero
+`@import.invalid`), so nothing was skipped for that reason. Confirmation and
+post-tour-review stay **off** by design — these guests already received the old
+system's confirmation and never booked through us. Sends spread naturally across
+the existing booking calendar (peak 77 on 2026-08-22), so there is no burst /
+domain-reputation risk. Reminder content carries no payment claim, which matters
+because ~$50k is still owed at the venue on these bookings.
+
+There is **no location-level on/off switch** for this: `loadTemplate` returns
+`{ enabled: true }` when no `email_templates` row exists (context.ts:80), and
+Dallas has no rows. Inserting `scheduled_emails` rows *is* arming them. To
+suppress a type, create an `email_templates` row with `enabled = false`.
+
+**⚠️ Retainer reset is still outstanding and blocks step 7.** See below.
+
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
    Then 🤖 repoints `BOOKING_ORIGIN` / `BOOKING_APP` in `dtown-atv-rentals-site` (`next.config.ts` +
@@ -231,7 +253,14 @@ DB, re-pull `.env.local` before debugging anything else.**
    HMAC validation passed with zero side effects. Never probe the booking app with a signed
    `payment_intent.succeeded`: that hits the real commit path.
    *(Endpoint URL stays `book.turbobookings.net` until step 1's DNS lands; update it then.)*
-7. 🧑 **Re-add the retainer card in live mode** (the test-mode customer/subscription does not carry over):
+7. 🧑 **Re-add the retainer card in live mode.** ⚠️ **Run
+   `scripts/reset-retainer-for-live.ts dtown --commit` FIRST.** Dallas still holds
+   test-mode `stripe_subscription_id` / `stripe_platform_customer_id`, and
+   `startRetainer()` (`lib/actions/billing.ts:135`) refuses to run while a
+   subscription ID is present and status is not `canceled` — so the UI will tell
+   you a retainer is already running and block the live setup. The script clears
+   the stale Stripe references and the `4242` test cards while **preserving**
+   `retainer_cents` / `retainer_billing_day` ($3,250, day 15). (the test-mode customer/subscription does not carry over):
    operator saves the card again, admin re-sets $3,250 / day 15, confirm `retainer_status` → `active`.
 8. 🤖 **Update the Dallas connected account** to the live `acct_…` and flip location
    `building` → `launched`.
