@@ -281,7 +281,28 @@ metadata** (the default gives him creative director); nobody currently holds `me
 regardless of the session token — it exists so owner access survives a broken token template. Those
 IDs are dev-instance IDs and must be replaced with production ones.
 
-**Clerk production instance created 2026-08-18:** `ins_3I4xyxb19ROb3ta3nqlOI9dF54H`, primary domain
+**CLERK PRODUCTION CUTOVER — dashboard side DONE 2026-08-18.**
+Instance `ins_3I4xyxb19ROb3ta3nqlOI9dF54H`, primary domain `turbobookings.net`. All 5 CNAMEs verified,
+certs issued, Google OAuth **disabled** (production requires custom Google credentials we chose not to
+create — 3 users move to email sign-in). Session token claims set to
+`{"metadata":"{{user.public_metadata}}"}`. Vercel **Production** now carries `pk_live`/`sk_live`;
+Preview + Development deliberately left on the dev instance. Grant import applied: 1 user update, 9
+invitations, 0 errors — roles baked into each invitation so invitees land pre-scoped.
+
+**Production master user id (needed for `COCKPIT_OWNER_IDS`): `user_3I50UQIGdO0ltSfjlH7kHXdHsw2`.**
+
+Verified end-to-end: after sign-in the production user's metadata gained `onboardingTourV: 1`, which
+is written by the dashboard's own `onboarding.ts` — proving the live app authenticated against
+production Clerk *and* wrote back to it, not merely that a page rendered.
+
+⚠️ **Still to invite by hand: `joshuelespinoza@gmail.com`** — creative director, cockpit-only. He must
+get an invitation with **empty** `publicMetadata`: no dashboard role (RoleGate correctly denies him)
+and the cockpit's `creative` default. The Team page cannot do this since it always assigns a role.
+
+**Clerk API version pinned at `2025-11-10`** (latest `2026-05-12`), inherited from dev. Not blocking;
+revisit before an SDK upgrade rather than during one.
+
+**Old:** **Clerk production instance created 2026-08-18:** `ins_3I4xyxb19ROb3ta3nqlOI9dF54H`, primary domain
 `turbobookings.net` (root, NOT `dashboard.` — root is required so sessions are shared across the
 `dashboard.` and `cockpit.` subdomains). Cloned from dev, so it inherited **Invite-only** restriction:
 the bootstrap master cannot self-serve sign up and must be created from the Clerk dashboard directly.
