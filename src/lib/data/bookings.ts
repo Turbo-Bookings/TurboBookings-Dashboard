@@ -685,6 +685,114 @@ export async function collectedOnlineCash(
   };
 }
 
+// ---------- Bookings TAKEN in a window (sales activity) ----------
+//
+// `bookingsReport` answers "what is running in this period". This answers "how
+// many sales did we make in this period", which is what an operator means by
+// "how did we do today". Keyed on when the booking was created.
+//
+// The comparison casts created_at to timestamptz explicitly. The column is
+// `timestamp WITHOUT time zone` holding UTC, so comparing it raw against a
+// timezone-aware bound is only correct while the database session happens to be
+// on UTC.
+export type BookingsTaken = {
+  count: number;
+  pax: number;
+  salesCents: number; // tour value sold, net of fee + tax
+  onlineCount: number;
+  directCount: number;
+};
+
+export async function bookingsTaken(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<BookingsTaken> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: bookings.id,
+      source: bookings.source,
+      totalCents: bookings.totalCents,
+      feeCents: bookings.platformFeeCents,
+      taxCents: bookings.taxCents,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        // Imported bookings were "taken" by the previous system, not by us.
+        ne(bookings.source, "api"),
+        gte(sql`${bookings.createdAt} at time zone 'UTC'`, from),
+        lt(sql`${bookings.createdAt} at time zone 'UTC'`, to),
+      ),
+    );
+  const pax = await paxByBooking(rows.map((r) => r.id));
+  let totalPax = 0, sales = 0, online = 0, direct = 0;
+  for (const r of rows) {
+    totalPax += pax.get(r.id) ?? 0;
+    sales += r.totalCents - r.feeCents - r.taxCents;
+    if (r.source === "online") online++;
+    else if (r.source === "direct") direct++;
+  }
+  return { count: rows.length, pax: totalPax, salesCents: sales, onlineCount: online, directCount: direct };
+}
+
+// ---------- Everything still owed at the venue ----------
+//
+// The dashboard previously showed "Balance to collect" from `bookingsReport`
+// over a trailing 30-day TOUR-date window, which is close to meaningless: the
+// balance on a tour that already ran is either collected or lost, while every
+// dollar genuinely still outstanding sits on FUTURE tours that the window
+// excluded. Dallas showed a small number while thousands were actually owed,
+// most of it on the 185 migrated FareHarbor bookings running out to November.
+//
+// Imported bookings are deliberately INCLUDED. Their deposit was taken by the
+// old system, but the balance is still collected at this venue, by this
+// operator, in cash — it is exactly the number Richard needs.
+export type Outstanding = {
+  bookings: number;
+  balanceCents: number;
+  importedBookings: number;
+  importedBalanceCents: number;
+};
+
+export async function outstandingBalance(
+  locationId: string,
+  fromTourDate: Date,
+): Promise<Outstanding> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      source: bookings.source,
+      balanceDueCents: bookings.balanceDueCents,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(bookings.availabilityId, availabilities.id))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        gte(availabilities.startsAt, fromTourDate),
+      ),
+    );
+  let total = 0, imported = 0, importedCount = 0;
+  for (const r of rows) {
+    total += r.balanceDueCents;
+    if (r.source === "api") {
+      importedCount++;
+      imported += r.balanceDueCents;
+    }
+  }
+  return {
+    bookings: rows.length,
+    balanceCents: total,
+    importedBookings: importedCount,
+    importedBalanceCents: imported,
+  };
+}
+
 export type CsvRow = {
   displayNumber: string;
   status: string;
