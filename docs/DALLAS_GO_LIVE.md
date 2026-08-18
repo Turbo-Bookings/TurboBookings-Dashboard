@@ -235,9 +235,20 @@ Vercel production carries `pk_test_…` → `welcome-muskrat-17.clerk.accounts.d
 2. **The cockpit SPA's key is baked at Docker BUILD time** from the committed
    `cockpit/web/.env.production` (`~/ads/SHARED/Dockerfile:10` is still a TODO). A Railway env var
    fixes the backend only — sign-in appears to work while every API call 401s.
-3. **The cockpit's role claim needs a per-instance session-token template.** `cockpit/auth.py:79-85`
-   reads `cockpitRole` from JWT claims, never from the Clerk API. Templates do not carry over; miss it
-   and everyone silently drops to `role="creative"`. `COCKPIT_OWNER_IDS` also holds dev user IDs.
+3. **⚠️ CORRECTED 2026-08-18 — the session-token template never existed on EITHER instance.**
+   The dev instance's custom claims were also `{}`, so nothing "failed to clone". The real situation:
+   `cockpit/auth.py:79-85` reads `cockpitRole` from JWT claims, the JWT never carried it, so the
+   backend has always computed `role = "creative"` for everyone. Owner access worked **only** via the
+   `COCKPIT_OWNER_IDS` allowlist — which is exactly why that allowlist exists.
+
+   **Consequence: `media_buyer` has never actually worked.** The SPA reads
+   `user.publicMetadata.cockpitRole` directly (so it renders media-buyer UI), while the backend still
+   treats them as `creative` and 403s `/api/build`. Two-thirds of the intended three-role model.
+
+   Fixed on the PRODUCTION instance 2026-08-18 by setting the session token claims to
+   `{"metadata":"{{user.public_metadata}}"}` — the exact shape `auth.py` already looks for
+   (`claims.get("metadata") or claims.get("public_metadata")`). Dev left alone; it is being retired.
+   `COCKPIT_OWNER_IDS` must still be repointed at production user IDs.
 
 **Users do NOT transfer between Clerk instances** — separate databases by design. Re-created via
 `npm run clerk:import-roles`.
