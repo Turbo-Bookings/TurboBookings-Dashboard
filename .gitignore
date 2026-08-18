@@ -40,3 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# Clerk role/grant backups produced by scripts/clerk-export-roles.ts.
+# These contain the complete publicMetadata for every user — the whole RBAC
+# grant map, including cockpitRole — plus every pending invitation's email.
+# Committing one would publish who has access to what.
+clerk-roles-backup*.json

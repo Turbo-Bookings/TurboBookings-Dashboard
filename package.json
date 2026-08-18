@@ -27,6 +27,7 @@
     "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts"
   },
   "dependencies": {
+    "@clerk/backend": "^3.4.12",
     "@clerk/nextjs": "^7.4.0",
     "@neondatabase/serverless": "^1.1.0",
     "@stripe/react-stripe-js": "^6.6.0",

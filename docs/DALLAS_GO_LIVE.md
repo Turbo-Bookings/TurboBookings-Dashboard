@@ -222,6 +222,33 @@ account `acct_1U5aMoCxXcDic9eT` **untouched** (it must survive — it is Richard
 live onboarding). Post-state: 185 imports, 0 native bookings, 354 reminders
 pending. `startRetainer()` will now run instead of refusing.
 
+### 6.0d — Clerk is still on a DEVELOPMENT instance (measured 2026-08-18) 🧑
+Vercel production carries `pk_test_…` → `welcome-muskrat-17.clerk.accounts.dev`. Full plan in
+`~/.claude/plans/we-are-still-currently-zippy-panda.md`. Grant map exported to
+`clerk-roles-backup.json` (gitignored — it is the complete RBAC map plus every pending invite email).
+
+**Three traps, all verified in code:**
+1. **Bootstrap lockout.** `src/lib/auth/roles.ts:50-57` fails closed and `RoleGate.tsx` blocks anyone
+   with no role. A fresh production instance has zero users — sign up, then set
+   `publicMetadata.role = "master"` from the Clerk dashboard *before anything else*, or nobody
+   (including you) can grant roles.
+2. **The cockpit SPA's key is baked at Docker BUILD time** from the committed
+   `cockpit/web/.env.production` (`~/ads/SHARED/Dockerfile:10` is still a TODO). A Railway env var
+   fixes the backend only — sign-in appears to work while every API call 401s.
+3. **The cockpit's role claim needs a per-instance session-token template.** `cockpit/auth.py:79-85`
+   reads `cockpitRole` from JWT claims, never from the Clerk API. Templates do not carry over; miss it
+   and everyone silently drops to `role="creative"`. `COCKPIT_OWNER_IDS` also holds dev user IDs.
+
+**Users do NOT transfer between Clerk instances** — separate databases by design. Re-created via
+`npm run clerk:import-roles`.
+
+**Two users have two email addresses; the export uses the PRIMARY.** `andresantanacsx@gmail.com`
+(not `andre.santanacsx@`) and `oscar@turbobookings.net` (not `oscar@yourmusicmanager.com`). They
+should sign up with the primary, or the import invites instead of updating — same role either way.
+
+`joshuelespinoza@gmail.com` has empty `publicMetadata` (no access) and is deliberately absent from the
+export. Decide whether to re-invite with a role or drop.
+
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
    Then 🤖 repoints `BOOKING_ORIGIN` / `BOOKING_APP` in `dtown-atv-rentals-site` (`next.config.ts` +

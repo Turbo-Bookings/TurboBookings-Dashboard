@@ -58,7 +58,11 @@
 > - **Dallas built out (runbook Phases 1–4 substantially done):** prod domains attached
 >   (`book.`/`dashboard.turbobookings.net` resolve), Dallas branding + real catalog loaded, marketing
 >   site forked with `/book` rewrite + CTAs repointed, Meta/tracking verified in Events Manager.
-> - **Clerk PRODUCTION cutover — DONE** (branded prod instance still pending, see below).
+> - **Clerk PRODUCTION cutover — ❌ NOT DONE.** This line previously read "DONE"; it was wrong and
+>   cost real time on 2026-08-18. Verified by decoding the key: Vercel **production** still carries
+>   `pk_test_…` for `welcome-muskrat-17.clerk.accounts.dev` — a **development** instance. Dev instances
+>   cap at 100 users, show development banners, and send invitees to `accounts.dev`. Plan:
+>   `~/.claude/plans/we-are-still-currently-zippy-panda.md`. Grant map already exported.
 > - **RBAC hardening:** operator role + `manage_platform` split; per-location capability resolver
 >   threaded through ~84 call sites; in-platform **Team/invite** page; driver.js guided tour.
 > - **Meta CAPI depth (Track B1–B3):** booking-app secret decrypt/resolveTokens; enriched CAPI
