@@ -138,10 +138,20 @@ export async function updateTracking(
     })
     .where(eq(trackingConfig.locationId, locRows[0].id));
 
-  // TODO (Phase 1 close-out): push to per-location Vercel Edge Config via
-  // Vercel API. Currently a no-op — Miami + HTown haven't been refactored
-  // to read from Edge Config yet. Forks created after refactor will pick
-  // this up automatically.
+  // NOTE: the marketing sites do NOT read these values yet — they carry their
+  // own copies as build-time Vercel env vars, which is how Dallas came to be
+  // deployed with a pixel configured here and no pixel on the live site.
+  //
+  // The planned fix is a public per-location config endpoint on the booking app
+  // (mirroring /api/popup-config) that the site fetches server-side with ISR, so
+  // these values are the single source of truth and edits propagate without a
+  // redeploy. An earlier plan to mirror into per-location Vercel Edge Config was
+  // dropped: it needs a Vercel resource provisioned and wired per client, which
+  // works against making onboarding repeatable for non-engineers.
+  //
+  // Until then, verifyTracking() below is the safety net — it fetches the live
+  // site and greps for these exact IDs — and setLocationStatus() blocks a launch
+  // when verification hasn't passed.
 
   revalidatePath(`/locations/${slug}/tracking`);
   await recordAudit({

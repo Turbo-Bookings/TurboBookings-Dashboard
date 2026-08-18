@@ -49,7 +49,7 @@ export const SETUP_TEMPLATE: TemplateItem[] = [
   { phase: "site_infrastructure", kind: "github_repo", label: "GitHub repo created", description: "Repo created under Turbo-Bookings/<slug>-atv-rentals-site from the takeovers-site template.", sortOrder: 170 },
   { phase: "site_infrastructure", kind: "vercel_project", label: "Vercel project provisioned", description: "Project linked to the GitHub repo, initial deploy successful.", sortOrder: 180 },
   { phase: "site_infrastructure", kind: "neon_database", label: "Neon database provisioned", description: "Per-location Neon DB connected to the Vercel project for any location-specific data.", sortOrder: 190 },
-  { phase: "site_infrastructure", kind: "edge_config", label: "Edge Config provisioned + connected", description: "Vercel Edge Config created and linked to the location project so tracking IDs hot-update.", sortOrder: 200 },
+  { phase: "tracking_platforms", kind: "tracking_verified", label: "Tracking verified on the live site", description: "Dashboard > Tracking > \"Verify on live site\" passes — the deployed site actually carries the configured Meta/GA4/Ads IDs. Required before launch.", sortOrder: 200 },
 
   // Phase F — Indexing + SEO
   { phase: "indexing", kind: "gsc_property", label: "Google Search Console verified", description: "Property added + verification token in place.", sortOrder: 210 },

@@ -31,6 +31,9 @@ export function SettingsPanel({ location }: Props) {
   const [deletePending, startDeleteTransition] = useTransition();
   const [confirmText, setConfirmText] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [blockedStatus, setBlockedStatus] = useState<Location["status"] | null>(null);
+  const [overrideReason, setOverrideReason] = useState("");
 
   const boundLinks = updateExternalLinks.bind(null, location.slug);
   const [linksState, linksAction] = useActionState<UpdateLinksState, FormData>(
@@ -38,10 +41,20 @@ export function SettingsPanel({ location }: Props) {
     INITIAL_LINKS,
   );
 
-  function changeStatus(newStatus: Location["status"]) {
+  function changeStatus(newStatus: Location["status"], override?: string) {
     if (newStatus === location.status) return;
-    startStatusTransition(() => {
-      void setLocationStatus(location.slug, newStatus);
+    setStatusError(null);
+    startStatusTransition(async () => {
+      const res = await setLocationStatus(location.slug, newStatus, override);
+      if (!res.ok) {
+        // Previously the result was discarded, so a rejected transition looked
+        // like nothing happened at all.
+        setStatusError(res.error);
+        setBlockedStatus(newStatus);
+      } else {
+        setBlockedStatus(null);
+        setOverrideReason("");
+      }
     });
   }
 
@@ -87,6 +100,41 @@ export function SettingsPanel({ location }: Props) {
           <p className="text-xs text-zinc-500">
             {STATUS_OPTIONS.find((o) => o.value === location.status)?.hint}
           </p>
+
+          {/* Launch gate: tracking must be verified on the LIVE site before a
+              location can be marked launched. Overridable, but the reason is
+              recorded to the audit log. */}
+          {statusError && (
+            <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/40">
+              <p className="text-xs font-semibold text-amber-900 dark:text-amber-100">
+                Can&apos;t set status to “{blockedStatus}” yet
+              </p>
+              <pre className="mt-1 whitespace-pre-wrap font-sans text-xs text-amber-800 dark:text-amber-300">
+                {statusError}
+              </pre>
+              {blockedStatus === "launched" && (
+                <div className="mt-3 space-y-2">
+                  <label className="block text-[11px] font-medium text-amber-900 dark:text-amber-100">
+                    Launch anyway — reason (recorded in the audit log)
+                  </label>
+                  <input
+                    value={overrideReason}
+                    onChange={(e) => setOverrideReason(e.target.value)}
+                    placeholder="e.g. tracking verified manually in Events Manager"
+                    className="w-full rounded border border-amber-300 bg-white px-2 py-1 text-xs dark:border-amber-800 dark:bg-zinc-900"
+                  />
+                  <button
+                    type="button"
+                    disabled={statusPending || !overrideReason.trim()}
+                    onClick={() => changeStatus("launched", overrideReason)}
+                    className="rounded border border-amber-400 px-2 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-100 dark:hover:bg-amber-900/40"
+                  >
+                    Launch anyway
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </section>
 

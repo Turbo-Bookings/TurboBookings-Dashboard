@@ -28,9 +28,12 @@ export default async function TrackingPage({ params }: Props) {
             Client tags
           </h2>
           <p className="mt-1 text-sm text-zinc-500">
-            Per-location tracking IDs (Meta Pixel, GA4, Google Ads, GTM). Saved
-            values become the source of truth for runtime config — a future
-            bridge pushes them into each location&apos;s Vercel Edge Config.
+            Per-location tracking IDs (Meta Pixel, GA4, Google Ads, GTM). These
+            are the source of truth for the booking funnel, which reads them
+            directly. The marketing site currently reads its own copy from
+            Vercel env vars — use “Verify on live site” to confirm the two
+            agree, since a mismatch means ads are being reported to the wrong
+            place (or nowhere).
           </p>
         </div>
         <TrackingForm location={loc} config={config} />

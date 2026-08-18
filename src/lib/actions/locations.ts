@@ -10,6 +10,7 @@ import {
   locations,
   type TourCatalogItem,
 } from "@/lib/db";
+import { seedSetupItemsForLocation } from "@/lib/actions/setup";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { canCreateLocation, denyIfCannot } from "@/lib/auth/roles";
 
@@ -82,14 +83,28 @@ export async function createLocation(
     };
   }
 
-  await db.insert(locations).values({
-    slug,
-    status: "draft",
-    brandLocationLabel: city,
-    brandDisplayName: displayName || null,
-    domainApex: apex,
-    domainCanonical: `https://www.${apex}`,
-  });
+  const created = await db
+    .insert(locations)
+    .values({
+      slug,
+      status: "draft",
+      brandLocationLabel: city,
+      brandDisplayName: displayName || null,
+      domainApex: apex,
+      domainCanonical: `https://www.${apex}`,
+    })
+    .returning({ id: locations.id });
+
+  // Seed the go-live checklist immediately. It used to require an admin to find
+  // an "Initialize checklist" button buried in Settings, which nobody ever did
+  // — every existing location has zero items, so the checklist has never once
+  // been used to catch a missed launch step. Best-effort: a checklist failure
+  // must not block creating the location.
+  try {
+    if (created[0]) await seedSetupItemsForLocation(created[0].id);
+  } catch (err) {
+    console.error("failed to seed setup checklist for new location", { slug, err });
+  }
 
   revalidatePath("/");
   redirect(`/locations/${slug}`);

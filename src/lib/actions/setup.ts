@@ -8,27 +8,27 @@ import { externalSetupItems, getDb, locations } from "@/lib/db";
 import type { ExternalSetupItem } from "@/lib/db/schema";
 import { SETUP_TEMPLATE } from "@/lib/external-setup/template";
 
-// Seed the template checklist for a location. Idempotent — re-running adds
-// items present in the template but missing for this location (so the
-// template can grow new rows over time without churn).
-export async function initializeSetupItems(slug: string): Promise<{ added: number }> {
-  await assertCan("manage_platform", slug);
+// Seed the template checklist for a location, by id. No authz — callers own
+// that. Split out from initializeSetupItems so location CREATION can seed the
+// checklist too: the creator is often an operator without `manage_platform`,
+// and the checklist previously only appeared if an admin later found the
+// "Initialize checklist" button two clicks deep in Settings. It never happened
+// — every location in production has zero checklist items.
+//
+// Idempotent: re-running adds only template items this location is missing, so
+// the template can grow over time without churn.
+export async function seedSetupItemsForLocation(
+  locationId: string,
+): Promise<number> {
   const db = getDb();
-  const locRows = await db
-    .select({ id: locations.id })
-    .from(locations)
-    .where(eq(locations.slug, slug))
-    .limit(1);
-  if (!locRows[0]) return { added: 0 };
-
   const existing = await db
     .select({ kind: externalSetupItems.kind })
     .from(externalSetupItems)
-    .where(eq(externalSetupItems.locationId, locRows[0].id));
+    .where(eq(externalSetupItems.locationId, locationId));
   const have = new Set(existing.map((r) => r.kind));
 
   const toInsert = SETUP_TEMPLATE.filter((t) => !have.has(t.kind)).map((t) => ({
-    locationId: locRows[0].id,
+    locationId,
     phase: t.phase,
     kind: t.kind,
     label: t.label,
@@ -39,8 +39,22 @@ export async function initializeSetupItems(slug: string): Promise<{ added: numbe
   if (toInsert.length > 0) {
     await db.insert(externalSetupItems).values(toInsert);
   }
+  return toInsert.length;
+}
+
+export async function initializeSetupItems(slug: string): Promise<{ added: number }> {
+  await assertCan("manage_platform", slug);
+  const db = getDb();
+  const locRows = await db
+    .select({ id: locations.id })
+    .from(locations)
+    .where(eq(locations.slug, slug))
+    .limit(1);
+  if (!locRows[0]) return { added: 0 };
+
+  const added = await seedSetupItemsForLocation(locRows[0].id);
   revalidatePath(`/locations/${slug}/setup`);
-  return { added: toInsert.length };
+  return { added };
 }
 
 export async function getSetupItemsForLocation(
