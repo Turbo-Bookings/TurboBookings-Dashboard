@@ -11,6 +11,32 @@
 > fail silently. Run `npm run emails:status -- dtown` and
 > `npm run retainer:status -- dtown` before anything else.
 >
+> ### 📋 POST-LAUNCH BACKLOG (agreed 2026-08-18, none launch-blocking)
+> 1. **Email delivery tracking** — design + findings written up in
+>    `docs/EMAIL_DELIVERY_TRACKING.md`. Confirmation emails are recorded NOWHERE, and
+>    `sent` never becomes `delivered` for any email. No UI renders email status at all.
+>    Build before the post-launch tracking deep-dive. Spans both repos.
+> 2. **Refunds do not reverse the platform fee** 🔴 *money issue* —
+>    `src/lib/stripe/payments.ts:33` calls `refunds.create` without
+>    `refund_application_fee: true`. On a Connect direct charge the full refund comes
+>    out of the OPERATOR's balance while Turbo Bookings keeps its 6%. On booking #0189
+>    that is $7.20 kept on a $28.60 refund the operator received ~$20.55 of — so the
+>    operator goes NEGATIVE on every refunded booking. Decide deliberately: reverse the
+>    fee (add the flag) or keep it as a non-refundable platform fee and tell operators.
+> 3. **Cockpit revenue feed** — `REPLIT_WEBHOOK_URL` unset; 17 events queued,
+>    `attempt_count = 0`. Note the naming drift: dashboard reads `REPLIT_WEBHOOK_URL`,
+>    bookingsystem reads `BRAIN_WEBHOOK_URL ?? REPLIT_WEBHOOK_URL`. Deferred until after
+>    Dallas is live, by decision.
+> 4. **Ad-attribution verification** — `first_attribution_click_*` was null on the test
+>    booking (direct visit). Verify 12–24h after the marketing site is live by checking
+>    a real ad-click conversion carries gclid/fbclid through to the booking.
+> 5. **Mobile-optimise the operator dashboard** — `manifest`, `bookings`,
+>    `bookings/[id]` have ~zero responsive classes and `Manifest.tsx` uses a raw
+>    `<table>` that will overflow on a phone. Plus new-booking notifications.
+> 6. **Stripe webhook endpoint URL** stays `book.turbobookings.net` deliberately — it is
+>    Connected-accounts scoped and serves ALL markets, so a Dallas-branded URL would be
+>    wrong for Houston/Miami. Do not "fix" this.
+>
 > ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-18)
 > **All feature work is DONE. The only thing between us and a live Dallas is the GO-LIVE cutover
 > (Phase 6) — nobody has flipped the switches yet.** Everything is built + verified in Stripe TEST
