@@ -254,6 +254,32 @@ and is **absent from the backup entirely** — migrating from the export alone w
 He must be invited to the production instance by hand; there is nothing to replay, and that is
 correct. Check for any other cockpit-only users before cutover.
 
+**Cockpit role model — three roles, confirmed against `cockpit/auth.py` 2026-08-18:**
+
+| Business name | `cockpitRole` value | Access |
+|---|---|---|
+| Admin (everything) | `owner` | full tool: approvals, analyst, factpack, meta-usage, outcomes, market, build |
+| Media buyer | `media_buyer` | creative modules **+** `/api/build` (`ROLES_CAN_BUILD = ("owner","media_buyer")`) |
+| Creative director | `creative` | **the DEFAULT when `cockpitRole` is absent** — read/advisory + analyst chat/thread/last |
+
+No code change needed. What must land at cutover is the metadata:
+`selmen@turbobookings.net` → `cockpitRole: owner`; `joshuelespinoza@gmail.com` → an **account with no
+metadata** (the default gives him creative director); nobody currently holds `media_buyer`.
+
+`COCKPIT_OWNER_IDS` is a separate belt-and-braces allowlist of Clerk **user IDs** that forces `owner`
+regardless of the session token — it exists so owner access survives a broken token template. Those
+IDs are dev-instance IDs and must be replaced with production ones.
+
+**Clerk production instance created 2026-08-18:** `ins_3I4xyxb19ROb3ta3nqlOI9dF54H`, primary domain
+`turbobookings.net` (root, NOT `dashboard.` — root is required so sessions are shared across the
+`dashboard.` and `cockpit.` subdomains). Cloned from dev, so it inherited **Invite-only** restriction:
+the bootstrap master cannot self-serve sign up and must be created from the Clerk dashboard directly.
+
+**Security follow-up:** with a root primary domain, Clerk's Frontend API accepts cross-origin requests
+from ANY subdomain of `turbobookings.net` by default. The cockpit compounds this — `auth.py` sets
+`verify_aud: False` and performs no `azp` check, so any signed-in user on the tenant can reach its API
+(landing on `creative`). Configure an allowed-subdomain list / `authorizedParties` after cutover.
+
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
    Then 🤖 repoints `BOOKING_ORIGIN` / `BOOKING_APP` in `dtown-atv-rentals-site` (`next.config.ts` +
