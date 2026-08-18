@@ -1161,9 +1161,14 @@ export async function listRecentBookings(slug: string): Promise<RecentBookingHit
       // bookings.created_at is `timestamp WITHOUT time zone` holding UTC. Left
       // alone, node-postgres parses it in the SERVER's local zone, so rendering
       // it in the location's timezone is only correct while the server happens
-      // to run UTC. Cast it here so the value is an unambiguous instant
-      // regardless of where this runs.
-      createdAt: sql<Date>`${bookings.createdAt} at time zone 'UTC'`,
+      // to run UTC.
+      //
+      // Rendered to an explicit ISO-8601 string with a Z suffix rather than
+      // returned as a bare timestamp: `sql<Date>` is an unchecked ASSERTION, not
+      // a conversion — the driver hands back a string, so the annotation
+      // type-checked while the value crashed Intl.DateTimeFormat.format() at
+      // runtime. A string the mapper parses itself is honest about what arrives.
+      createdAtIso: sql<string>`to_char(${bookings.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
     })
     .from(bookings)
     .innerJoin(customers, eq(bookings.customerId, customers.id))
@@ -1178,7 +1183,7 @@ export async function listRecentBookings(slug: string): Promise<RecentBookingHit
     customerName: [r.first, r.last].filter(Boolean).join(" ") || "—",
     itemName: r.itemName,
     startsAt: r.startsAt,
-    createdAt: r.createdAt,
+    createdAt: new Date(r.createdAtIso),
     totalCents: r.totalCents,
     status: r.status,
   }));

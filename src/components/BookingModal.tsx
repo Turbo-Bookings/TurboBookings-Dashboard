@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { sourceLabel } from "@/lib/bookingSource";
 import Link from "next/link";
 import { DateTime } from "luxon";
@@ -60,7 +61,16 @@ export function BookingModal({
 
   const base = `/locations/${slug}`;
 
-  return (
+  // Portalled to <body> rather than rendered in place. This modal is opened from
+  // the header (booking search, Recent bookings), and that header is
+  // `sticky z-30 ... backdrop-blur` — backdrop-filter creates a STACKING
+  // CONTEXT, so a `z-50` child of it is confined to the header's own z-30 layer
+  // and paints BEHIND the page content. The symptom is a modal that opens but is
+  // hidden behind the dashboard, which looks like a broken modal rather than a
+  // CSS layering problem. A portal escapes every ancestor stacking context, so
+  // this stays fixed no matter which component opens it or what wraps that
+  // component later.
+  const overlay = (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8">
       <div className="relative w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Close">
@@ -77,6 +87,11 @@ export function BookingModal({
       </div>
     </div>
   );
+
+  // Guard for SSR / the first client render: document does not exist on the
+  // server, and createPortal would throw.
+  if (typeof document === "undefined") return null;
+  return createPortal(overlay, document.body);
 }
 
 function Body({
