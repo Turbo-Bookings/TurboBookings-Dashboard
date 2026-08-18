@@ -178,12 +178,36 @@ type FieldMatcher = {
   build(expected: string): { exact: RegExp; any: RegExp };
 };
 
+// NOTE ON WHAT THESE CAN AND CANNOT SEE
+//
+// verifyTracking() greps the SERVER-RENDERED HTML. Our marketing sites load
+// tags via next/script with strategy="afterInteractive", which injects them on
+// the client — so `fbq('init', ...)` and the googletagmanager script tag are
+// NOT present in the fetched HTML at all.
+//
+// The original Meta matcher required `fbq('init','<id>')` and therefore could
+// never match on any of our sites. Because status→launched is gated on
+// verification, that single regex would have blocked EVERY location forever.
+// It went unnoticed because verification had never actually been run until the
+// Dallas launch on 2026-08-18.
+//
+// The Meta matcher now also accepts the <noscript> pixel URL, which IS
+// server-rendered by the same component and gated on the same id — so its
+// presence genuinely proves the configured id reached the live page.
+//
+// Be honest about the limit: this proves the pixel is CONFIGURED on the live
+// site, not that any event FIRES. Only Meta Events Manager proves that — see
+// docs/POST_LAUNCH_TRACKING_DEEP_DIVE.md.
 const MATCHERS: FieldMatcher[] = [
   {
     key: "metaPixelId",
     build: (id) => ({
-      exact: new RegExp(`fbq\\(\\s*['"]init['"]\\s*,\\s*['"]${id}['"]`),
-      any: /fbq\(\s*['"]init['"]\s*,\s*['"](\d{15,17})['"]/,
+      // Either the inline init (direct <script> sites) or the noscript
+      // fallback img (next/script afterInteractive sites).
+      exact: new RegExp(
+        `fbq\\(\\s*['"]init['"]\\s*,\\s*['"]${id}['"]|facebook\\.com/tr\\?id=${id}`,
+      ),
+      any: /fbq\(\s*['"]init['"]\s*,\s*['"](\d{15,17})['"]|facebook\.com\/tr\?id=(\d{15,17})/,
     }),
   },
   {
@@ -262,7 +286,10 @@ export async function verifyTracking(slug: string): Promise<void> {
         ? {
             status: "mismatch",
             checkedAt,
-            foundValue: anyMatch[1],
+            // Matchers may offer alternate forms (e.g. the Meta pixel matches
+            // either the inline fbq init or the noscript URL), so the id can
+            // land in any capture group. Take the first one that matched.
+            foundValue: anyMatch.slice(1).find(Boolean),
             message: "Found a different value on the live site",
           }
         : { status: "not_found", checkedAt, message: "Pattern not found in rendered HTML" };
