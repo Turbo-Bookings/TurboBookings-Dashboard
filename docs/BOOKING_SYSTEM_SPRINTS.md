@@ -5,7 +5,13 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
-> ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-15)
+> ### ⏰ FIRST: verify yesterday's live cutover — `docs/VERIFY_2026-08-19.md`
+> Reminder emails (354 armed, first send 2026-08-18 16:00 UTC) and the retainer
+> both went live on 2026-08-18 and **neither has been observed working**. Both
+> fail silently. Run `npm run emails:status -- dtown` and
+> `npm run retainer:status -- dtown` before anything else.
+>
+> ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-18)
 > **All feature work is DONE. The only thing between us and a live Dallas is the GO-LIVE cutover
 > (Phase 6) — nobody has flipped the switches yet.** Everything is built + verified in Stripe TEST
 > mode and pushed to `develop`. The operator runbook is **`docs/DALLAS_GO_LIVE.md`**.

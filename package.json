@@ -21,7 +21,9 @@
     "import:fh": "node --env-file-if-exists=.env.local --import tsx scripts/import-fareharbor.ts",
     "retainer:reset": "node --env-file-if-exists=.env.local --import tsx scripts/reset-retainer-for-live.ts",
     "bookings:purge-test": "node --env-file-if-exists=.env.local --import tsx scripts/purge-test-bookings.ts",
-    "reminders:backfill": "node --env-file-if-exists=.env.local --import tsx scripts/backfill-import-reminders.ts"
+    "reminders:backfill": "node --env-file-if-exists=.env.local --import tsx scripts/backfill-import-reminders.ts",
+    "emails:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-emails.ts",
+    "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.4.0",
