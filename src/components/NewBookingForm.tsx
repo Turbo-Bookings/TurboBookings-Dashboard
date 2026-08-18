@@ -83,7 +83,12 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   const [discount, setDiscount] = useState<{ cents: number; label: string; code: string } | null>(null);
   const [discountErr, setDiscountErr] = useState<string | null>(null);
   const [acks, setAcks] = useState<Set<string>>(new Set());
-  const [amountMode, setAmountMode] = useState<AmountMode>("full");
+  // Deposit, matching what the public website charges. This defaulted to "full",
+  // so a phone booking quoted the whole tour up front while the same customer
+  // booking online paid only the deposit — two different prices for the same
+  // tour depending on which channel they happened to use, with the rep reading
+  // the larger one aloud. The balance is collected at the venue either way.
+  const [amountMode, setAmountMode] = useState<AmountMode>("deposit");
   const [partialStr, setPartialStr] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("card");
   const [grouponStr, setGrouponStr] = useState("");
