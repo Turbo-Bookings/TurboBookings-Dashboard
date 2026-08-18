@@ -68,15 +68,15 @@
 | Dashboard prod `STRIPE_SECRET_KEY` / `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | present, **last written 85d ago** (initial setup) — never touched since; Phase 6 has never run ⇒ still **test** |
 | Booking-app prod `STRIPE_SECRET_KEY` / publishable | present, **last written 85d ago** ⇒ still **test** |
 | Can we read the values back to prove it? | **No.** Both projects have these marked **Sensitive** in Vercel — the value is unreadable via CLI, REST API, and the Vercel UI. Only overwrite is possible. Confirm mode from the **Stripe** side instead (see below). |
-| Dashboard prod `STRIPE_WEBHOOK_SECRET` | **set** (added 19h ago = the TEST-mode retainer endpoint). Probe: signed POST → `bad signature` (reaches verification). |
-| Booking-app prod `STRIPE_WEBHOOK_SECRET` | ❌ **NOT SET IN ANY ENV.** Probe: signed POST → `webhook not configured`. **Blocking — see 6.0.** |
+| Dashboard prod `STRIPE_WEBHOOK_SECRET` | ✅ **LIVE value, verified 2026-08-18.** Old test-mode var (Preview+Production) removed; re-added Production-scoped. Proven by a *signed* probe → **200 `ok`**, i.e. the signature actually validated — not merely `bad signature`. |
+| Booking-app prod `STRIPE_WEBHOOK_SECRET` | ✅ **SET + verified 2026-08-18** (was the blocking gap). Signed probe → **200 `ok`**. |
 | Booking-app prod `ADMIN_ENCRYPTION_KEY` | ✅ already set (2d ago) — this runbook item is done |
 | Dashboard prod Clerk | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` = `pk_test_…` → frontend API `welcome-muskrat-17.clerk.accounts.dev` = a Clerk **development** instance. Deferred by choice; see "Deferred". |
 | `dashboard.turbobookings.net` / `book.turbobookings.net` | ✅ both resolve to Vercel, HTTP 200 |
 | `dtownatvrentals.com` | ❌ still on the **old Duda site** (`www` → `multiscreensite.com`); the forked Dallas site is only on `dtown-atv-rentals-site.vercel.app`. Domain is not attached to any Vercel project. **Phase 4.4 DNS is NOT done.** |
 | `book.dtownatvrentals.com` | ❌ no DNS record yet |
-| Dashboard `main` vs `develop` | `main` is **2 commits behind** (sales-tax report + docs) — production is not running the latest build |
-| Booking-app `main` vs `develop` | in sync ✅ |
+| Dashboard `main` vs `develop` | ✅ in sync as of 2026-08-18 |
+| Booking-app `main` vs `develop` | ✅ in sync — `develop` (5 commits: fee clamp, readiness gate ×2, `external_ref` mirror, lifecycle emails) fast-forwarded to `main` and deployed 2026-08-18 |
 
 **How to prove test-mode from Stripe (10 seconds, 🧑):** Stripe Dashboard → toggle **Live mode** →
 Developers → *API request logs*. **Zero** live-mode requests ⇒ both prod apps are still on test keys.
@@ -139,8 +139,10 @@ delete from bookings where location_id = (select id from locations where slug='d
   and external_ref is not null;   -- lines + payments cascade
 ```
 
-### 6.0 — Fix first (blocking) 🧑
-- **Booking-app Stripe webhook is dead in production.** `bookingsystem` prod has no
+### 6.0 — ✅ RESOLVED 2026-08-18 (was blocking) 🧑
+> Both live webhooks now exist and both secrets are verified; the tab-close data-loss window below is closed.
+
+- ~~**Booking-app Stripe webhook is dead in production.**~~ `bookingsystem` prod has no
   `STRIPE_WEBHOOK_SECRET`, so `POST /api/webhooks/stripe` short-circuits with `webhook not configured`
   and Stripe's `payment_intent.succeeded` never commits the booking. Today it only works because the
   success-page fallback also commits — meaning **if a customer closes the tab right after paying, no
@@ -160,12 +162,30 @@ delete from bookings where location_id = (select id from locations where slug='d
    **live** platform account. Note the new live `acct_…`.
 5. 🧑 **Swap Stripe keys to live** — `sk_live`/`pk_live` in **both** Vercel projects (Production scope):
    `bookingsystem` and `turbo-bookings-dashboard`. Redeploy both.
-6. 🧑 **Create the LIVE-mode webhooks** (test-mode endpoints do **not** carry over):
-   | Endpoint | Events | Secret goes to |
-   |---|---|---|
-   | `https://book.dtownatvrentals.com/api/webhooks/stripe` (or `book.turbobookings.net` until step 1 lands) | `payment_intent.succeeded` — **check "listen to events on Connected accounts"** | `bookingsystem` → `STRIPE_WEBHOOK_SECRET` (Production) — *new var, see 6.0* |
-   | `https://dashboard.turbobookings.net/api/webhooks/stripe` | `customer.subscription.created/updated/deleted`, `invoice.payment_failed`/`succeeded` | `turbo-bookings-dashboard` → `STRIPE_WEBHOOK_SECRET` (Production) — replaces the test value |
-   Redeploy both after setting the secrets. Verify each with Stripe's **Send test webhook** → expect **200**.
+6. ✅ **DONE 2026-08-18 — LIVE-mode webhooks created** (test-mode endpoints do **not** carry over):
+   | Destination | ID | Scope | Events | Secret |
+   |---|---|---|---|---|
+   | `booking-app-payments` → `https://book.turbobookings.net/api/webhooks/stripe` | `we_1U5eQFE69fk80FRq0qBmoTI5` | **Connected accounts** | `payment_intent.succeeded` | `bookingsystem` → `STRIPE_WEBHOOK_SECRET` (Production, new var) ✅ |
+   | `dashboard-retainer-subscriptions` → `https://dashboard.turbobookings.net/api/webhooks/stripe` | `we_1U5eUFE69fk80FRq1tlWeB7f` | **Your account** | `customer.subscription.created` / `.updated` / `.deleted` | `turbo-bookings-dashboard` → `STRIPE_WEBHOOK_SECRET` (Production, replaced test value) ✅ |
+
+   Both redeployed. **Three deliberate decisions worth knowing:**
+   - **API version set to `2026-07-29.dahlia`, not the account default `2019-09-09`.** The SDK speaks a
+     2026 version; a 7-year-old payload shape risks field mismatches on `payment_intent.succeeded`.
+   - **Scope is not symmetric and must not be "fixed" to match.** The booking app takes *direct charges
+     on connected accounts*, so it needs Connected-accounts scope (`event.account` is read in the
+     handler). The retainer is billed on the *platform* account, so it needs Your-account scope.
+     Swapping either one silently delivers nothing.
+   - **`invoice.payment_failed`/`succeeded` were deliberately NOT subscribed** (this runbook previously
+     called for them). The handler's `switch` ignores them; Stripe sets `subscription.status` to
+     `past_due` on a failed invoice and back to `active` on recovery, each firing
+     `customer.subscription.updated` — so the three subscription events already cover every transition.
+
+   **Verification method — use this, not "Send test webhook".** An *unsigned* probe returning
+   `bad signature` only proves *a* secret exists, not the *right* one. Send a properly signed event
+   with a type the handler ignores (e.g. `balance.available`) and expect **200 `ok`** — that proves
+   HMAC validation passed with zero side effects. Never probe the booking app with a signed
+   `payment_intent.succeeded`: that hits the real commit path.
+   *(Endpoint URL stays `book.turbobookings.net` until step 1's DNS lands; update it then.)*
 7. 🧑 **Re-add the retainer card in live mode** (the test-mode customer/subscription does not carry over):
    operator saves the card again, admin re-sets $3,250 / day 15, confirm `retainer_status` → `active`.
 8. 🤖 **Update the Dallas connected account** to the live `acct_…` and flip location
