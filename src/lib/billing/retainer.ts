@@ -89,7 +89,26 @@ async function createPrice(location: Location, amountCents: number): Promise<str
 // Start the monthly subscription. Requires a saved default card + configured
 // amount/day. Trials to the next billing day.
 export async function startSubscription(location: Location): Promise<string> {
+  // A platform Customer existing does NOT mean a card was saved.
+  // ensurePlatformCustomer() runs as soon as the card form is *opened* (via
+  // createRetainerSetupIntent), so abandoning that form leaves a customer with
+  // no payment method. Guarding on the customer id alone let Start proceed and
+  // create a subscription with nothing to charge: it sits in `trialing` until
+  // the billing anchor, which mapSubStatus reports as **active**, and only fails
+  // weeks later. That is a silent false-active — exactly the failure this
+  // retainer flow is supposed to make impossible.
+  //
+  // Verified against Stripe rather than our cached retainer_card_last4, because
+  // the card can also be removed on the Stripe side without us hearing about it.
   if (!location.stripePlatformCustomerId) throw new Error("No card on file");
+  const customer = await getStripe().customers.retrieve(location.stripePlatformCustomerId);
+  const defaultPm =
+    !customer.deleted && customer.invoice_settings?.default_payment_method;
+  if (!defaultPm) {
+    throw new Error(
+      "No card saved yet — finish adding the retainer card before starting the subscription.",
+    );
+  }
   if (!location.retainerCents || location.retainerCents <= 0) throw new Error("Set the retainer amount first");
   if (!location.retainerBillingDay) throw new Error("Set the billing day first");
   const priceId = await createPrice(location, location.retainerCents);
