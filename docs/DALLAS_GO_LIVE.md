@@ -281,6 +281,18 @@ metadata** (the default gives him creative director); nobody currently holds `me
 regardless of the session token — it exists so owner access survives a broken token template. Those
 IDs are dev-instance IDs and must be replaced with production ones.
 
+**⚠️ ROOT-DOMAIN GOTCHA — Clerk's Home URL must be set explicitly.** Choosing the ROOT domain
+(`turbobookings.net`) is what gives cross-subdomain SSO, but Clerk then assumes the app lives at that
+root. `Configure → Paths → Home URL` defaults to blank ("leave blank if it sits on the host's root"),
+so after a successful sign-up Clerk redirected invitees to `https://turbobookings.net` — a "Launching
+Soon" placeholder store, not the dashboard. Users were signed in the whole time with the correct role
+and had no way to tell.
+
+Symptom to recognise: invitee reports "the link took me to the wrong site", invitation status reads
+**accepted**, and the user exists with the right role. Nothing is broken — only the redirect target.
+Fixed 2026-08-18 by setting Home URL to `dashboard.turbobookings.net`. **Set this immediately after
+creating any future production instance on a root domain.**
+
 **CLERK PRODUCTION CUTOVER — dashboard side DONE 2026-08-18.**
 Instance `ins_3I4xyxb19ROb3ta3nqlOI9dF54H`, primary domain `turbobookings.net`. All 5 CNAMEs verified,
 certs issued, Google OAuth **disabled** (production requires custom Google credentials we chose not to
