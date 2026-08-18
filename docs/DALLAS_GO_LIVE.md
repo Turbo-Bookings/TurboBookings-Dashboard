@@ -246,8 +246,13 @@ Vercel production carries `pk_test_…` → `welcome-muskrat-17.clerk.accounts.d
 (not `andre.santanacsx@`) and `oscar@turbobookings.net` (not `oscar@yourmusicmanager.com`). They
 should sign up with the primary, or the import invites instead of updating — same role either way.
 
-`joshuelespinoza@gmail.com` has empty `publicMetadata` (no access) and is deliberately absent from the
-export. Decide whether to re-invite with a role or drop.
+**⚠️ The export MISSES users who rely on a default role.** `clerk-export-roles.ts` skips any user with
+empty `publicMetadata` — but in the cockpit, empty metadata IS a role:
+`cockpit/auth.py:79-85` falls back to `role = "creative"`. So
+`joshuelespinoza@gmail.com` (creative director, cockpit-only, no dashboard access) has `{}` metadata
+and is **absent from the backup entirely** — migrating from the export alone would silently drop him.
+He must be invited to the production instance by hand; there is nothing to replay, and that is
+correct. Check for any other cockpit-only users before cutover.
 
 ### 6.1 — Order of operations
 1. 🧑 **Register `book.dtownatvrentals.com`** → attach to the `bookingsystem` Vercel project, point DNS.
