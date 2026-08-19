@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { GOOGLE_FONTS_URL } from "@/lib/fonts";
@@ -18,6 +18,34 @@ export const metadata: Metadata = {
   title: "TurboBookings Dashboard",
   description:
     "Multi-tenant client portal for ATV-tour location buildouts and ops.",
+  // Installable to the Home Screen. On iOS this is not cosmetic: Apple only
+  // permits web push from a Home-Screen-installed app, so the PWA shell is a
+  // prerequisite for new-booking alerts, not just nicer chrome.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "TurboBookings",
+    // "default" keeps the iOS status bar legible over our light header; "black-translucent"
+    // would let content slide under the clock.
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
+  // Operators use this one-handed on a phone at the trailhead; a fixed width
+  // with pinch-zoom left enabled avoids trapping anyone who needs to zoom.
+  width: "device-width",
+  initialScale: 1,
+  // Keeps the standalone app clear of the iPhone notch and home indicator.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
