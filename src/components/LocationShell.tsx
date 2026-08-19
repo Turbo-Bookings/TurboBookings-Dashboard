@@ -243,11 +243,20 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex min-w-0 items-center gap-2">
+          {/*
+            Hidden below md — the same breakpoint at which the hamburger appears,
+            so location context comes from the drawer instead. At 390px this row
+            has to fit a menu button, the location name, a status badge, search,
+            help and the avatar; it does not, and because StatusBadge cannot
+            shrink the result was a clipped "launched" pill sitting under the
+            search box with the location name squeezed out entirely.
+          */}
+          <div className="hidden min-w-0 items-center gap-2 md:flex">
             <span className="truncate text-sm font-semibold tracking-tight">{brandName}</span>
             <StatusBadge status={status} />
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          {/* shrink-0 so the controls are never the thing that collapses. */}
+          <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
             <SearchBookings slug={slug} />
             <button
               type="button"

@@ -89,7 +89,14 @@ export function RecentBookings({ slug, tz }: { slug: string; tz: string }) {
         <Clock className="h-4 w-4" /> Recent
       </button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-96 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+        /*
+          Pinned to the viewport on phones, dropdown from sm up. As an
+          `absolute right-0 w-96` panel it was anchored to the Recent button in
+          the middle of the header, so 384px of panel extended LEFT past the
+          screen edge and the times and amounts were cut off. Viewport-relative
+          insets cannot overflow regardless of where the trigger sits.
+        */
+        <div className="fixed inset-x-2 top-16 z-40 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-1 sm:w-96 dark:border-zinc-800 dark:bg-zinc-900">
           <p className="border-b border-zinc-100 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:border-zinc-800">
             Recent bookings
           </p>

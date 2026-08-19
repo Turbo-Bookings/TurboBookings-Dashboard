@@ -49,8 +49,10 @@ export function SearchBookings({ slug }: { slug: string }) {
           className="w-40 bg-transparent text-sm outline-none placeholder:text-zinc-400 sm:w-56"
         />
       </div>
+      {/* Same viewport-overflow fix as RecentBookings: anchored to a mid-header
+          trigger, an absolute right-0 panel runs off the left edge on a phone. */}
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="fixed inset-x-2 top-16 z-40 overflow-hidden rounded-md border border-zinc-200 bg-white shadow-lg sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-1 sm:w-80 dark:border-zinc-800 dark:bg-zinc-900">
           {hits.length === 0 ? (
             <p className="px-3 py-2 text-sm text-zinc-500">No matches</p>
           ) : (
