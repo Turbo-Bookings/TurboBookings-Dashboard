@@ -24,7 +24,8 @@
     "reminders:backfill": "node --env-file-if-exists=.env.local --import tsx scripts/backfill-import-reminders.ts",
     "emails:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-emails.ts",
     "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts",
-    "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts"
+    "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts",
+    "push:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-push.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.4.12",
@@ -46,13 +47,15 @@
     "remark-gfm": "^4.0.1",
     "rrule": "^2.8.1",
     "sharp": "^0.34.5",
-    "stripe": "^22.1.1"
+    "stripe": "^22.1.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",

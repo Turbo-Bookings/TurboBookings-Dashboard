@@ -225,6 +225,13 @@
       "when": 1786999311438,
       "tag": "0031_spicy_klaw",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787174596872,
+      "tag": "0032_bent_reptil",
+      "breakpoints": true
     }
   ]
 }

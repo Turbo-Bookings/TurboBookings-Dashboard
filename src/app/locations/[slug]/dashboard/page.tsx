@@ -23,6 +23,7 @@ import {
 } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
+import { BookingAlertsToggle } from "@/components/BookingAlertsToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,9 @@ export default async function DashboardPage({
   ]);
   // Platform processing fees are Turbo-internal revenue — only admins see them.
   const showFees = await can("manage_platform", slug);
+  // Same bar as receiving alerts (director+), so the toggle is never shown to
+  // someone the server would refuse to subscribe.
+  const showAlerts = await can("manage_bookings", slug);
   const b = `/locations/${slug}`;
 
   const quickLinks = [
@@ -170,6 +174,8 @@ export default async function DashboardPage({
           </div>
         </div>
       </div>
+
+      {showAlerts && <BookingAlertsToggle slug={slug} />}
 
       <p className="mt-6 text-xs text-zinc-400">
         Each section uses the time basis that matches its question, which is stated in its subtitle.

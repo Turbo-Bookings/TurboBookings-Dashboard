@@ -1121,6 +1121,13 @@ export const bookings = pgTable(
     // double-insert — this is the importer's only idempotency key.
     externalRef: text("external_ref"),
 
+    // Stamped when an operator push alert has been sent for this booking, so a
+    // retry or an overlapping cron tick can never notify twice. Nullable, and
+    // the send query is ALSO bounded to bookings created in the last few
+    // minutes — that bound is what stops the very first run from firing an alert
+    // for all 198 pre-existing bookings at once.
+    alertedAt: timestamp("alerted_at", { withTimezone: true }),
+
     // Pricing snapshot at booking time. Doesn't update if item prices change.
     subtotalCents: integer("subtotal_cents").notNull(),
     // Operator-entered subtotal override (custom rate); null = computed from
@@ -1762,3 +1769,49 @@ export const emailSuppressions = pgTable(
 
 export type EmailSuppression = typeof emailSuppressions.$inferSelect;
 export type NewEmailSuppression = typeof emailSuppressions.$inferInsert;
+
+// ---------- Web push: new-booking alerts for operators ----------
+//
+// One row per (browser endpoint, location). A person who manages more than one
+// location gets one row per location from the same device, which is why the
+// unique index is on the pair rather than on the endpoint alone — it lets the
+// send query filter by location without reading Clerk for every subscriber on
+// every cron tick. The role check happens once, at subscribe time.
+//
+// Endpoints are issued by the browser's push service (FCM, Apple, Mozilla) and
+// can be revoked at any time; a 404/410 from the push service means the
+// subscription is dead and the row should be deleted rather than retried.
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Clerk user_id. Not a FK — Clerk is the identity store, not Postgres. */
+    userId: text("user_id").notNull(),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull(),
+    /** Public key + auth secret from the browser's PushSubscription. */
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    /** Helps a person recognise which device to turn off. */
+    userAgent: text("user_agent"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    /** Consecutive send failures; used to prune dead endpoints. */
+    failureCount: integer("failure_count").notNull().default(0),
+  },
+  (t) => ({
+    endpointLocationIdx: uniqueIndex("push_subs_endpoint_location_idx").on(
+      t.endpoint,
+      t.locationId,
+    ),
+    locationIdx: index("push_subs_location_idx").on(t.locationId),
+    userIdx: index("push_subs_user_idx").on(t.userId),
+  }),
+);
+
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof pushSubscriptions.$inferInsert;
