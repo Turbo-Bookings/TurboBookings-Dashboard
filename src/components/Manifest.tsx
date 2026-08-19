@@ -264,7 +264,93 @@ export function Manifest({
                 {bookings.length === 0 ? (
                   <p className="px-4 py-3 text-xs text-zinc-400">No bookings.</p>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <>
+                  {/*
+                    MOBILE: cards, not the table. The table below is
+                    min-w-[36rem] (576px) inside a horizontal scroller, so on a
+                    ~390px phone the Check-in column — the entire reason someone
+                    opens this screen while standing at the trailhead — sits off
+                    to the right behind a side-scroll. Cards put the check-in
+                    control and the balance owed directly under the guest's name.
+                    Print keeps the table: a printed manifest wants dense rows.
+                  */}
+                  <ul className="divide-y divide-zinc-100 md:hidden print:hidden dark:divide-zinc-800">
+                    {bookings.map((b) => {
+                      const open = expanded.has(b.id);
+                      return (
+                        <li key={b.id} className="px-3 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => setOpenId(b.id)}
+                                className="text-left text-base font-medium text-zinc-900 dark:text-zinc-100"
+                              >
+                                {b.customerName}
+                              </button>
+                              <div className="mt-0.5 text-xs text-zinc-500">
+                                #{b.displayNumber} · {b.partySize} rider{b.partySize === 1 ? "" : "s"}
+                                {cols.phone && b.customerPhone ? ` · ${b.customerPhone}` : ""}
+                              </div>
+                              <div className="mt-0.5 text-xs text-zinc-500">
+                                {b.lines.map((l) => `${l.quantity} ${l.ctName}`).join(", ")}
+                              </div>
+                            </div>
+                            {cols.due && (
+                              <span
+                                className={`shrink-0 text-sm ${b.balanceDueCents > 0 ? "font-semibold text-red-600" : "text-zinc-400"}`}
+                              >
+                                {usd(b.balanceDueCents)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <Badge tone={checkInTone(b.rollup)}>{checkInLabel(b.rollup)}</Badge>
+                            <CheckInControls slug={slug} bookingId={b.id} current={b.rollup} size="sm" />
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(b.id)}
+                              className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            >
+                              {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              Per rider
+                            </button>
+                          </div>
+
+                          {cols.notes && b.notes && (
+                            <p className="mt-1.5 text-xs text-zinc-500">{b.notes}</p>
+                          )}
+
+                          {open && (
+                            <div className="mt-3 space-y-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-800/30">
+                              {b.lines.map((l) => (
+                                <LineCheckIn
+                                  key={l.id}
+                                  slug={slug}
+                                  lineId={l.id}
+                                  ctName={l.ctName}
+                                  quantity={l.quantity}
+                                  checkedInUnits={l.checkedInUnits}
+                                  noShowUnits={l.noShowUnits}
+                                />
+                              ))}
+                              {caps.manage_bookings && (
+                                <Link
+                                  href={`${base}/bookings/${b.id}`}
+                                  className="inline-block text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+                                >
+                                  Open booking →
+                                </Link>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  <div className="hidden overflow-x-auto md:block print:block">
                   <table className="w-full min-w-[36rem] text-sm">
                     <thead>
                       <tr className="border-t border-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800">
@@ -360,6 +446,7 @@ export function Manifest({
                     </tbody>
                   </table>
                   </div>
+                  </>
                 )}
               </div>
             );
