@@ -38,9 +38,12 @@
 >    must dedupe to ONE event on `event_id`), ad-click attribution (still unproven —
 >    `first_attribution_click_*` was null on the test booking), CAPI payload quality,
 >    the booking.created pipe, and the email pipeline under real load.
-> 5. **Mobile-optimise the operator dashboard** — `manifest`, `bookings`,
->    `bookings/[id]` have ~zero responsive classes and `Manifest.tsx` uses a raw
->    `<table>` that will overflow on a phone. Plus new-booking notifications.
+> 5. ~~**Mobile-optimise the operator dashboard**~~ — DONE 2026-08-19. `Manifest.tsx`
+>    is a card list under `md`, the header no longer clips, and the booking / recent /
+>    search panels are bottom sheets on a phone. New-booking **push** notifications
+>    shipped with it (push only, no email) — see `docs/PUSH_ALERTS.md`. Still open:
+>    Reports and Tax report side-scroll on a phone; deferred until someone reads
+>    reports on mobile.
 > 6. **Stripe webhook endpoint URL** stays `book.turbobookings.net` deliberately — it is
 >    Connected-accounts scoped and serves ALL markets, so a Dallas-branded URL would be
 >    wrong for Houston/Miami. Do not "fix" this.
