@@ -71,8 +71,16 @@ export function BookingModal({
   // this stays fixed no matter which component opens it or what wraps that
   // component later.
   const overlay = (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:p-8">
-      <div className="relative w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-black/40 sm:items-start sm:p-8">
+      {/*
+        Bottom sheet on phones, centred dialog from sm up. A centred card with
+        margin wastes vertical space on a small screen and puts the close button
+        near the top edge, which is the hardest place to reach one-handed; a
+        sheet anchored to the bottom keeps the content where the thumb is.
+        max-h + overflow keeps a long booking scrollable inside the sheet rather
+        than pushing the page.
+      */}
+      <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-none sm:rounded-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Close">
           <X className="h-5 w-5" />
         </button>
