@@ -5,6 +5,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import { encryptSecret } from "@/lib/crypto/secrets";
+import { VERCEL_PUSHABLE_SECRET_KINDS } from "@/lib/integrations/catalog";
 import { getDb, locationSecrets, locations } from "@/lib/db";
 import type { LocationSecret } from "@/lib/db/schema";
 import { SECRET_KINDS, type SecretKind } from "@/lib/integrations/catalog";
@@ -49,13 +50,20 @@ export async function setSecret(
       },
     });
 
-  // Best-effort push into the location's Vercel project env. No-ops cleanly
-  // when VERCEL_API_TOKEN isn't configured or the location row doesn't have
-  // a vercelProjectId yet. The DB write above already succeeded; this is
-  // additive.
+  // Best-effort push into the location's MARKETING-SITE Vercel project env —
+  // but only for secrets that site actually reads (see
+  // VERCEL_PUSHABLE_SECRET_KINDS). Everything else stays in location_secrets,
+  // which is where our booking system reads from.
+  //
+  // This used to push unconditionally, and that pushed Houston's
+  // GA4_MP_API_SECRET into the marketing site, re-arming a GA4 double-count
+  // that feeds Google Ads bidding. Storing a secret must never change the
+  // behaviour of a different system.
   let pushedToVercel = false;
   let pushReason: string | undefined;
-  const push = await setProjectEnv(locRows[0].vercelProjectId, kind, value);
+  const push = VERCEL_PUSHABLE_SECRET_KINDS.includes(kind)
+    ? await setProjectEnv(locRows[0].vercelProjectId, kind, value)
+    : ({ ok: false, reason: "not_site_consumed" } as const);
   if (push.ok) {
     await db
       .update(locationSecrets)
@@ -69,7 +77,9 @@ export async function setSecret(
     pushedToVercel = true;
   } else {
     pushReason =
-      push.reason === "not_configured"
+      push.reason === "not_site_consumed"
+        ? "Stored for the booking system. Not pushed to the marketing site — it doesn't read this one."
+      : push.reason === "not_configured"
         ? "VERCEL_API_TOKEN not configured — secret saved locally only"
         : push.reason === "no_project_id"
           ? "This location has no Vercel project linked yet — secret saved locally only"

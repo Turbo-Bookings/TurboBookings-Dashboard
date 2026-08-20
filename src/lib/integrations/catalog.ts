@@ -32,6 +32,29 @@ export const SECRET_KINDS = {
 
 export type SecretKind = keyof typeof SECRET_KINDS;
 
+/**
+ * Secrets that may be pushed into the LOCATION'S MARKETING-SITE Vercel project.
+ *
+ * Deliberately an allow-list, and deliberately small. `saveSecret()` used to
+ * push every secret it stored, which is wrong for anything only OUR booking
+ * system consumes — it reads from `location_secrets`, never from the marketing
+ * site's env.
+ *
+ * That is not merely redundant. On 2026-08-20, saving Houston's
+ * `GA4_MP_API_SECRET` here pushed it into the marketing site's env one second
+ * later, which re-armed the 2026-06-09 GA4 double-count: the FareHarbor webhook
+ * fires a GA4 purchase keyed on booking.uuid while FareHarbor's own integration
+ * fires the same sale keyed on booking.pk, GA4 dedupes on neither, and the
+ * inflated number feeds Google Ads bidding. See
+ * docs/TRACKING_CUTOVER_PLAYBOOK.md §2.
+ *
+ * A secret belongs here ONLY if the marketing site itself reads it.
+ */
+export const VERCEL_PUSHABLE_SECRET_KINDS: SecretKind[] = [
+  // The marketing site's own FareHarbor webhook verifies signatures with this.
+  "FAREHARBOR_WEBHOOK_SECRET",
+];
+
 // Where each secret's management UI lives. Server-side tracking tokens surface
 // under the Tracking page (alongside the CAPI toggle); the rest under Integrations.
 export const TRACKING_SECRET_KINDS: SecretKind[] = [
