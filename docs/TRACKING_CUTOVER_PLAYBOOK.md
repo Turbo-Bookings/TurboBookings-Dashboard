@@ -301,6 +301,103 @@ the cookies carry natively. It matches nothing and goes inert. Dallas never had 
 
 ---
 
+---
+
+## 11. Migrating Google Ads bidding off the GA4 import
+
+**Decided 2026-08-20.** The end state is direct Google Ads conversion tracking
+with Enhanced Conversions, and eventually server-side uploads. The GA4 import is
+the thing we are leaving, not the thing we are protecting long-term — §3 protects
+it only so it can carry bidding safely THROUGH the cutover.
+
+### Why direct beats the GA4 import
+
+1. **Latency.** The import lags. Smart Bidding learns faster from a signal that
+   arrives at conversion time.
+2. **Stacked attribution.** GA4 attributes with its own model, then Ads
+   re-attributes the imported conversion. Two models in series is noise, not
+   precision.
+3. **Loss.** A conversion that does not tie cleanly to a GA4 session can fail to
+   import at all. Ads conversion tracking has no such dependency.
+4. **Enhanced Conversions — the big one.** Hashed email/phone sent with the
+   conversion recovers matches that cookie-only tracking loses to ITP and ad
+   blockers. This is the same mechanism that moved Meta's EMQ from 6.3 to 8.5.
+
+### Prerequisite — DONE 2026-08-20
+
+The Ads conversion used to fire with `send_to` / `value` / `transaction_id` and
+**no user data at all**. `setAdvancedMatching()` in
+`bookingsystem/src/lib/tracking/events.ts` now also calls
+`gtag('set','user_data', …)` alongside the Meta call.
+
+Two traps, both encoded in that file:
+
+- Values are **plaintext**. gtag normalises and hashes them itself; pre-hashing
+  double-hashes and matches nothing.
+- **Google wants E.164 WITH the `+`; Meta wants digits only.** Same number, two
+  rules, and neither platform errors when it is wrong — exactly how our
+  server-side Meta phone signal stayed broken for months.
+
+Inert until a location has an Ads conversion configured, so it costs nothing to
+ship early.
+
+### Sequence
+
+**Do NOT run this during a FareHarbor cutover.** Cut over first with the GA4
+import still Primary so bidding never notices, let it settle, then migrate. Move
+both at once and a performance change is unattributable.
+
+**Step 1 — build it, Secondary.**
+- Create an Ads conversion action, e.g. "Purchase — Booking System".
+  Category *Purchase*, count *Every*, *Use different values for each conversion*,
+  **Secondary** (i.e. not used for bidding).
+- Copy its label into `tracking_config.google_ads_purchase_label` for the
+  location. The conversion id is already set.
+- Our booking app immediately starts firing it, with Enhanced Conversions, keyed
+  on `transaction_id = booking-<uuid>` so Ads dedupes repeats within that action.
+- Bidding is untouched: a Secondary action reports but does not optimise.
+
+**Step 2 — reconcile against ground truth (2–4 weeks).**
+
+This is the step most advertisers cannot do and we can: **our `bookings` table is
+the truth.** For the same window, compare three numbers —
+
+| Source | Where |
+|---|---|
+| Actual bookings + revenue | `bookings` in our DB |
+| "Purchase — Booking System" | Google Ads, the new Secondary action |
+| GA4-imported purchase | Google Ads, the current Primary |
+
+Expect the direct action to sit closer to our DB than the import does. If it does
+not, stop and find out why before promoting anything — a promotion built on a
+worse signal is worse than the status quo.
+
+**Step 3 — promote.**
+- In ONE edit: new action → Primary, GA4 import → Secondary.
+- **Never leave two Primary purchase actions.** They are separate conversion
+  actions and do NOT dedupe against each other, so bidding would count every sale
+  twice — the same failure as the 2026-06-09 incident, by a different route.
+- Change nothing else that week. No bidding-strategy change, no budget step.
+- Allow ~2 weeks of re-learning before judging performance.
+
+**Step 4 — server-side uploads (the CAPI equivalent).**
+Google Ads API `ClickConversion` upload using the stored `gclid` / `wbraid` /
+`gbraid`, deduped by order id = booking id. Immune to ad blockers and ITP, and
+the natural pair to Meta CAPI.
+
+> ⚠️ **The existing `GOOGLE_ADS_CONVERSION_API_TOKEN` secret cannot work as
+> designed.** Its placeholder is `ya29…`, an OAuth *access* token, which expires
+> in about an hour. Server-side uploads need a **refresh token** plus client id,
+> client secret, developer token and customer id. Rework that field when Step 4
+> starts rather than storing something that expires the same afternoon.
+
+### Rollback
+
+Steps 1–2 are risk-free; a Secondary action changes no bidding. Step 3 rolls back
+by reversing the same single edit. Only Step 4 involves new credentials.
+
+---
+
 ## 9. Per-location state (update as it changes)
 
 | | Dallas | Houston | Miami |
