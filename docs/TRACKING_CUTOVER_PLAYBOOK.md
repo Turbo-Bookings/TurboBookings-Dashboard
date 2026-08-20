@@ -332,6 +332,49 @@ Property *Texas ATV Rentals*, stream **H-Town ATVs Website** (`G-BQQMF72HGR`,
   Vercel, and the live Dallas site loads no Google tag at all. The suggestion is
   historical, from before the Dallas fork was cleaned up.
 
+### Google Ads — Step 1 DONE 2026-08-20
+
+Created `Purchase - Booking System` in account `631-129-2539`:
+
+| | |
+|---|---|
+| Data source | H-Town ATVs Website (`AW-10833387733`) — Google tag, manual event |
+| Action optimization | **Secondary** (reports fully, does NOT feed bidding) |
+| Value | Use different values, via Event snippet |
+| Count / click window | Every / 90 days — matches `GA4 Purchase` |
+| Attribution | Data-driven |
+| Enhanced conversions | **Enabled** |
+| Conversion label | `lJydCJiOk-UcENXB4a0o` |
+
+`tracking_config.google_ads_purchase_label` is set, so the booking app now builds
+`send_to: AW-10833387733/lJydCJiOk-UcENXB4a0o`. Dallas is unaffected — it has no
+Ads id, so `adsSendTo` stays null there.
+
+End state, verified in the conversion actions table:
+
+| Action | Source | Status | Optimization | Conv. |
+|---|---|---|---|---|
+| `GA4 Purchase` | Google Analytics (GA4) | Active | **Primary** | 581.60 |
+| `Purchase - Booking System` | Website | Inactive | **Secondary** | 0.00 |
+
+"Inactive" is correct and expected: the action fires only once bookings run
+through our system, i.e. after cutover. Bidding is untouched.
+
+**A Secondary action still collects and reports everything** — it is excluded
+from the "Conversions" column that bidding reads, but appears under "All
+conversions" and can be segmented by conversion action. That is what makes the
+Step 2 reconciliation possible at zero risk.
+
+**Two account fixes found along the way:**
+
+1. **The website data source was stale.** It pointed at `book.peek.com` (a
+   booking platform they trialled and dropped) with the Google tag reading *"Not
+   installed yet"* — so the only working source was the GA4 import. That is the
+   real reason bidding ended up on GA4. Re-scanned against
+   `www.htownatvrentals.org`; the tag now reports **installed on site**.
+2. `book.peek.com` remains registered in the account. Harmless, but worth
+   removing on a tidy-up pass.
+
 ### Blocked / needs a person
 
 1. **Secrets.** `META_CAPI_TOKEN` and `GA4_MP_API_SECRET` must exist in
