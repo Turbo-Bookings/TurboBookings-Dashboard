@@ -191,3 +191,59 @@ verify until an account exists.
 116 events queued, all `attempt_count = 0`, all with the expected
 `REPLIT_WEBHOOK_URL or _SECRET not set`. Newest enqueued minutes ago, so bookings
 keep queueing correctly. Deferred by choice, not broken.
+
+---
+
+# Follow-ups from the second pass — resolved 2026-08-20
+
+## `_fbc` cookie scope — FIXED
+
+`setSharedCookie()` in `src/lib/cookies.ts` now writes attribution cookies on the
+registrable domain and expires the host-scoped variant first. Shipped to all
+three site repos (`takeovers-site` template, `dtown`, `htown`) so no fork
+inherits the old behaviour.
+
+## IPv6 — CANNOT be fixed from our side, and it is not a bug
+
+Meta's top match-quality action for Dallas is *"Your server is sending IPv4 IP
+addresses through Conversions API, but we observe IPv6 IP addresses received
+through Meta Pixel."*
+
+Measured, rather than assumed:
+
+| Host | A | AAAA |
+|---|---|---|
+| `dtownatvrentals.com` | 216.150.16.1 | **none** |
+| `book.dtownatvrentals.com` | 216.150.1.1 | **none** |
+| `htownatvrentals.org` | 76.76.21.21 | **none** |
+| `vercel.com` | 64.239.109.1 | **none** |
+| `facebook.com` | 157.240.24.35 | 2a03:2880:… |
+| `connect.facebook.net` | 157.240.24.13 | 2a03:2880:… |
+
+Vercel publishes **no AAAA records anywhere**, including its own apex. A
+dual-stack visitor therefore reaches `connect.facebook.net` over IPv6 (Meta sees
+their v6 address) and reaches us over IPv4 (we can only ever see their v4). The
+two addresses are both genuinely theirs. There is no IPv6 address on our side to
+send, so no code change can resolve this. Vendor statements on Vercel IPv6
+conflict; the DNS above is the authority. Re-test with `dig AAAA` if Vercel ever
+ships it.
+
+Do not "fix" this by proxying through another CDN for the sake of one matching
+signal — EMQ is already 8.5/10 and the IP is one input among many.
+
+## What we did instead — CAPI user_data was leaking two real signals
+
+Chasing IPv6 surfaced a genuine bug and a genuine gap:
+
+1. **Phone hashing was wrong.** `hash()` did `trim().toLowerCase()` and was fed
+   E.164, so we hashed `"+12145143565"` while the browser hashes digits only
+   (`"12145143565"`). Different digest, no match — **every server-side Purchase
+   has run without the phone signal since CAPI went live.** Replaced the single
+   generic hash with per-field normalisers (email / phone / name / country),
+   because one shared helper is exactly what let the phone rule go missing.
+2. **`fn` / `ln` were never sent server-side**, though the browser sends them via
+   Advanced Matching and the same customer record holds them. Added, plus
+   `country`.
+
+Expect EMQ to move again once these are live. Re-check in a week alongside the
+"63%" figure.
