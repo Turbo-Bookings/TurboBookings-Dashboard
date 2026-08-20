@@ -398,8 +398,12 @@ credential that looks correct in the UI and fails every API call silently.
 
 ### What remains before cutover
 
-1. Merge `htown-atv-rentals-site` `develop` → `main` (Phase 1: the single-env-var
-   cutover switch). Deploys with the switch OFF — no behaviour change.
+1. ~~Merge `htown-atv-rentals-site` `develop` → `main`~~ — **DONE 2026-08-20**
+   (`982c3a2`). Phase 1 is in production with the switch OFF, and production was
+   re-measured after the deploy to prove nothing moved: 15 FareHarbor CTAs, 0
+   booking-app CTAs, linker still on `fareharbor.com`, lightframe still loading,
+   Book click still firing `track InitiateCheckout`. Cutover day is now one
+   environment variable and one CSV.
 2. Import the FareHarbor CSV **last**, so it captures every booking taken right up
    to the switch. Deliberate: importing earlier leaves a gap of bookings made on
    FareHarbor between the export and the flip.
