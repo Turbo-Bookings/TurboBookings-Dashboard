@@ -235,7 +235,7 @@ Do not proxy through another CDN to chase one matching signal. Re-test with
 
 ---
 
-## 10. Houston progress log
+## 9. Houston progress log
 
 ### Done — Phase 1 (on `develop`, NOT deployed)
 
@@ -303,7 +303,7 @@ the cookies carry natively. It matches nothing and goes inert. Dallas never had 
 
 ---
 
-## 11. Migrating Google Ads bidding off the GA4 import
+## 10. Migrating Google Ads bidding off the GA4 import
 
 **Decided 2026-08-20.** The end state is direct Google Ads conversion tracking
 with Enhanced Conversions, and eventually server-side uploads. The GA4 import is
@@ -398,7 +398,7 @@ by reversing the same single edit. Only Step 4 involves new credentials.
 
 ---
 
-## 9. Per-location state (update as it changes)
+## 11. Per-location state (update as it changes)
 
 | | Dallas | Houston | Miami |
 |---|---|---|---|
