@@ -118,6 +118,10 @@ FareHarbor and have never received mail from this sender.
 ---
 
 ## Related
+
+- **`TRACKING_CUTOVER_PLAYBOOK.md` — read this before moving Houston or Miami off
+  FareHarbor.** It carries the GA4 double-count incident, the rule it leaves
+  behind, and the ordered sequence that keeps Google Ads bidding continuous.
 - `docs/DALLAS_GO_LIVE.md` — the cutover runbook
 - `docs/VERIFY_2026-08-19.md` — the day-after email + retainer checks
 - `docs/EMAIL_DELIVERY_TRACKING.md` — why "sent" ≠ "delivered" today

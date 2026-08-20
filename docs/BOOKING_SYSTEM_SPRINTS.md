@@ -48,6 +48,10 @@
 >    Connected-accounts scoped and serves ALL markets, so a Dallas-branded URL would be
 >    wrong for Houston/Miami. Do not "fix" this.
 >
+> **Tracking cutover for Houston / Miami: `docs/TRACKING_CUTOVER_PLAYBOOK.md`.**
+> Both locations import the GA4 purchase as their PRIMARY Google Ads conversion, so
+> the cutover risk is a blind bidding algorithm, not broken tracking. Read it first.
+>
 > ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-18)
 > **All feature work is DONE. The only thing between us and a live Dallas is the GO-LIVE cutover
 > (Phase 6) — nobody has flipped the switches yet.** Everything is built + verified in Stripe TEST
