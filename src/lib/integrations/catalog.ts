@@ -7,8 +7,14 @@ export const SECRET_KINDS = {
   META_CAPI_TOKEN: {
     label: "Meta CAPI access token",
     description:
-      "System User access token from Meta Business Manager. Used by the location site for non-Purchase server-side events (Lead, InitiateCheckout, ViewContent). FareHarbor's own CAPI handles Purchase.",
+      "System User access token from Meta Business Manager. Powers every server-side Meta event, including the Purchase our booking system fires at checkout. Required for Conversions API — without it the browser pixel is the only signal, and ad blockers take a chunk of it.",
     placeholder: "EAAB…",
+  },
+  GA4_MP_API_SECRET: {
+    label: "GA4 Measurement Protocol API secret",
+    description:
+      "Created in GA4 under Admin → Data streams → your stream → Measurement Protocol API secrets. Lets our booking system send the server-side GA4 purchase alongside the browser one; both carry the same transaction_id so GA4 deduplicates them. Without it only the browser purchase fires, so ad-blocked visitors go unrecorded.",
+    placeholder: "abc123…",
   },
   FAREHARBOR_WEBHOOK_SECRET: {
     label: "FareHarbor webhook signing secret",
@@ -30,6 +36,7 @@ export type SecretKind = keyof typeof SECRET_KINDS;
 // under the Tracking page (alongside the CAPI toggle); the rest under Integrations.
 export const TRACKING_SECRET_KINDS: SecretKind[] = [
   "META_CAPI_TOKEN",
+  "GA4_MP_API_SECRET",
   "GOOGLE_ADS_CONVERSION_API_TOKEN",
 ];
 export const INTEGRATION_SECRET_KINDS: SecretKind[] = [
