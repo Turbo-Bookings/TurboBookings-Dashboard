@@ -233,6 +233,74 @@ Do not proxy through another CDN to chase one matching signal. Re-test with
 
 ---
 
+---
+
+## 10. Houston progress log
+
+### Done — Phase 1 (on `develop`, NOT deployed)
+
+The cutover is now **one environment variable** on the Houston site:
+`NEXT_PUBLIC_BOOKING_ORIGIN`. Unset, nothing changes (verified by building both
+ways and diffing the output). Set, these flip together and cannot drift apart:
+
+- Book CTAs → our booking app, deep-linked per tour
+- GA cross-domain linker → the booking host instead of `fareharbor.com`
+- Book click → custom `BookClick` instead of `InitiateCheckout`
+- FareHarbor lightframe → stops loading
+- AI chatbot → hands out the new booking links
+
+Unsetting it is an instant rollback. Also fixed the Google-tag bail-out and moved
+the hardcoded pixel / GA4 / Ads ids to env vars (literals kept as fallbacks — on a
+live site a missing env var must not mean no tracking at all).
+
+**Two cutover surfaces the plan had missed**, found by grepping the built output
+for surviving `fareharbor.com` references rather than by re-reading the code:
+the **chatbot's knowledge base** hardcoded FareHarbor booking links (it would have
+kept sending customers to the old system after cutover), and FareHarbor's
+**lightframe** would have kept intercepting clicks in the capture phase. Both now
+follow the switch. **Do this grep on Miami too** — it is a better check than
+reading the diff.
+
+`BookingLinkDecorator` is deliberately left alone: it bridges tracking params onto
+a third-party domain, and once the booking app is on our own registrable domain
+the cookies carry natively. It matches nothing and goes inert. Dallas never had one.
+
+### Done — Phase 2 (config)
+
+- `tracking_config` row created for `htown`: mode `direct`, pixel
+  `1516241692811826`, GA4 `G-BQQMF72HGR`, Ads `AW-10833387733`, CAPI enabled.
+- **`google_ads_purchase_label` left NULL on purpose.** `adsSendTo` requires BOTH
+  the conversion id and a label, so with no label our booking app fires no direct
+  Ads conversion — which is what we want, because Ads already gets its conversion
+  from the GA4 import. Setting a label here would create a SECOND Ads conversion
+  for the same booking. The conversion id alone still loads gtag and builds
+  remarketing audiences, which is why it is set.
+- `book.htownatvrentals.org` added to the `bookingsystem` Vercel project.
+  Ownership verified; inert until DNS points at it.
+
+### Blocked / needs a person
+
+1. **Secrets.** `META_CAPI_TOKEN` and `GA4_MP_API_SECRET` must exist in
+   `location_secrets` for `htown` — our booking app reads them from there, NOT
+   from the marketing site's Vercel env. Enter them via the dashboard's
+   **Integrations** page for the location, which is the intended write surface
+   (it encrypts and writes an audit-log entry).
+   **Without `GA4_MP_API_SECRET` the server-side GA4 purchase never fires**, and
+   we lose the redundancy that catches ad-blocked visitors. The browser-side GA4
+   purchase still fires from the measurement id alone.
+2. **DNS.** One record at GoDaddy on `htownatvrentals.org`:
+
+   | Type | Name | Value | TTL |
+   |---|---|---|---|
+   | CNAME | `book` | `d9c044261913766c.vercel-dns-016.com` | 600 |
+
+   Same target Dallas uses — it is project-scoped, not per-domain. Verify before
+   flipping the switch: `curl -sI https://book.htownatvrentals.org/htown | head -1`
+3. **Which Google Ads conversion action is currently Primary**, and whether it is
+   the GA4 import. Everything in §3 assumes it is; confirm before cutover.
+
+---
+
 ## 9. Per-location state (update as it changes)
 
 | | Dallas | Houston | Miami |
@@ -240,12 +308,12 @@ Do not proxy through another CDN to chase one matching signal. Re-test with
 | Booking system | ✅ live | catalog ready, not cut over | **nothing built** |
 | Items / schedules | ✅ | 3 items ✅, schedules ✅ | 0 / 0 |
 | Stripe Connect | ✅ | ✅ | ✅ |
-| `tracking_config` row | ✅ | ❌ | ❌ |
+| `tracking_config` row | ✅ | ✅ | ❌ |
 | Meta pixel | `25974101692226269` | `1516241692811826` (hardcoded) | confirm |
 | GA4 | none | `G-BQQMF72HGR` | confirm |
 | Google Ads | none | `AW-10833387733` | confirm |
-| Primary Ads conversion | n/a | GA4 purchase import | confirm |
-| Marketing-site fixes §4 | ✅ | ❌ | ❌ |
+| Primary Ads conversion | n/a | GA4 purchase import (**confirm**) | confirm |
+| Marketing-site fixes §4 | ✅ | ✅ on `develop`, not deployed | ❌ |
 | Readiness gate | open | **open** — storefront is live | closed (0 bookable items) |
 
 Miami is a clean slate: zero items, zero bookings, no tracking row. Its booking
