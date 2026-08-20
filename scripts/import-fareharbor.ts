@@ -12,6 +12,10 @@
  *   --slug=<location>   which location to import into
  *   --commit            actually write (otherwise report only)
  *   --create-slots      create one-off availabilities for unmatched datetimes
+ *   --map-item="A=B"    map FareHarbor tour "A" onto our tour "B". Repeatable.
+ *                       The name a location used in FareHarbor is rarely the
+ *                       name we gave the same tour, e.g.
+ *                       --map-item="H-Town 1 Hour ATV Tour=1-Hour ATV Tour"
  *   --allow-overbook    import rows whose slot is already at/over capacity.
  *                       The booking already happened in the source system, so
  *                       refusing it does not free a vehicle — it just hides
@@ -39,6 +43,19 @@ const arg = (n: string): string | null => {
   const hit = argv.find((a) => a.startsWith(`--${n}=`));
   return hit ? hit.slice(n.length + 3) : null;
 };
+
+// Repeatable --map-item="From=To". Split on the FIRST "=" only, because tour
+// names may legitimately contain one.
+const itemAliases: Record<string, string> = {};
+for (const a of argv.filter((x) => x.startsWith("--map-item="))) {
+  const pair = a.slice("--map-item=".length);
+  const i = pair.indexOf("=");
+  if (i <= 0) {
+    console.error(`Bad --map-item (expected "From=To"): ${pair}`);
+    process.exit(1);
+  }
+  itemAliases[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
+}
 
 const usd = (c: number) => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
 
@@ -204,6 +221,7 @@ async function main() {
     delimiter,
     allowSlotCreate: flag("create-slots"),
     allowOverbook: flag("allow-overbook"),
+    itemAliases,
   });
 
   report(plan, commit);

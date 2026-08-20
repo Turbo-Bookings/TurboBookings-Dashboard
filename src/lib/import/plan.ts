@@ -97,6 +97,18 @@ export async function buildPlan(opts: {
    * catches a genuine mistake.
    */
   allowOverbook?: boolean;
+  /**
+   * Map a FareHarbor tour name onto one of ours, e.g.
+   * `{ "H-Town 1 Hour ATV Tour": "1-Hour ATV Tour" }`.
+   *
+   * Needed because the name a location used in FareHarbor is rarely the name we
+   * gave the same tour — Houston's "H-Town 1 Hour ATV Tour" is our "1-Hour ATV
+   * Tour". Without this the rows come back `unmapped_item` and the operator's
+   * only options are to rename a live, customer-facing product or hand-edit the
+   * CSV. Deliberately EXPLICIT rather than fuzzy: silently matching the wrong
+   * tour would file bookings against the wrong capacity pool and price.
+   */
+  itemAliases?: Record<string, string>;
 }): Promise<ImportPlan> {
   const db = getDb();
   const [loc] = await db.select().from(locations).where(eq(locations.slug, opts.slug)).limit(1);
@@ -107,6 +119,18 @@ export async function buildPlan(opts: {
   const itemRows = await db.select().from(items).where(eq(items.locationId, loc.id));
   const byItemName = new Map<string, (typeof itemRows)[number]>();
   for (const it of itemRows) byItemName.set(normalizeHeader(it.name), it);
+
+  // Operator-supplied aliases, normalised on both sides so casing and
+  // punctuation differences ("1-Hour" vs "1 Hour") don't defeat them.
+  const aliases = new Map<string, string>();
+  for (const [from, to] of Object.entries(opts.itemAliases ?? {}))
+    aliases.set(normalizeHeader(from), normalizeHeader(to));
+
+  const resolveItem = (sourceName: string) => {
+    const key = normalizeHeader(sourceName);
+    const aliased = aliases.get(key);
+    return byItemName.get(aliased ?? key) ?? null;
+  };
 
   const priceRows = await db
     .select({
@@ -220,7 +244,7 @@ export async function buildPlan(opts: {
     // Item
     const sourceItem = get(raw, "itemName");
     itemCounts.set(sourceItem, (itemCounts.get(sourceItem) ?? 0) + 1);
-    const item = byItemName.get(normalizeHeader(sourceItem)) ?? null;
+    const item = resolveItem(sourceItem);
     if (!item) issues.push(issue("unmapped_item", sourceItem || "(blank)"));
 
     // When
@@ -404,7 +428,7 @@ export async function buildPlan(opts: {
     rows,
     slotPressure: [...pressure.values()].sort((a, b) => b.incomingUnits - a.incomingUnits),
     itemMapping: [...itemCounts].map(([sourceName, bookingsCount]) => {
-      const it = byItemName.get(normalizeHeader(sourceName)) ?? null;
+      const it = resolveItem(sourceName);
       return { sourceName, itemId: it?.id ?? null, itemName: it?.name ?? null, bookings: bookingsCount };
     }),
     totals: {
