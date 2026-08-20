@@ -121,3 +121,73 @@ FareHarbor and have never received mail from this sender.
 - `docs/DALLAS_GO_LIVE.md` — the cutover runbook
 - `docs/VERIFY_2026-08-19.md` — the day-after email + retainer checks
 - `docs/EMAIL_DELIVERY_TRACKING.md` — why "sent" ≠ "delivered" today
+
+---
+
+# ✅ RESULTS — second pass, 2026-08-20 (3 days live, 62 real purchases)
+
+Window: Aug 19–20 in Events Manager (America/New_York), i.e. entirely post-fix.
+
+## Meta — all four health checks green
+
+| Meta's own indicator | Result |
+|---|---|
+| Event coverage | ✅ Meeting best practices |
+| **Event Match Quality** | ✅ **8.5 / 10** (was 6.3 pre-fix) |
+| Event deduplication | ✅ Meeting best practices |
+| Data freshness | ✅ Hourly |
+
+**Deduplication is proven, not assumed.** Meta received **57 browser + 62 server**
+Purchase events and reported **62 Purchases** — it collapsed 119 raw events into 62
+on `event_id`. A broken dedup would have shown ~119. Cross-checked against our own
+DB: 52 online bookings in the same window, and Meta's chart range bleeds into
+Aug 18, which accounts for the difference. Ratio 1.19, nowhere near 2.0.
+
+**Purchase value is fixed in live data.** Recent bookings send the full booking
+value (e.g. $480 / $500 / $720) rather than the deposit ($114 / $94 / $171) —
+the ~4.2× understatement is gone.
+
+**Ad-click attribution is now PROVEN.** It was listed as "genuinely unproven"
+because the only test booking came from a direct visit. **11 of 70 direct
+bookings now carry `fbclid`.** The path works end to end.
+
+**Cookie hop across the domain boundary verified by hand.** Loaded
+`dtownatvrentals.com/?fbclid=verifypass20260820`, then `book.dtownatvrentals.com`:
+both `_fbp` and `_fbc` survived, `_fbc` carrying the test click id. Cookies are on
+the registrable domain, so attribution does not die at the subdomain hop.
+
+## Two real findings
+
+**1. Duplicate `_fbc` cookie on the marketing site.** `setCookie()` in
+`src/lib/cookies.ts` sets no `domain` attribute, so our `captureFbclid` writes a
+**host-scoped** `_fbc` on `www.` while Meta's pixel writes a **domain-scoped** one.
+Both exist on the marketing site; only Meta's crosses to the booking subdomain
+(which is why attribution still works). Harmless today, but a same-name cookie pair
+means `getCookie("_fbc")` can read either one. Fix by setting the registrable
+domain. **Applies to every fork, Houston included.**
+
+**2. Meta's top match-quality recommendation: IPv6.** *"Your server is sending IPv4
+IP addresses through Conversions API, but we observe IPv6 IP addresses received
+through Meta Pixel."* We take the first `x-forwarded-for` entry
+(`lib/actions/checkout.ts`), stash it in Stripe metadata at checkout, and replay it
+at commit. Worth investigating whether Vercel is handing us an IPv4 address for a
+client that reaches Meta over IPv6 — this may be network reality rather than a bug,
+so measure before changing anything. Meta also suggests sending city / state / zip /
+country, which we do not collect at checkout.
+
+The "63% of Purchase events are receiving hashed customer info" line did NOT move.
+Do not read that as the fix failing: EMQ moved 6.3 → 8.5, and all 52 customers in
+the window have email, phone and first name on record (49 have last name), so the
+data is present on our side. It is a browser-only rolling aggregate that still spans
+pre-fix days. Re-check in a week rather than acting on it now.
+
+## Google — confirmed absent for Dallas, as expected
+
+`ga4_measurement_id` and `google_ads_conversion_id` are both still null. Nothing to
+verify until an account exists.
+
+## Event pipe — healthy, still parked
+
+116 events queued, all `attempt_count = 0`, all with the expected
+`REPLIT_WEBHOOK_URL or _SECRET not set`. Newest enqueued minutes ago, so bookings
+keep queueing correctly. Deferred by choice, not broken.
