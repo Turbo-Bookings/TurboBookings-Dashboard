@@ -306,6 +306,32 @@ var existed, so it looked unflipped and suggested the switch was broken. Vercel
 bakes `NEXT_PUBLIC_*` at build time — always confirm the deployment's created
 timestamp is later than the variable's before concluding anything.
 
+### GA4 property audit — 2026-08-20
+
+Property *Texas ATV Rentals*, stream **H-Town ATVs Website** (`G-BQQMF72HGR`,
+`GT-5RMZMWPX`).
+
+- **Measurement Protocol API secret** — Admin → Data streams → the stream →
+  *Measurement Protocol API secrets*. Nickname "Website API", created 2026-05-05.
+  This is what `GA4_MP_API_SECRET` means. It is NOT the Google Ads token.
+- **Cross-domain linking** is `Contains htownatvrentals.org` + `Contains
+  fareharbor.com`. The first **already covers `book.htownatvrentals.org`**, so
+  our booking subdomain needs no change — GA4 treats it as the same site and
+  there is no self-referral to exclude.
+- **The only GA4 cleanup at cutover: remove `fareharbor.com`** from that list.
+  Not before — the linker is load-bearing while FareHarbor is live.
+- **Tag quality "Needs Attention" is entirely FareHarbor noise.** The 3 untagged
+  pages are FareHarbor's own operator dashboard URLs
+  (`fareharbor.com/htownatvrentals/dashboard/…`), which only appear because
+  fareharbor.com is in cross-domain config and can never be tagged by us.
+  Removing fareharbor.com clears this too.
+- **Do NOT "Accept suggestion"** on the suggested domains. They are Vercel
+  preview hosts (`*.vercel.app`, including my rehearsal deploys) and
+  `dtownatvrentals.com`. Verified Dallas is NOT polluting this property: its
+  `GA_MEASUREMENT_ID` and `GOOGLE_ADS_ID` both default to `""`, are unset in
+  Vercel, and the live Dallas site loads no Google tag at all. The suggestion is
+  historical, from before the Dallas fork was cleaned up.
+
 ### Blocked / needs a person
 
 1. **Secrets.** `META_CAPI_TOKEN` and `GA4_MP_API_SECRET` must exist in
@@ -324,8 +350,16 @@ timestamp is later than the variable's before concluding anything.
 
    Same target Dallas uses — it is project-scoped, not per-domain. Verify before
    flipping the switch: `curl -sI https://book.htownatvrentals.org/htown | head -1`
-3. **Which Google Ads conversion action is currently Primary**, and whether it is
-   the GA4 import. Everything in §3 assumes it is; confirm before cutover.
+3. ~~Which Google Ads conversion action is Primary~~ — **CONFIRMED 2026-08-20.**
+   Account `631-129-2539` (H-Town ATV Rentals), goal *Purchases (Account-default
+   goal)*, conversion action **`GA4 Purchase`**, source **Website (Google
+   Analytics (GA4))**, optimization **Primary**, count Every, 90-day click
+   window, included in account-level goals, 581.60 conversions Jul 19 – Aug 15.
+   Every other action in the account shows "No recent conversions".
+
+   So §3 holds exactly as written: bidding rides on the GA4 import, and pointing
+   our booking system at `G-BQQMF72HGR` keeps that number continuous through the
+   cutover with **no Ads-side edit at all**.
 
 ---
 
@@ -437,7 +471,7 @@ by reversing the same single edit. Only Step 4 involves new credentials.
 | Meta pixel | `25974101692226269` | `1516241692811826` (hardcoded) | confirm |
 | GA4 | none | `G-BQQMF72HGR` | confirm |
 | Google Ads | none | `AW-10833387733` | confirm |
-| Primary Ads conversion | n/a | GA4 purchase import (**confirm**) | confirm |
+| Primary Ads conversion | n/a | `GA4 Purchase` (GA4 import) ✅ confirmed | confirm |
 | Marketing-site fixes §4 | ✅ | ✅ on `develop`, not deployed | ❌ |
 | Readiness gate | open | **open** — storefront is live | closed (0 bookable items) |
 
