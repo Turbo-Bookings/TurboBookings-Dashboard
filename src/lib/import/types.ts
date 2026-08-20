@@ -27,7 +27,11 @@ export type IssueCode =
   | "dst_shifted"
   | "past_datetime"
   | "slot_will_be_created"
-  | "ragged_row";
+  | "ragged_row"
+  // The export had no "Total" column, so the total was derived as Paid + Due.
+  // Non-blocking, but surfaced so the operator sees the money was computed
+  // rather than read straight from the file.
+  | "total_derived_from_paid_plus_due";
 
 export type RowIssue = {
   code: IssueCode;

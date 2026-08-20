@@ -236,11 +236,21 @@ export async function buildPlan(opts: {
 
     // Money
     const subtotalCents = parseMoneyCents(get(raw, "subtotalCents") || get(raw, "totalCents"));
-    const totalCents = parseMoneyCents(get(raw, "totalCents"));
     const taxCents = parseMoneyCents(get(raw, "taxCents")) ?? 0;
     const paidCents = parseMoneyCents(get(raw, "paidCents")) ?? 0;
     const dueParsed = parseMoneyCents(get(raw, "dueCents"));
+
+    // FareHarbor's "Custom bookings report" ships Subtotal / Total Paid /
+    // Amount Due but NO "Total" column, so the header mapper has nothing to
+    // bind `totalCents` to and every row used to fail on missing_total. Paid +
+    // Due is the booking total by definition, and unlike Subtotal it includes
+    // tax and fees — deriving it is strictly better than rejecting the file or
+    // falling back to a pre-tax number that would understate what is owed.
+    const totalParsed = parseMoneyCents(get(raw, "totalCents"));
+    const totalCents =
+      totalParsed ?? (dueParsed != null ? paidCents + dueParsed : null);
     if (totalCents == null) issues.push(issue("missing_total"));
+    else if (totalParsed == null) issues.push(issue("total_derived_from_paid_plus_due"));
     if (subtotalCents == null) issues.push(issue("bad_money", "subtotal"));
 
     // Units + rider mix
