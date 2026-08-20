@@ -74,6 +74,31 @@ const SHARED_FAQS = [
   },
 ];
 
+// The buggy reuses the shared FAQ set, restating the two answers that are
+// specific to riding an ATV: the deposit is per vehicle rather than per person,
+// and the capacity is 4 riders rather than a 400 lb / 2-rider ATV limit. Both
+// come from the operator's own published copy (htownatvrentals.org pricing +
+// FAQ pages). The age/ID answer is left as-is because no published source says
+// who may drive the buggy — see the note at the end of this script.
+const BUGGY_FAQS = SHARED_FAQS.map((f) => {
+  if (f.q === "What does my $20 online deposit cover?")
+    return {
+      q: f.q,
+      a: "Your $20 deposit covers a portion of your buggy rental. The remaining balance is paid upon arrival, along with your park admission fee of $20 per person to enter the ATV park.",
+    };
+  if (f.q === "Is there a weight limit?")
+    return {
+      q: "How many people fit in the buggy?",
+      a: "The Four Seater Buggy (a Honda Talon) holds up to 4 riders, including the driver.",
+    };
+  if (f.q === "What is included with every tour?")
+    return {
+      q: f.q,
+      a: "Every booking includes a one-hour guided tour led by trained staff, DOT-approved helmets, on-site safety training, and free professional action photos; you'll ride across 1,000 acres of off-road terrain including mud holes, forest trails, and beach sections.",
+    };
+  return f;
+});
+
 type TourSpec = {
   name: string;
   descriptionMd: string;
@@ -117,9 +142,9 @@ const GLOW: TourSpec = {
   ],
   minAge: 3,
   languages: ["English", "Spanish"],
-  // FareHarbor caps the glow tour at 30, NOT the day tour's 65. Fewer lit
-  // machines, so this is a real operational limit — do not "correct" it to 65.
-  groupSizeLabel: "Up to 30 ATVs",
+  // FareHarbor's listing says 30; the operator confirmed 2026-08-20 that the
+  // real cap is the same 65 as the day tour, so FareHarbor is the stale one.
+  groupSizeLabel: "Up to 65 ATVs",
   faqs: SHARED_FAQS,
   sortOrder: 1,
   pricing: [
@@ -130,21 +155,36 @@ const GLOW: TourSpec = {
 
 const BUGGY: TourSpec = {
   name: "Four Seater Buggy Tour",
-  // FareHarbor "Details" verbatim. Its listing has no included/highlights/FAQ
-  // sections at all, so those stay empty here rather than being invented —
-  // see the note printed at the end of this script.
+  // FareHarbor "Details" verbatim. FareHarbor's buggy listing has no
+  // included/highlights/FAQ sections, so everything below it is filled from the
+  // operator's OWN published copy — htownatvrentals.org and the FareHarbor ATV
+  // listings — rather than written fresh. Nothing here is invented.
   descriptionMd:
-    "Looking for something fun to do? Roll on in and join the crew with H-Town ATV Rentals to have a great adventure. If you seek the chance to ride and get dirty, you've come to the right place! With every turn and bump is a new adrenaline rush of adventure. Through the mud, the dirt, in the sun, and the rain. You don't want to miss your chance to experience these trails with the best tour guides. NO experience necessary!",
+    "Looking for something fun to do? Roll on in and join the crew with H-Town ATV Rentals to have a great adventure. If you seek the chance to ride and get dirty, you've come to the right place! With every turn and bump is a new adrenaline rush of adventure. Through the mud, the dirt, in the sun, and the rain. You don't want to miss your chance to experience these trails with the best tour guides. NO experience necessary!\r\n\r\n**Reserve today for only $20 with your remaining balance and park admission fee due upon arrival**",
   durationMinutes: 60,
-  highlights: [],
-  included: [],
-  whatToBring: [],
+  highlights: [
+    "Honda Talon side-by-side — up to 4 riders in one buggy",
+    "Everyone rides together instead of each driving their own machine",
+    "Same 1,000 acres of mud holes, forest trails, and beach sections",
+    "Roll cage and seatbelts — the pick for families with younger kids",
+  ],
+  included: [
+    "One-hour guided tour",
+    "Four Seater Buggy rental",
+    "DOT certified helmet",
+    "On-site safety training",
+    "Free photos from guides",
+  ],
+  whatToBring: [
+    "Clothes you are comfortable getting dirty",
+    "Closed-toe shoes (Crocs and slides acceptable)",
+  ],
   minAge: 3,
   languages: ["English", "Spanish"],
   groupSizeLabel: "1 buggy (fits 4 riders)",
-  faqs: [],
+  faqs: BUGGY_FAQS,
   sortOrder: 2,
-  pricing: [{ singular: "UTV", priceCents: 37000, resource: "UTV" }],
+  pricing: [{ singular: "UTV", priceCents: 35000, resource: "UTV" }],
 };
 
 // Resources and customer types the tours above depend on. Created only if
