@@ -278,6 +278,34 @@ the cookies carry natively. It matches nothing and goes inert. Dallas never had 
 - `book.htownatvrentals.org` added to the `bookingsystem` Vercel project.
   Ownership verified; inert until DNS points at it.
 
+### Cutover rehearsed on a preview — 2026-08-20
+
+`NEXT_PUBLIC_BOOKING_ORIGIN` is set on the **Preview scope only**, so every
+`develop` build deploys in the post-cutover state while production stays on
+FareHarbor. Both were then measured in a live browser, same page, same moment:
+
+| | Preview (switch ON) | Production (switch OFF) |
+|---|---|---|
+| Book CTAs | 4 → `book.htownatvrentals.org`, deep-linked per tour | FareHarbor embed |
+| FareHarbor CTAs left | **0** | 4 |
+| Meta event on Book click | **`trackCustom BookClick`** | `track InitiateCheckout` |
+| GA event on Book click | `book_click` | GA InitiateCheckout |
+| GA linker domain | `book.htownatvrentals.org` | `fareharbor.com` |
+| FareHarbor lightframe | not loaded | loaded |
+| Pixel / GA4 / Ads ids | `1516241692811826` / `G-BQQMF72HGR` / `AW-10833387733` | same |
+
+The InitiateCheckout double-count is therefore fixed **and proven at runtime**,
+not just in the diff — and production is provably unchanged.
+
+**Keep this preview variable in place.** It means any future `develop` build is a
+free rehearsal, and it makes the production flip a variable copy rather than a
+first attempt.
+
+**Rehearsal gotcha:** the first preview I tested was built minutes BEFORE the env
+var existed, so it looked unflipped and suggested the switch was broken. Vercel
+bakes `NEXT_PUBLIC_*` at build time — always confirm the deployment's created
+timestamp is later than the variable's before concluding anything.
+
 ### Blocked / needs a person
 
 1. **Secrets.** `META_CAPI_TOKEN` and `GA4_MP_API_SECRET` must exist in
