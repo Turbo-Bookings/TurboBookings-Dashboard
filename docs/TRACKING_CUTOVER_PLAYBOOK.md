@@ -375,6 +375,38 @@ Step 2 reconciliation possible at zero risk.
 2. `book.peek.com` remains registered in the account. Harmless, but worth
    removing on a tidy-up pass.
 
+### Houston tracking readiness — 11/11 as of 2026-08-20
+
+| | |
+|---|---|
+| Catalog — bookable tours | 3/3 |
+| Availability schedules | 3/3 |
+| Future slots materialized | 14,050 |
+| Stripe Connect | connected |
+| Meta pixel | `1516241692811826` |
+| Meta CAPI enabled | true |
+| `META_CAPI_TOKEN` | stored, decrypts |
+| GA4 measurement id | `G-BQQMF72HGR` |
+| `GA4_MP_API_SECRET` | stored, decrypts |
+| Google Ads conversion id | `AW-10833387733` |
+| Google Ads purchase label | `lJydCJiOk-UcENXB4a0o` |
+
+Both secrets were verified by decrypting them through the same AES-256-GCM path
+`bookingsystem` uses — not merely "the form said saved". The check also asserts
+no leading/trailing whitespace, because a stray space from a paste produces a
+credential that looks correct in the UI and fails every API call silently.
+
+### What remains before cutover
+
+1. Merge `htown-atv-rentals-site` `develop` → `main` (Phase 1: the single-env-var
+   cutover switch). Deploys with the switch OFF — no behaviour change.
+2. Import the FareHarbor CSV **last**, so it captures every booking taken right up
+   to the switch. Deliberate: importing earlier leaves a gap of bookings made on
+   FareHarbor between the export and the flip.
+3. Set `NEXT_PUBLIC_BOOKING_ORIGIN=https://book.htownatvrentals.org` on the
+   **Production** scope and redeploy. That is the cutover.
+4. Remove `fareharbor.com` from GA4 cross-domain linking (§9), after the flip.
+
 ### Blocked / needs a person
 
 1. **Secrets.** `META_CAPI_TOKEN` and `GA4_MP_API_SECRET` must exist in
