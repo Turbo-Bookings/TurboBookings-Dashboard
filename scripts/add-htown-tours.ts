@@ -74,12 +74,11 @@ const SHARED_FAQS = [
   },
 ];
 
-// The buggy reuses the shared FAQ set, restating the two answers that are
+// The buggy reuses the shared FAQ set, restating the three answers that are
 // specific to riding an ATV: the deposit is per vehicle rather than per person,
-// and the capacity is 4 riders rather than a 400 lb / 2-rider ATV limit. Both
-// come from the operator's own published copy (htownatvrentals.org pricing +
-// FAQ pages). The age/ID answer is left as-is because no published source says
-// who may drive the buggy — see the note at the end of this script.
+// capacity is 4 riders rather than a 400 lb / 2-rider ATV limit, and the driver
+// must be 16+ rather than the ATV's 12+ (operator-confirmed 2026-08-20; the
+// rest of that answer is unchanged from the published ATV version).
 const BUGGY_FAQS = SHARED_FAQS.map((f) => {
   if (f.q === "What does my $20 online deposit cover?")
     return {
@@ -91,10 +90,10 @@ const BUGGY_FAQS = SHARED_FAQS.map((f) => {
       q: "How many people fit in the buggy?",
       a: "The Four Seater Buggy (a Honda Talon) holds up to 4 riders, including the driver.",
     };
-  if (f.q === "What is included with every tour?")
+  if (f.q === "What are the age and ID requirements?")
     return {
       q: f.q,
-      a: "Every booking includes a one-hour guided tour led by trained staff, DOT-approved helmets, on-site safety training, and free professional action photos; you'll ride across 1,000 acres of off-road terrain including mud holes, forest trails, and beach sections.",
+      a: "Drivers must be 16 or older to operate the buggy. No age limit for passengers. Waiver signers must be 18 or older. No driver’s license required, but a valid ID is held at check-in as collateral (a phone photo of ID is accepted and the phone is held).",
     };
   return f;
 });
