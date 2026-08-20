@@ -404,9 +404,29 @@ credential that looks correct in the UI and fails every API call silently.
    booking-app CTAs, linker still on `fareharbor.com`, lightframe still loading,
    Book click still firing `track InitiateCheckout`. Cutover day is now one
    environment variable and one CSV.
-2. Import the FareHarbor CSV **last**, so it captures every booking taken right up
-   to the switch. Deliberate: importing earlier leaves a gap of bookings made on
-   FareHarbor between the export and the flip.
+2. ~~Import the FareHarbor CSV~~ — **DONE 2026-08-20**: 303 bookings, $73,587.23
+   of value, $59,967.23 due at venue. Zero duplicates; a re-run is a clean no-op.
+   Only the CSV's own "3 items" footer row was rejected.
+
+   | Tour | Bookings | Units | Value |
+   |---|---|---|---|
+   | 1-Hour ATV Tour | 184 | 381 | $44,301.21 |
+   | Night ATV Glow Tour | 116 | 244 | $27,932.91 |
+   | Four Seater Buggy Tour | 3 | 3 | $1,353.11 |
+
+   Needed a new `--map-item` flag: Houston's export calls it *"H-Town 1 Hour ATV
+   Tour"* where we call it *"1-Hour ATV Tour"*, which left 184 of 303 rows
+   `unmapped_item`. **Miami will need the same** — check the tour names in its
+   export against ours BEFORE importing, not after.
+
+   Capacity is comfortable: busiest slot is 32 of 65 ATVs, nothing over.
+
+   ⚠️ **Buggy pricing is worth a look.** The three imported buggy bookings show
+   subtotals of $390 and $430, not the $350 in our catalog. Totals were preserved
+   via `subtotal_cents_override`, so the money is right and nothing is broken —
+   but either the buggy is genuinely priced above $350 in FareHarbor, or those
+   bookings carried add-ons. Worth confirming before the storefront sells it at
+   $350.
 3. Set `NEXT_PUBLIC_BOOKING_ORIGIN=https://book.htownatvrentals.org` on the
    **Production** scope and redeploy. That is the cutover.
 4. Remove `fareharbor.com` from GA4 cross-domain linking (§9), after the flip.
