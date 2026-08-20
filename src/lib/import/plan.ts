@@ -86,6 +86,17 @@ export async function buildPlan(opts: {
   delimiter: string;
   /** Create one-off slots for datetimes with no materialized availability. */
   allowSlotCreate: boolean;
+  /**
+   * Record bookings even where the slot is already at or over capacity.
+   *
+   * The capacity guard exists to stop US from selling a seat that does not
+   * exist. It is the wrong tool for an import, where the booking ALREADY
+   * happened in the source system and the customer will arrive regardless —
+   * refusing the row does not free an ATV, it just means our manifest is
+   * missing someone who shows up. Off by default so a normal import still
+   * catches a genuine mistake.
+   */
+  allowOverbook?: boolean;
 }): Promise<ImportPlan> {
   const db = getDb();
   const [loc] = await db.select().from(locations).where(eq(locations.slug, opts.slug)).limit(1);
@@ -363,14 +374,21 @@ export async function buildPlan(opts: {
     cur.over = cap != null && cur.existingUnits + cur.incomingUnits > cap;
     pressure.set(key, cur);
   }
-  // Flag the rows sitting in an over-subscribed slot.
+  // Flag the rows sitting in an over-subscribed slot. Under --allow-overbook
+  // this is still reported on every affected row, just not blocking, so the
+  // operator gets an explicit list of the slots their team has to call.
   for (const r of rows) {
     if (r.blocked || r.alreadyImported || !r.itemId) continue;
     const key = r.availabilityId ?? `new:${r.itemId}@${r.startsAt?.getTime()}`;
     const p = pressure.get(key);
     if (p?.over) {
-      r.issues.push(issue("insufficient_capacity", `${p.existingUnits + p.incomingUnits} of ${p.capacity}`));
-      r.blocked = true;
+      const detail = `${p.existingUnits + p.incomingUnits} of ${p.capacity}`;
+      if (opts.allowOverbook) {
+        r.issues.push(issue("overbooked_slot", detail));
+      } else {
+        r.issues.push(issue("insufficient_capacity", detail));
+        r.blocked = true;
+      }
     }
   }
 

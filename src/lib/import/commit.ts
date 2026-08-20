@@ -21,8 +21,14 @@ import type { ImportResult, PlannedRow, RowOutcome } from "./types";
 //   no Stripe call, no confirmation/reminder email, no Meta CAPI, no
 //   booking.created event, no discount redemption or usedCount bump, no
 //   required-acknowledgment enforcement, no repricing.
-// Intentionally KEPT: the FOR UPDATE slot lock, the capacity re-check, and a
-// per-row savepoint so one bad row can't take down the batch.
+// Intentionally KEPT: the FOR UPDATE slot lock and a per-row savepoint so one
+// bad row can't take down the batch.
+//
+// NOTE: this comment used to claim a commit-time capacity re-check as well.
+// There isn't one — the lock is taken but nothing compares against capacity.
+// Capacity is enforced only when the plan is built. That is fine for the
+// single-operator CLI flow, and it is what makes --allow-overbook work at all,
+// but two imports running concurrently would not catch each other.
 
 const CHUNK = 100;
 

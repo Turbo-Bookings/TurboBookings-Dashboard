@@ -12,6 +12,11 @@
  *   --slug=<location>   which location to import into
  *   --commit            actually write (otherwise report only)
  *   --create-slots      create one-off availabilities for unmatched datetimes
+ *   --allow-overbook    import rows whose slot is already at/over capacity.
+ *                       The booking already happened in the source system, so
+ *                       refusing it does not free a vehicle — it just hides
+ *                       someone who will show up. Affected rows are listed as
+ *                       `overbooked_slot` so the team knows who to call.
  *   --arm-reminders     schedule 24h/2h reminders for ALREADY-imported bookings
  *                       (no confirmation, no review) — run this once the new
  *                       system is live and FareHarbor's own reminders are off
@@ -198,6 +203,7 @@ async function main() {
     fileName: basename(file),
     delimiter,
     allowSlotCreate: flag("create-slots"),
+    allowOverbook: flag("allow-overbook"),
   });
 
   report(plan, commit);

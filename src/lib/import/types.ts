@@ -31,7 +31,11 @@ export type IssueCode =
   // The export had no "Total" column, so the total was derived as Paid + Due.
   // Non-blocking, but surfaced so the operator sees the money was computed
   // rather than read straight from the file.
-  | "total_derived_from_paid_plus_due";
+  | "total_derived_from_paid_plus_due"
+  // Imported into a slot that is already at or over capacity, under
+  // --allow-overbook. Non-blocking by design: the booking exists in the source
+  // system whether or not we record it. These are the rows to call.
+  | "overbooked_slot";
 
 export type RowIssue = {
   code: IssueCode;
