@@ -216,6 +216,19 @@ export const locations = pgTable("locations", {
   venueFeeInPlatformFeeBase: boolean("venue_fee_in_platform_fee_base")
     .notNull()
     .default(false),
+  // How the venue fee appears to the customer.
+  //
+  //   true  — its own line in the breakdown, and inside the quoted cash due at
+  //           check-in. Exact, but it inflates the visible Total: a 3-rider ATV
+  //           booking jumps from $267.80 to $327.80 next to a $57.80 deposit.
+  //   false — kept out of every quoted figure and explained by a `notice` field
+  //           instead. The Total reflects only money that moves through us.
+  //
+  // In notice mode the fee is absent from `balanceDueAtVenueCents` too, so it
+  // also leaves the manifest. That is correct only when the VENUE collects the
+  // admission directly; if the operator's own staff take it at check-in, this
+  // must stay itemized or they will under-collect.
+  venueFeeItemized: boolean("venue_fee_itemized").notNull().default(true),
 
   // Optional FK to cancellation policy — null until policy is configured.
   // Self-referencing FK pattern: defined as nullable text(uuid) here and

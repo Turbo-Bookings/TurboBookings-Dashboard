@@ -164,6 +164,25 @@ export function TaxesFeesForm({
           </div>
         </div>
         {err.venueFee && <p className="mt-2 text-xs text-red-600">{err.venueFee}</p>}
+
+        <div className="mt-4">
+          <label className={label}>How the customer sees it</label>
+          <select name="venueFeeItemized" defaultValue={v.venueFeeItemized ? "1" : "0"} className={input}>
+            <option value="1">Its own line in the price breakdown</option>
+            <option value="0">Not in the price — explained by a notice</option>
+          </select>
+          <p className="mt-1 text-xs text-zinc-500">
+            A line in the breakdown is exact, but it raises the Total the customer
+            sees. Leaving it out keeps the Total to money that moves through us —
+            add a <span className="font-medium">Notice</span> field to the tour so
+            they still know to bring cash.
+            <span className="mt-1 block font-medium text-amber-700 dark:text-amber-500">
+              Leaving it out also removes it from the check-in manifest. Only use
+              that if the venue takes the admission itself — if your staff collect
+              it, keep the line or they&rsquo;ll come up short.
+            </span>
+          </p>
+        </div>
       </section>
 
       {err.form && <p className="text-sm text-red-600">{err.form}</p>}

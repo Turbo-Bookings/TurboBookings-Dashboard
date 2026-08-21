@@ -25,3 +25,11 @@ ALTER TABLE "customer_types"
 -- it is a deliberate commercial choice rather than a default.
 ALTER TABLE "locations"
   ADD COLUMN IF NOT EXISTS "venue_fee_in_platform_fee_base" boolean DEFAULT false NOT NULL;
+
+-- Whether the venue fee gets its own line in the customer's breakdown (and sits
+-- inside the quoted cash at check-in), or is kept out of every quoted figure and
+-- explained by a notice instead. Itemized is the default and the safe one: in
+-- notice mode the fee also leaves the manifest, which is only correct when the
+-- venue collects the admission directly rather than the operator's own staff.
+ALTER TABLE "locations"
+  ADD COLUMN IF NOT EXISTS "venue_fee_itemized" boolean DEFAULT true NOT NULL;

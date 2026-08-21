@@ -47,6 +47,7 @@ export default async function TaxesFeesPage({ params }: Props) {
           venueFeeAmount: loc.venueFeePerPersonCents ? String(loc.venueFeePerPersonCents / 100) : "",
           venueFeeLabel: loc.venueFeeLabel ?? "",
           venueFeeInPlatformFeeBase: loc.venueFeeInPlatformFeeBase,
+          venueFeeItemized: loc.venueFeeItemized,
         }}
       />
     </section>

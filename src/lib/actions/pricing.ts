@@ -25,6 +25,7 @@ export type TaxesFeesState = {
     venueFeeAmount: string;
     venueFeeLabel: string;
     venueFeeInPlatformFeeBase: boolean;
+    venueFeeItemized: boolean;
   };
 };
 
@@ -43,6 +44,9 @@ function parse(formData: FormData): TaxesFeesState["values"] {
     venueFeeAmount: String(formData.get("venueFeeAmount") ?? "").trim(),
     venueFeeLabel: String(formData.get("venueFeeLabel") ?? "").trim(),
     venueFeeInPlatformFeeBase: formData.get("venueFeeInPlatformFeeBase") === "1",
+    // A <select>, not a checkbox — it always posts, so absence can't silently
+    // flip a location back to the default mid-season.
+    venueFeeItemized: String(formData.get("venueFeeItemized") ?? "1") !== "0",
   };
 }
 
@@ -125,6 +129,7 @@ export async function updateTaxesFees(
       depositPercentBps,
       venueFeePerPersonCents,
       venueFeeLabel: values.venueFeeLabel || null,
+      venueFeeItemized: values.venueFeeItemized,
       updatedAt: new Date(),
     })
     .where(eq(locations.id, location.id));
@@ -138,6 +143,7 @@ export async function updateTaxesFees(
       fee: canFee ? fee : undefined,
       venueFeeInPlatformFeeBase: canFee ? values.venueFeeInPlatformFeeBase : undefined,
       venueFeePerPersonCents,
+      venueFeeItemized: values.venueFeeItemized,
       depositMode: values.depositMode,
     },
   });
