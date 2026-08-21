@@ -6,7 +6,16 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 # What this project is
 
-**TurboBookings Dashboard** — a multi-tenant client portal that sits above the per-location ATV-tour marketing sites. Lives at `dashboard.turbobookings.net`. Operator owns / co-owns the location LLCs (Miami minority-owner, HTown + DTown operator-owned, 3-5 more planned in 12 months). Long-term monetization: monthly subscription + add-ons (SEO, email marketing, AI chatbot, voice receptionist).
+**TurboBookings Dashboard** — a multi-tenant client portal that sits above the per-location ATV-tour marketing sites. Lives at `dashboard.turbobookings.net`. Long-term monetization: monthly subscription + add-ons (SEO, email marketing, AI chatbot, voice receptionist).
+
+**Who owns what** (this has been misread before — the two kinds of location are not the same business relationship):
+
+| Location | Relationship | What that means |
+| --- | --- | --- |
+| **Miami** (`miami`) | Selmen is a **minority owner** of the LLC | Partly our own business. More latitude on pricing and terms; the 6% is partly paying ourselves. Its marketing site (`~/takeovers-site`) is also the template every fork comes from. |
+| **Dallas** (`dtown`), **Houston** (`htown`) | **Operator clients** — owned by the operator (Richard), not by us | Third parties. Commercial terms have to be documented and disclosed, not assumed. We cannot reach into their Stripe, Radar or bank settings; anything there needs the owner to do it. |
+
+3–5 more planned in 12 months, and those will be **operator clients** like Dallas and Houston — so per-operator friction (Radar config, Stripe onboarding, agreement language) is the thing that scales badly, not per-location catalog work.
 
 The approved plan lives at `~/.claude/plans/snazzy-jingling-squirrel.md` — read it before any non-trivial changes.
 
