@@ -25,7 +25,7 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { denyIfCannot } from "@/lib/auth/roles";
-import { getCancellationRefund } from "@/lib/booking/refund";
+import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { withTxn } from "@/lib/db/txn";
 import {
@@ -304,6 +304,143 @@ export async function cancelBooking(
   });
   await emitLifecycle(location, bookingId, "booking.cancelled");
   await onBookingCancelled(bookingId);
+  revalidate(slug, bookingId);
+  return { ok: true };
+}
+
+/**
+ * Refund an operator-chosen amount, overriding the cancellation policy.
+ *
+ * `cancelBooking` can only ever refund what the policy computes, which is
+ * correct for a customer-initiated cancellation and useless for everything
+ * else: a goodwill refund, a weather call, an operator error, a test booking.
+ * Miami's policy is 5 days' notice, so a booking made and cancelled the same
+ * day computed $0.00 and the dashboard offered no way to do the right thing —
+ * the operator had to leave the product and refund inside Stripe, where our
+ * database then knew nothing about it.
+ *
+ * Gated on `manage_platform` (admin+) rather than `refund` (director+). Cancelling
+ * per policy is routine staff work; moving an arbitrary amount of money against
+ * the policy is not, and the whole point of this action is that it ignores the
+ * rule that normally bounds the number.
+ *
+ * Deliberately separate from cancelling. A refund and a cancellation are
+ * different events — you can refund a customer who is still coming, and you can
+ * cancel someone who is owed nothing — so `alsoCancel` is opt-in.
+ */
+export async function refundBookingOverride(
+  slug: string,
+  bookingId: string,
+  amountCents: number,
+  reason: string,
+  alsoCancel: boolean,
+): Promise<Result> {
+  const deny = await denyIfCannot("manage_platform", slug);
+  if (deny) return { ok: false, error: deny };
+
+  const reasonText = reason.trim();
+  // An override leaves no policy trail to explain itself, so the reason IS the
+  // record. Required, unlike on a policy cancellation.
+  if (!reasonText) return { ok: false, error: "A reason is required for an override refund." };
+
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const db = getDb();
+  const b = (
+    await db
+      .select()
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.locationId, location.id)))
+      .limit(1)
+  )[0];
+  if (!b) return { ok: false, error: "Booking not found" };
+
+  const amount = Math.round(amountCents);
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { ok: false, error: "Enter a refund amount greater than zero." };
+
+  const pays = await db.select().from(payments).where(eq(payments.bookingId, bookingId));
+  const eligible = pays.filter(
+    (p) =>
+      p.stripePaymentIntentId &&
+      (p.status === "succeeded" || p.status === "partially_refunded") &&
+      p.amountCents - p.refundedAmountCents > 0,
+  );
+  const refundable = stripeRefundableCents(pays);
+  // Re-checked here rather than trusted from the form: Stripe would reject an
+  // over-refund anyway, but only after we had already refunded earlier payments
+  // in the loop, leaving a partial result behind.
+  if (amount > refundable)
+    return {
+      ok: false,
+      error: `Only $${(refundable / 100).toFixed(2)} is still refundable on this booking.`,
+    };
+
+  let remaining = amount;
+  for (const p of eligible) {
+    if (remaining <= 0) break;
+    const amt = Math.min(remaining, p.amountCents - p.refundedAmountCents);
+    try {
+      await refundPayment(p.stripePaymentIntentId!, location.stripeAccountId, amt);
+    } catch (err) {
+      // Stop rather than continue: whatever already succeeded is recorded below,
+      // so a partial refund is visible instead of silently double-attempted.
+      const done = amount - remaining;
+      if (done > 0)
+        await db
+          .update(bookings)
+          .set({ refundedCents: b.refundedCents + done, updatedAt: new Date() })
+          .where(eq(bookings.id, bookingId));
+      return {
+        ok: false,
+        error: `Refund failed after $${(done / 100).toFixed(2)}: ${
+          err instanceof Error ? err.message : "unknown"
+        }`,
+      };
+    }
+    const newRefunded = p.refundedAmountCents + amt;
+    await db
+      .update(payments)
+      .set({
+        refundedAmountCents: newRefunded,
+        status: newRefunded >= p.amountCents ? "refunded" : "partially_refunded",
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, p.id));
+    remaining -= amt;
+  }
+  const refunded = amount - remaining;
+
+  await db
+    .update(bookings)
+    .set({
+      refundedCents: b.refundedCents + refunded,
+      ...(alsoCancel && b.status === "active"
+        ? {
+            status: "cancelled" as const,
+            cancelledAt: new Date(),
+            cancellationReason: reasonText,
+          }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(bookings.id, bookingId));
+
+  await recordAudit({
+    slug,
+    action: "catalog.booking.refund_override",
+    summary: `Override refund $${(refunded / 100).toFixed(2)} on #${b.displayNumber}${
+      alsoCancel ? " · cancelled" : " · booking kept"
+    } — ${reasonText}`,
+    payload: { bookingId, refundedCents: refunded, reason: reasonText, alsoCancel },
+  });
+
+  // Only on an actual cancellation. Firing these for a goodwill refund would
+  // tell the customer their booking was cancelled when it is still on.
+  if (alsoCancel && b.status === "active") {
+    await emitLifecycle(location, bookingId, "booking.cancelled");
+    await onBookingCancelled(bookingId);
+  }
   revalidate(slug, bookingId);
   return { ok: true };
 }
@@ -1132,6 +1269,10 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     riderTypes: tour && tour.ok ? tour.pricing : [],
     tz: location.timezone ?? "America/Chicago",
     hasCardOnFile: !!detail.cardOnFile,
+    // Computed here rather than in the modal: refund.ts is server-only, and the
+    // modal is a client component. Keeps the override's ceiling identical to
+    // the one refundBookingOverride enforces.
+    refundableCents: stripeRefundableCents(detail.payments),
   };
 }
 

@@ -225,6 +225,7 @@ function Body({
           status={b.status}
           refundLabel={refund.label}
           refundCents={refund.refundCents}
+          refundableCents={data.refundableCents}
           hasCardOnFile={hasCardOnFile}
           holds={detail.holds.map((h) => ({ id: h.hold.id, status: h.hold.status, amountCents: h.hold.amountCents }))}
           onChanged={reload}

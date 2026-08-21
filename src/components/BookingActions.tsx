@@ -5,8 +5,10 @@ import {
   cancelBooking,
   captureHold,
   placeHold,
+  refundBookingOverride,
   releaseHold,
 } from "@/lib/actions/bookings";
+import { useCaps } from "@/components/CapabilitiesProvider";
 
 function usd(c: number): string {
   return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -20,6 +22,8 @@ type Props = {
   status: string;
   refundLabel: string;
   refundCents: number;
+  /** Still refundable on Stripe payments — the ceiling for an override. */
+  refundableCents: number;
   hasCardOnFile: boolean;
   holds: Hold[];
   onChanged?: () => void;
@@ -31,6 +35,7 @@ export function BookingActions({
   status,
   refundLabel,
   refundCents,
+  refundableCents,
   hasCardOnFile,
   holds,
   onChanged,
@@ -39,6 +44,10 @@ export function BookingActions({
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [holdDollars, setHoldDollars] = useState("100");
+  const [overrideDollars, setOverrideDollars] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overrideCancel, setOverrideCancel] = useState(true);
+  const caps = useCaps();
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -149,6 +158,88 @@ export function BookingActions({
               Cancel booking
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Override refund — admin only.
+          The policy figure above is the right default and the wrong answer for
+          a goodwill refund, a weather call, an operator mistake or a test
+          booking. Without this the only way to refund against policy is inside
+          Stripe, where our own database never learns it happened. */}
+      {caps.manage_platform && refundableCents > 0 && (
+        <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Refund a different amount
+          </p>
+          <p className="mt-1 text-xs text-zinc-500">
+            Overrides the cancellation policy. {usd(refundableCents)} still
+            refundable. The platform fee comes back too, prorated.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-zinc-500">
+                $
+              </span>
+              <input
+                value={overrideDollars}
+                onChange={(e) => setOverrideDollars(e.target.value)}
+                inputMode="decimal"
+                placeholder="0.00"
+                className="w-28 rounded-md border border-zinc-300 py-1 pl-5 pr-2 text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-900"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => setOverrideDollars((refundableCents / 100).toFixed(2))}
+              className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Full ({usd(refundableCents)})
+            </button>
+            <input
+              value={overrideReason}
+              onChange={(e) => setOverrideReason(e.target.value)}
+              placeholder="Reason (required)"
+              className="w-56 rounded-md border border-zinc-300 px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
+          {active && (
+            <label className="mt-2 flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+              <input
+                type="checkbox"
+                checked={overrideCancel}
+                onChange={(e) => setOverrideCancel(e.target.checked)}
+                className="h-3.5 w-3.5"
+              />
+              Also cancel this booking and free the slot
+            </label>
+          )}
+          <button
+            type="button"
+            disabled={pending || !overrideReason.trim() || !(Number(overrideDollars) > 0)}
+            onClick={() => {
+              const cents = Math.round(Number(overrideDollars) * 100);
+              if (!(cents > 0)) return;
+              if (
+                window.confirm(
+                  `Refund ${usd(cents)}${
+                    overrideCancel && active ? " and cancel the booking" : " and keep the booking active"
+                  }? This can't be undone.`,
+                )
+              )
+                run(() =>
+                  refundBookingOverride(
+                    slug,
+                    bookingId,
+                    cents,
+                    overrideReason,
+                    overrideCancel && active,
+                  ),
+                );
+            }}
+            className="mt-2 rounded-md border border-red-300 px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            Refund {Number(overrideDollars) > 0 ? usd(Math.round(Number(overrideDollars) * 100)) : ""}
+          </button>
         </div>
       )}
 

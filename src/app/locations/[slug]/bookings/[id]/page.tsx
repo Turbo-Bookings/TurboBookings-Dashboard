@@ -6,7 +6,7 @@ import { BookingActions } from "@/components/BookingActions";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
-import { getCancellationRefund } from "@/lib/booking/refund";
+import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
@@ -81,6 +81,7 @@ export default async function BookingDetailPage({ params }: Props) {
         status={b.status}
         refundLabel={refund.label}
         refundCents={refund.refundCents}
+        refundableCents={stripeRefundableCents(d.payments)}
         hasCardOnFile={!!d.cardOnFile}
         holds={holds.map((h) => ({
           id: h.hold.id,

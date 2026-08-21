@@ -107,3 +107,29 @@ export async function getCancellationRefund(
         : "No refund (outside the cancellation window)",
   };
 }
+
+/**
+ * What can actually be refunded through the dashboard, in cents.
+ *
+ * Deliberately stricter than `paidRefundableCents` above, which counts ALL
+ * captured money: cash and OTA payments moved outside the platform, so we
+ * cannot hand them back and must not offer to. Sharing one definition between
+ * the override UI and `refundBookingOverride` is the point — when the two
+ * disagreed, the form offered a ceiling the action then refused.
+ */
+export function stripeRefundableCents(
+  pays: {
+    stripePaymentIntentId: string | null;
+    status: string;
+    amountCents: number;
+    refundedAmountCents: number;
+  }[],
+): number {
+  return pays
+    .filter(
+      (p) =>
+        p.stripePaymentIntentId &&
+        (p.status === "succeeded" || p.status === "partially_refunded"),
+    )
+    .reduce((s, p) => s + Math.max(0, p.amountCents - p.refundedAmountCents), 0);
+}
