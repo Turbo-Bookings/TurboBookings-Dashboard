@@ -5,7 +5,74 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
-> ### ▶ STATE AS OF 2026-08-21 — Dallas AND Houston are live; **Miami is next**
+> ### ▶ STATE AS OF 2026-08-21 (end of session) — Dallas AND Houston live; **Miami is next**
+>
+> **Legal / terms work landed this session — read `docs/LEGAL_AND_TERMS.md` first.**
+> The platform fee is now RETURNED on refunds (this reversed the 2026-08-18
+> decision — item 2 below is rewritten, and anything else you find saying "keep
+> the fee" is stale). A `terms_acceptances` record exists and is deliberately
+> switched OFF until counsel delivers wording.
+>
+> **Shipped since Houston went live:** booking notes are writable and visible to
+> check-in; the customer booking flow has named back links and a footer with the
+> marketing-site link, phone and support email; `npm run location:preflight`
+> checks a location before launch; `npm run terms:status` prints the acceptance
+> record.
+>
+> **Verified healthy 2026-08-21:** transactional email is working — Dallas has
+> sent 94 across all seven types with **0 overdue**, Houston 5. The old warning
+> that reminders and the retainer had "never been observed working" is resolved
+> for email. 5 errored sends total (1 abandoned-cart, 4 post-tour-review) are
+> worth a look but are not blocking.
+>
+> #### ⚠ Known-open, not blocking Miami
+> - **Houston reminders are NOT armed.** 317 imported FareHarbor bookings carry no
+>   24h/2h reminders — that is why htown shows only 2 and 4 pending. Run
+>   `npm run import:fh -- --slug=htown --arm-reminders` **only after** FareHarbor's
+>   own reminders are switched off for Houston, or customers get told twice.
+> - **Cockpit revenue feed has never delivered.** `outbound_event_queue` holds 188
+>   events, **0 delivered, max attempt_count 0**, oldest 2026-06-28 — the cron is
+>   not even trying because `REPLIT_WEBHOOK_URL` is unset. Decide whether to wire
+>   it or stop queueing; 188 events replayed at once when it is finally set is its
+>   own small problem.
+> - **Retainers:** Dallas configured ($3,250/mo, day 15) but `inactive` with no
+>   card; Houston unset entirely. Neither client is being billed. Selmen is
+>   handling.
+> - **Radar Lite → Standard** on both connected accounts. Free, strictly better,
+>   and only Richard can do it. See `docs/PAYMENT_RISK_AND_RADAR.md`.
+> - **Dallas's GA4 property** was never checked for the leftover `fareharbor.com`
+>   cross-domain entry. It is a different property from Houston's.
+> - **$72 owed back to Richard** from the reversed refund term — not authorised.
+>
+> ### ▶ MIAMI — what is different, and what will bite
+>
+> Miami is **not** another Houston. Three things are genuinely new:
+>
+> 1. **It is bilingual.** `takeovers-site` runs `locales: ["en", "es"]` with
+>    `[locale]` routing. **The booking app has no locale routing at all** — a
+>    Spanish-speaking visitor clicks Book and lands in English. Dallas and Houston
+>    never had this. Decide before cutover whether that is acceptable for launch.
+> 2. **The cutover switch is not ported.** `takeovers-site` has no
+>    `src/config/booking-origin.ts`. Copy it from `htown-atv-rentals-site` — and
+>    note that `takeovers-site` is **the template every fork comes from**, so
+>    porting it there improves every future location too.
+> 3. **`deposit_mode = 'full'` with a $0 amount.** "Full" means charge the entire
+>    tour online. A $350 buggy booking would take $350 at checkout instead of a
+>    deposit. Dallas and Houston are both `per_unit $20`. This is the first thing
+>    that would go wrong, and it would look like working software.
+>
+> Miami's connected Stripe account already exists (`acct_1U6FJqCy6l66XnLp`), but
+> `charges_enabled` has **not** been confirmed — the preflight cannot read it
+> without a live key, so check the Stripe Connect card on Miami's settings page,
+> which renders the flag directly.
+>
+> Everything else follows the existing playbooks: `docs/NEW_LOCATION_RUNBOOK.md`
+> for the build and the readiness gate, `docs/TRACKING_CUTOVER_PLAYBOOK.md` for
+> the tracking handover.
+>
+> ---
+>
+> ### (previous state, kept for context) Dallas AND Houston are live; **Miami is next**
 >
 > **Houston went live 2026-08-20.** `NEXT_PUBLIC_BOOKING_ORIGIN` is set on Production,
 > the marketing site carries 15 booking links and zero FareHarbor references, and all
