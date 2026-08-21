@@ -26,15 +26,32 @@
 > worth a look but are not blocking.
 >
 > #### ⚠ Known-open, not blocking Miami
-> - **Houston reminders are NOT armed.** 317 imported FareHarbor bookings carry no
->   24h/2h reminders — that is why htown shows only 2 and 4 pending. Run
->   `npm run import:fh -- --slug=htown --arm-reminders` **only after** FareHarbor's
->   own reminders are switched off for Houston, or customers get told twice.
-> - **Cockpit revenue feed has never delivered.** `outbound_event_queue` holds 188
->   events, **0 delivered, max attempt_count 0**, oldest 2026-06-28 — the cron is
->   not even trying because `REPLIT_WEBHOOK_URL` is unset. Decide whether to wire
->   it or stop queueing; 188 events replayed at once when it is finally set is its
->   own small problem.
+> - **Houston reminders are NOT armed, and cannot be armed from a dev machine.**
+>   317 imported bookings carry no 24h/2h reminders. Scheduling runs through the
+>   booking app's authenticated internal endpoint, and `vercel env pull` returns
+>   sensitive values as EMPTY STRINGS — so `INTERNAL_API_SECRET` is blank locally
+>   and nothing is scheduled. A run on 2026-08-21 reported "Requested reminders
+>   for 317 booking(s)" and created zero; that lie is fixed (the script now aborts
+>   with the reason and reports "scheduled N of M"), but the reminders are still
+>   not armed. **Put the real `INTERNAL_API_SECRET` in `.env.local` from the
+>   Vercel dashboard, then run
+>   `npm run import:fh -- --slug=htown --arm-reminders --commit`.**
+>   Do it only once FareHarbor's own reminders are off for Houston — the bookings
+>   still live in FareHarbor and it will send its own unless disabled.
+> - **Cockpit revenue feed — the pipeline is BUILT; only two env vars are missing.**
+>   `emit.ts` HMAC-signs an envelope and posts it, falling back to
+>   `outbound_event_queue`; `/api/cron/retry-events` runs EVERY MINUTE with
+>   backoff and dead-lettering, and skips cleanly when unconfigured. Set
+>   `REPLIT_WEBHOOK_URL` + `REPLIT_WEBHOOK_SECRET` and it starts working.
+>   (Naming drift, harmless: the dashboard reads `REPLIT_WEBHOOK_*`, the booking
+>   system reads `BRAIN_WEBHOOK_* ?? REPLIT_WEBHOOK_*`.)
+>   188 events are waiting — 102 `booking.created`, 49 `booking.checked_in`,
+>   20 `booking.rescheduled`, 13 `booking.cancelled`, 4 `booking.no_show`, from
+>   2026-06-28 onward. These are **complementary to FareHarbor's own webhook, not
+>   duplicates**: they are bookings taken on OUR system plus check-in, cancel and
+>   reschedule events FareHarbor never saw. Before flushing, confirm the cockpit
+>   keys off the envelope's own timestamp rather than receipt time — otherwise 49
+>   check-ins going back to June arrive looking like they happened today.
 > - **Retainers:** Dallas configured ($3,250/mo, day 15) but `inactive` with no
 >   card; Houston unset entirely. Neither client is being billed. Selmen is
 >   handling.
