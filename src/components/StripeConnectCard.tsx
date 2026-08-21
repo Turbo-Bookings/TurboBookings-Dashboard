@@ -173,10 +173,22 @@ export function StripeConnectCard({
   }
 
   // Connected — show details + actions
-  const fullySetUp =
-    status.detailsSubmitted &&
-    status.chargesEnabled &&
-    status.payoutsEnabled;
+  //
+  // Two different questions, deliberately kept apart:
+  //
+  //   canTakeMoney  — charges_enabled. THIS is the go-live gate. If it's false
+  //                   the Payment Element renders nothing and checkout is dead;
+  //                   on 2026-08-19 Houston was flipped live without checking
+  //                   it and took no payments for ~25 minutes.
+  //   fullySetUp    — charges AND payouts. Payouts commonly lag by days while
+  //                   Stripe verifies the bank account, which is normal and
+  //                   blocks nothing customer-facing.
+  //
+  // Collapsing the two made a location that was perfectly able to sell say
+  // "Onboarding incomplete", so nobody could tell a real outage from a pending
+  // bank check.
+  const canTakeMoney = status.detailsSubmitted && status.chargesEnabled;
+  const fullySetUp = canTakeMoney && status.payoutsEnabled;
 
   return (
     <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -204,9 +216,13 @@ export function StripeConnectCard({
           <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
             ✓ Ready
           </span>
+        ) : canTakeMoney ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+            ✓ Taking payments · payouts pending
+          </span>
         ) : (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-200">
-            Onboarding incomplete
+            Can&rsquo;t take payments yet
           </span>
         )}
       </div>
@@ -216,6 +232,14 @@ export function StripeConnectCard({
         <StatusBadge label="Charges enabled" ok={status.chargesEnabled} />
         <StatusBadge label="Payouts enabled" ok={status.payoutsEnabled} />
       </div>
+
+      {canTakeMoney && !fullySetUp && (
+        <p className="mt-3 text-[11px] text-zinc-500">
+          Customers can book and pay now. Stripe is still verifying the bank
+          account, so the money is held in the Stripe balance and pays out
+          automatically once that clears — usually a few days. Nothing to do.
+        </p>
+      )}
 
       {!fullySetUp && <OutstandingRequirements status={status} />}
 

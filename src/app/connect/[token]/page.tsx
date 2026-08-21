@@ -158,7 +158,11 @@ export default async function ConnectOnboardingPage({
   if (accountId) {
     try {
       const status = await fetchAccountStatus(accountId);
-      alreadyLive = status.chargesEnabled && status.payoutsEnabled;
+      // charges_enabled alone. Payouts routinely stay pending for days while
+      // Stripe verifies the bank account, and sending the owner back through
+      // onboarding for that just makes them re-enter details Stripe already
+      // has — which is how Houston's owner ended up looping on this page.
+      alreadyLive = status.chargesEnabled;
     } catch {
       // The stored account can't be resolved on the current key (e.g. a leftover
       // test-mode account after going live). Treat it as absent and create a
