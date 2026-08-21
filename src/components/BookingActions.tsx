@@ -161,12 +161,12 @@ export function BookingActions({
         </div>
       )}
 
-      {/* Override refund — admin only.
+      {/* Override refund — director+ (same capability as cancelling).
           The policy figure above is the right default and the wrong answer for
           a goodwill refund, a weather call, an operator mistake or a test
           booking. Without this the only way to refund against policy is inside
           Stripe, where our own database never learns it happened. */}
-      {caps.manage_platform && refundableCents > 0 && (
+      {caps.refund && refundableCents > 0 && (
         <div className="mt-4 border-t border-zinc-200 pt-3 dark:border-zinc-800">
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
             Refund a different amount

@@ -319,10 +319,15 @@ export async function cancelBooking(
  * the operator had to leave the product and refund inside Stripe, where our
  * database then knew nothing about it.
  *
- * Gated on `manage_platform` (admin+) rather than `refund` (director+). Cancelling
- * per policy is routine staff work; moving an arbitrary amount of money against
- * the policy is not, and the whole point of this action is that it ignores the
- * rule that normally bounds the number.
+ * Gated on `refund` (director+), the same capability as cancelling per policy.
+ * It was admin-only at first, on the reasoning that overriding the policy is a
+ * bigger deal than applying it. In practice a manager IS the person who takes
+ * the weather call or the goodwill decision, and routing every one of those
+ * through an admin would just push them back into Stripe — where the refund
+ * happens with no reason recorded and our database never learns of it. Requiring
+ * a reason plus the audit entry is the better control than withholding the
+ * button: it makes every override attributable rather than making it someone
+ * else's job.
  *
  * Deliberately separate from cancelling. A refund and a cancellation are
  * different events — you can refund a customer who is still coming, and you can
@@ -335,7 +340,7 @@ export async function refundBookingOverride(
   reason: string,
   alsoCancel: boolean,
 ): Promise<Result> {
-  const deny = await denyIfCannot("manage_platform", slug);
+  const deny = await denyIfCannot("refund", slug);
   if (deny) return { ok: false, error: deny };
 
   const reasonText = reason.trim();
