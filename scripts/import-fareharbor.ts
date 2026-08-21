@@ -178,12 +178,40 @@ async function armReminders(slug: string, commit: boolean) {
     console.log("\nNothing was written. Re-run with --commit to apply.");
     return;
   }
-  let ok = 0;
-  for (const r of sendable) {
-    await notifyManualBookingEmails(r.id, { confirmation: false, reminders: true, review: false });
-    ok++;
+  // The scheduling happens in the BOOKING APP over an authenticated internal
+  // endpoint, so this needs the shared secret. `vercel env pull` returns
+  // sensitive values as empty strings, which is how a run on 2026-08-21 reported
+  // arming 317 bookings while scheduling none — check before the loop rather
+  // than discovering it 317 no-ops later.
+  if (!process.env.INTERNAL_API_SECRET) {
+    console.error(
+      "\nABORTED — INTERNAL_API_SECRET is empty.\n" +
+        "  Scheduling runs through the booking app's internal endpoint, and\n" +
+        "  `vercel env pull` blanks sensitive values, so this cannot work from a\n" +
+        "  pulled env file. Put the real value in .env.local (Vercel dashboard →\n" +
+        "  the booking app project → Environment Variables) and re-run.\n" +
+        "  Nothing was scheduled.",
+    );
+    process.exitCode = 1;
+    return;
   }
-  console.log(`Requested reminders for ${ok} booking(s).`);
+
+  let ok = 0;
+  const failed: string[] = [];
+  for (const r of sendable) {
+    const sent = await notifyManualBookingEmails(r.id, {
+      confirmation: false,
+      reminders: true,
+      review: false,
+    });
+    if (sent) ok++;
+    else failed.push(r.ref ?? r.id);
+  }
+  console.log(`Scheduled reminders for ${ok} of ${sendable.length} booking(s).`);
+  if (failed.length) {
+    console.error(`FAILED for ${failed.length}: ${failed.slice(0, 20).join(", ")}${failed.length > 20 ? " …" : ""}`);
+    process.exitCode = 1;
+  }
 }
 
 async function main() {

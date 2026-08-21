@@ -22,12 +22,29 @@ export type LifecycleParts = {
   review?: boolean;
 };
 
+/**
+ * Ask the booking app to schedule a booking's lifecycle emails.
+ *
+ * Returns whether the request actually succeeded. It used to return void and
+ * swallow everything, which meant a caller could not tell "scheduled 317
+ * reminders" from "did nothing at all" — and on 2026-08-21 the import script
+ * reported arming reminders for 317 Houston bookings while `INTERNAL_API_SECRET`
+ * was empty locally and not one was created. Silence is fine for a fire-and-
+ * forget side effect during checkout; it is not fine for a bulk operation whose
+ * whole purpose is the side effect.
+ */
 export async function notifyManualBookingEmails(
   bookingId: string,
   parts?: LifecycleParts,
-): Promise<void> {
+): Promise<boolean> {
   const secret = process.env.INTERNAL_API_SECRET;
-  if (!secret) return;
+  if (!secret) {
+    console.error(
+      "notifyManualBookingEmails: INTERNAL_API_SECRET is not set — no email was scheduled",
+      { bookingId },
+    );
+    return false;
+  }
   const base = process.env.BOOKING_APP_URL ?? "https://book.turbobookings.net";
   try {
     const res = await fetch(`${base}/api/internal/booking-emails`, {
@@ -42,8 +59,11 @@ export async function notifyManualBookingEmails(
       console.error("notifyManualBookingEmails: booking app returned", res.status, {
         bookingId,
       });
+      return false;
     }
+    return true;
   } catch (err) {
     console.error("notifyManualBookingEmails failed", { bookingId, err });
+    return false;
   }
 }
