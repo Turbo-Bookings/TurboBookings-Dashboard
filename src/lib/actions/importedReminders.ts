@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, gt, isNotNull, notExists, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, notExists, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -41,8 +41,21 @@ function eligible(locationId: string) {
     isNotNull(bookings.externalRef),
     // Synthesised addresses from an import with no email can never receive mail.
     sql`${customers.emailLower} NOT LIKE '%@import.invalid'`,
-    // A 24h reminder for a tour in 20 hours has already missed its send time.
-    gt(availabilities.startsAt, sql`now() + interval '25 hours'`),
+    // Far enough out that at least ONE reminder can still be sent. This used to
+    // require 25 hours, on the reasoning that a 24h reminder for a tour in 20
+    // hours has already missed its send time — true, but it threw away the 2h
+    // reminder along with it. Miami's import left 11 customers with tours THAT
+    // EVENING holding no reminder at all, which is exactly when a reminder is
+    // worth most.
+    //
+    // Safe to relax because lifecycleEmails.ts already guards each reminder
+    // independently (`reminder24.getTime() > now`), so a tour inside 24 hours
+    // gets the 2h reminder and silently skips the 24h one. Nobody is told their
+    // tour is "in 24 hours" three hours beforehand.
+    gt(availabilities.startsAt, sql`now() + interval '2 hours'`),
+    // Neither reminder present. Keying this on reminder_24h alone meant a
+    // booking that only ever qualified for the 2h reminder stayed "pending"
+    // forever, so the dashboard count could never reach zero.
     notExists(
       getDb()
         .select({ one: sql`1` })
@@ -50,7 +63,7 @@ function eligible(locationId: string) {
         .where(
           and(
             eq(scheduledEmails.bookingId, bookings.id),
-            eq(scheduledEmails.type, "reminder_24h"),
+            inArray(scheduledEmails.type, ["reminder_24h", "reminder_2h"]),
           ),
         ),
     ),
