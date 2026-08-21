@@ -11,6 +11,7 @@ import {
   Printer,
   Settings2,
   SlidersHorizontal,
+  StickyNote,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CheckInControls, LineCheckIn } from "@/components/CheckInControls";
@@ -64,7 +65,10 @@ type Props = {
 };
 
 type Cols = { phone: boolean; due: boolean; notes: boolean };
-const DEFAULT_COLS: Cols = { phone: true, due: true, notes: false };
+// Notes default ON. They were off, and the preference lives in localStorage per
+// device, so a note the sales team wrote was invisible to the tablet running
+// check-in — which is the only screen it was ever written for.
+const DEFAULT_COLS: Cols = { phone: true, due: true, notes: true };
 
 function usd(c: number): string {
   return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -318,8 +322,17 @@ export function Manifest({
                             </button>
                           </div>
 
-                          {cols.notes && b.notes && (
-                            <p className="mt-1.5 text-xs text-zinc-500">{b.notes}</p>
+                          {/* Deliberately NOT behind `cols.notes`. A column
+                              toggle is right for optional data; a sentence a
+                              colleague wrote for check-in is not optional, and
+                              on a phone it is the whole reason to open this. */}
+                          {b.notes && (
+                            <div className="mt-2 flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 dark:border-amber-800/60 dark:bg-amber-950/40">
+                              <StickyNote className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-300" />
+                              <p className="whitespace-pre-line break-words text-xs font-medium text-amber-900 dark:text-amber-100">
+                                {b.notes}
+                              </p>
+                            </div>
                           )}
 
                           {open && (
@@ -412,7 +425,16 @@ export function Manifest({
                                 </td>
                               )}
                               {cols.notes && (
-                                <td className="px-3 py-2 text-xs text-zinc-500">{b.notes ?? "—"}</td>
+                                <td className="px-3 py-2">
+                                  {b.notes ? (
+                                    <span className="inline-flex items-start gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/40 dark:text-amber-100">
+                                      <StickyNote className="mt-px h-3.5 w-3.5 shrink-0" />
+                                      <span className="whitespace-pre-line break-words">{b.notes}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-zinc-400">—</span>
+                                  )}
+                                </td>
                               )}
                             </tr>
                             {open && (

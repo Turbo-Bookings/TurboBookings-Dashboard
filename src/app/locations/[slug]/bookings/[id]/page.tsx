@@ -10,6 +10,7 @@ import { getCancellationRefund } from "@/lib/booking/refund";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
+import { BookingNote } from "@/components/BookingNote";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,7 @@ export default async function BookingDetailPage({ params }: Props) {
   if (!d || !d.booking) notFound();
   // Platform processing fee is Turbo-internal revenue — only admins see it.
   const showFees = await can("manage_platform", slug);
+  const canManage = await can("manage_bookings", slug);
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
   const refund = await getCancellationRefund(loc.id, id);
@@ -65,6 +67,13 @@ export default async function BookingDetailPage({ params }: Props) {
           </p>
         </div>
       </div>
+
+      <BookingNote
+        slug={slug}
+        bookingId={b.id}
+        note={b.notes}
+        canEdit={canManage}
+      />
 
       <BookingActions
         slug={slug}

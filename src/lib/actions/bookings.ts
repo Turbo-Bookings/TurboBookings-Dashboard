@@ -74,6 +74,64 @@ function revalidate(slug: string, bookingId?: string) {
   if (bookingId) revalidatePath(`/locations/${slug}/bookings/${bookingId}`);
 }
 
+/**
+ * Internal note on a booking — sales writes it, check-in reads it.
+ *
+ * Until now `bookings.notes` could only be set at creation, and only by the
+ * manual-booking form, so a booking taken online could never carry one and no
+ * note could ever be corrected. That made the field invisible in practice: the
+ * manifest rendered it behind a column that defaults to off.
+ *
+ * Deliberately INTERNAL. It must never reach the customer — not the
+ * confirmation email, not the success page. Check that before surfacing it
+ * anywhere new.
+ *
+ * One overwritable field rather than a thread: the audit log already records
+ * who changed it and when, which is the part that matters when check-in is
+ * deciding how much to trust a sentence. Revisit only if two people actually
+ * start clobbering each other.
+ */
+export async function setBookingNote(
+  slug: string,
+  bookingId: string,
+  note: string,
+): Promise<Result> {
+  const deny = await denyIfCannot("manage_bookings", slug);
+  if (deny) return { ok: false, error: deny };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+  const db = getDb();
+  const b = (
+    await db
+      .select({ id: bookings.id, displayNumber: bookings.displayNumber, notes: bookings.notes })
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.locationId, location.id)))
+      .limit(1)
+  )[0];
+  if (!b) return { ok: false, error: "Booking not found" };
+
+  const next = note.trim().slice(0, 2000) || null;
+  if (next === b.notes) return { ok: true };
+
+  await db
+    .update(bookings)
+    .set({ notes: next, updatedAt: new Date() })
+    .where(eq(bookings.id, bookingId));
+
+  await recordAudit({
+    slug,
+    action: "catalog.booking.note",
+    summary: next
+      ? `${b.notes ? "Updated" : "Added"} note on #${b.displayNumber}`
+      : `Cleared note on #${b.displayNumber}`,
+    // The previous text is kept so a clobbered note can be recovered — the
+    // audit log is the only history this field has.
+    payload: { bookingId, from: b.notes, to: next },
+  });
+  revalidate(slug, bookingId);
+  return { ok: true };
+}
+
 // Set check-in for ALL vehicles on a booking (every line's units).
 export async function setBookingCheckIn(
   slug: string,

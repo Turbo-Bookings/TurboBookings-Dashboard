@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { BookingNote } from "@/components/BookingNote";
 import { createPortal } from "react-dom";
 import { sourceLabel } from "@/lib/bookingSource";
 import Link from "next/link";
@@ -143,6 +144,17 @@ function Body({
         <Badge tone={checkInTone(checkin)}>{checkInLabel(checkin)}</Badge>
         <span className="ml-auto text-xs text-zinc-400">{sourceLabel(b.source)}</span>
       </div>
+
+      {/* Sits directly under the summary, above the vehicles — whoever opens
+          this is usually about to check someone in, and a note they scroll past
+          is a note that did not exist. */}
+      <BookingNote
+        slug={slug}
+        bookingId={b.id}
+        note={b.notes}
+        canEdit={caps.manage_bookings}
+        onSaved={reload}
+      />
 
       {/* Vehicles + per-vehicle check-in + add/remove */}
       <Section title="Vehicles">
