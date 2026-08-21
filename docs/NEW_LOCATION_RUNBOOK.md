@@ -145,6 +145,19 @@ Point the apex + `www` at Vercel per Vercel's records, attach the domain.
 
 ## 9. Payments readiness gate — all three, in order
 
+Run the automated half first; it checks everything below that a script can see,
+plus the catalog, deposit math, timezone, venue-fee coherence, tracking and
+retainer:
+
+```
+npm run location:preflight -- --slug=<slug>
+```
+
+Exits non-zero on a blocker. Needs `STRIPE_SECRET_KEY` in the environment for
+the same mode the connected account lives in, or it skips the Stripe checks and
+says so rather than passing silently.
+
+
 Do NOT set `NEXT_PUBLIC_BOOKING_ORIGIN` until every one of these passes. Houston
 was flipped live on 2026-08-19 with a connected account that could not yet take
 money, and checkout was silently dead for ~25 minutes. Full detail and the Radar

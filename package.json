@@ -26,7 +26,8 @@
     "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts",
     "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts",
     "push:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-push.ts",
-    "htown:tours": "node --env-file-if-exists=.env.local --import tsx scripts/add-htown-tours.ts"
+    "htown:tours": "node --env-file-if-exists=.env.local --import tsx scripts/add-htown-tours.ts",
+    "location:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/location-preflight.ts"
   },
   "dependencies": {
     "@clerk/backend": "^3.4.12",

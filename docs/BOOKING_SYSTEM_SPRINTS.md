@@ -5,11 +5,27 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
-> ### ⏰ FIRST: verify yesterday's live cutover — `docs/VERIFY_2026-08-19.md`
-> Reminder emails (354 armed, first send 2026-08-18 16:00 UTC) and the retainer
-> both went live on 2026-08-18 and **neither has been observed working**. Both
-> fail silently. Run `npm run emails:status -- dtown` and
-> `npm run retainer:status -- dtown` before anything else.
+> ### ▶ STATE AS OF 2026-08-21 — Dallas AND Houston are live; **Miami is next**
+>
+> **Houston went live 2026-08-20.** `NEXT_PUBLIC_BOOKING_ORIGIN` is set on Production,
+> the marketing site carries 15 booking links and zero FareHarbor references, and all
+> FareHarbor history is imported (319 active bookings, no duplicate refs). `fareharbor.com`
+> is out of Houston's GA4 cross-domain list.
+>
+> **Before touching Miami, run the preflight** — it encodes every launch mistake made so
+> far, so nobody has to remember them:
+>
+> ```
+> npm run location:preflight -- --slug=miami
+> ```
+>
+> It exits non-zero on a blocker. It cannot check the two things that actually killed a
+> launch, so do those by hand: **load the real checkout and confirm a card form renders**,
+> then **take one real booking and refund it**.
+>
+> Miami's known state: connected account exists (`acct_1U6FJqCy6l66XnLp`), but **0 tours,
+> 0 availabilities, `deposit_mode='full'` at $0** (which means "charge the entire tour
+> online"), no tracking config, no Google review counts, no retainer.
 >
 > ### 📋 POST-LAUNCH BACKLOG (agreed 2026-08-18, none launch-blocking)
 > 1. **Email delivery tracking** — design + findings written up in
