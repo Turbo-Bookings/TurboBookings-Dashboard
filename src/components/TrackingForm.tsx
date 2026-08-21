@@ -8,6 +8,10 @@ import {
   verifyTracking,
   type UpdateTrackingState,
 } from "@/lib/actions/tracking";
+import {
+  testTrackingCredentials,
+  type TrackingTestResult,
+} from "@/lib/actions/trackingTest";
 import type {
   Location,
   TrackingConfig,
@@ -45,6 +49,9 @@ export function TrackingForm({ location, config }: Props) {
     config?.metaCapiPurchaseEnabled ?? false,
   );
   const [verifying, startVerify] = useTransition();
+  const [testing, startTest] = useTransition();
+  const [testCode, setTestCode] = useState("");
+  const [testResults, setTestResults] = useState<TrackingTestResult[] | null>(null);
 
   const boundUpdate = updateTracking.bind(null, location.slug);
   const [state, formAction] = useActionState<UpdateTrackingState, FormData>(
@@ -251,6 +258,70 @@ export function TrackingForm({ location, config }: Props) {
             )}
           </div>
         </label>
+      </div>
+
+      {/* Server-side credential test.
+          "Verify on live site" above greps the rendered HTML, so it only ever
+          sees the BROWSER tags. The server-side keys — the Meta CAPI token and
+          the GA4 API secret — are invisible to it, and when one of them is bad
+          the booking app fails silently: the booking completes, the email
+          sends, the conversion never arrives. This is how you see that. */}
+      <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+          Test server-side keys
+        </div>
+        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+          Checks the Meta CAPI token and GA4 API secret against the live APIs.
+          Nothing is written to reporting. To also send a real Purchase into
+          Events Manager → Test Events, paste the test code from that tab.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={testCode}
+            onChange={(e) => setTestCode(e.target.value)}
+            placeholder="TEST12345 (optional)"
+            className="w-48 rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => {
+              startTest(async () => {
+                setTestResults(
+                  await testTrackingCredentials(location.slug, testCode.trim() || undefined),
+                );
+              });
+            }}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            {testing ? "Testing…" : "Run test"}
+          </button>
+        </div>
+        {testResults && (
+          <ul className="mt-3 space-y-1.5">
+            {testResults.map((r) => (
+              <li key={r.label} className="flex gap-2 text-sm">
+                <span
+                  aria-hidden
+                  className={
+                    r.status === "pass"
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : r.status === "fail"
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-zinc-400"
+                  }
+                >
+                  {r.status === "pass" ? "✓" : r.status === "fail" ? "✕" : "–"}
+                </span>
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {r.label}
+                </span>
+                <span className="text-zinc-500 dark:text-zinc-400">{r.detail}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {/* Action bar */}
