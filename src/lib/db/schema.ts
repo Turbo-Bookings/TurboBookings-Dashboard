@@ -543,6 +543,69 @@ export type NewExternalSetupItem = typeof externalSetupItems.$inferInsert;
 // per-row revert is a Phase 2 polish.
 // ---------------------------------------------------------------------------
 
+// ---------- Terms acceptance ----------
+
+// Proof that a specific person accepted a specific version of a specific
+// document, at a specific moment, from a specific address.
+//
+// Researching how FareHarbor binds operators found that their whole position
+// rests on an acceptance event recorded in their dashboard — the agreement is
+// described as running from acceptance in the booking system, not from a
+// signature. None of the wording a lawyer drafts is worth anything if we cannot
+// show who accepted it and when, so this table is the foundation the operator
+// agreement sits on rather than an afterthought to it.
+//
+// Deliberately NOT in `audit_log`: that table is location-scoped and NOT NULL on
+// location_id, while an acceptance can be platform-wide (a Turbo admin accepting
+// on behalf of the company) and must never be pruned with a location.
+//
+// Append-only by convention. Never UPDATE a row here — accepting a new version
+// inserts a new row, so the history of what someone agreed to over time survives.
+export const termsAcceptances = pgTable(
+  "terms_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** Clerk user_id of the human who clicked. Never null — an acceptance with
+     *  no accepter is not evidence of anything. */
+    userId: text("user_id").notNull(),
+    /** Email captured AT acceptance. Clerk records can be deleted or the address
+     *  changed; this has to still make sense years later without them. */
+    userEmail: text("user_email"),
+    /** Which operator the person accepted FOR. Null = accepted for the platform
+     *  itself rather than a specific location. */
+    locationId: uuid("location_id").references(() => locations.id, {
+      onDelete: "set null",
+    }),
+    /** Stable document key, e.g. "operator_agreement". */
+    document: text("document").notNull(),
+    /** The exact version accepted, e.g. "2026-09-01". Bump it and everyone is
+     *  asked again — which is the whole point of recording it. */
+    version: text("version").notNull(),
+    /** Snapshot of where the text lived when accepted, so the version can be
+     *  produced later even if the page moves. */
+    documentUrl: text("document_url"),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // One row per person per document version per location. Re-accepting the
+    // same version is a no-op rather than a duplicate.
+    uniqueAcceptance: uniqueIndex("terms_acceptance_unique_idx").on(
+      t.userId,
+      t.document,
+      t.version,
+      t.locationId,
+    ),
+    userIdx: index("terms_acceptance_user_idx").on(t.userId),
+  }),
+);
+
+export type TermsAcceptance = typeof termsAcceptances.$inferSelect;
+export type NewTermsAcceptance = typeof termsAcceptances.$inferInsert;
+
 export const auditLog = pgTable(
   "audit_log",
   {

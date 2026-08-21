@@ -32,18 +32,24 @@
 >    `docs/EMAIL_DELIVERY_TRACKING.md`. Confirmation emails are recorded NOWHERE, and
 >    `sent` never becomes `delivered` for any email. No UI renders email status at all.
 >    Build before the post-launch tracking deep-dive. Spans both repos.
-> 2. **Refunds do not reverse the platform fee — ✅ DECIDED 2026-08-18: keep the fee.**
->    `src/lib/stripe/payments.ts:33` calls `refunds.create` WITHOUT
->    `refund_application_fee: true`, so on a Connect direct charge the full refund comes
->    out of the OPERATOR's balance while Turbo Bookings keeps its 6%. On booking #0189
->    that was $7.20 kept on a $28.60 refund the operator netted ~$20.55 of — the operator
->    goes NEGATIVE on every refunded booking.
->    **This is intended behaviour, not a bug.** The 6% is a non-refundable platform fee;
->    Selmen is making it explicit in the operator agreement. **Do NOT "fix" this by adding
->    `refund_application_fee: true`** — that would silently change revenue terms.
->    Remaining task: make sure the operator agreement language actually ships before
->    Houston/Miami onboard, and consider surfacing it in the refund UI so staff aren't
->    surprised.
+> 2. **Refunds now DO reverse the platform fee — ⚠️ REVERSED 2026-08-21.**
+>    This entry previously read "DECIDED 2026-08-18: keep the fee" and told you not to
+>    touch it. That decision was reversed deliberately; `refund_application_fee: true`
+>    is now set in BOTH repos (`turbobookings-dashboard/src/lib/stripe/payments.ts` and
+>    the oversell path in `bookingsystem/src/app/api/webhooks/stripe/route.ts`).
+>    Stripe prorates it automatically on a partial refund.
+>    Two things settled it: research into how FareHarbor, Peek and Xola actually word
+>    this found ours was the market outlier — FareHarbor's commission model, the one
+>    matching ours, returns commission on a full refund and prorates on a partial — and
+>    the term had earned **$72.00 in total across five refunds, 4% of all platform fee
+>    revenue.** Not worth being the outlier over, nor worth the paragraph and worked
+>    example it would have needed in every operator agreement.
+>    Stripe keeps its own processing fee on a refund regardless, so the operator is
+>    still out ~3%; ours on top was what made it punitive.
+>    **The retainer stays non-refundable** — a subscription, not a per-booking
+>    commission, and that is where FareHarbor keeps money regardless too.
+>    Open: whether to refund Richard the $72 already kept (operator's money, not yet
+>    authorised).
 > 3. **Cockpit revenue feed** — `REPLIT_WEBHOOK_URL` unset; 17 events queued,
 >    `attempt_count = 0`. Note the naming drift: dashboard reads `REPLIT_WEBHOOK_URL`,
 >    bookingsystem reads `BRAIN_WEBHOOK_URL ?? REPLIT_WEBHOOK_URL`. Deferred until after
