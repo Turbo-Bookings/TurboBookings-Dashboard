@@ -79,6 +79,29 @@ export function TaxesFeesForm({
               </select>
             </div>
           </div>
+
+          {/* Only rendered for manage_platform, and only meaningful once a venue
+              fee exists — an operator must never see or set this. */}
+          <label className="mt-3 flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="venueFeeInPlatformFeeBase"
+              value="1"
+              defaultChecked={v.venueFeeInPlatformFeeBase}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              Also charge the fee on the venue fee
+              <span className="mt-0.5 block text-xs text-zinc-500">
+                Off by default. The venue fee is cash the customer hands the park,
+                so we never touch it — turning this on adds the percentage to the
+                amount charged online instead. On a $20 admission at 6% that is
+                $1.20 more per person online; the customer still pays the park the
+                full $20 in cash.
+                {!v.venueFeeAmount && " This location has no venue fee set, so it changes nothing today."}
+              </span>
+            </span>
+          </label>
         </section>
       )}
 

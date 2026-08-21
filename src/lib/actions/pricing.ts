@@ -24,6 +24,7 @@ export type TaxesFeesState = {
     depositPercent: string;
     venueFeeAmount: string;
     venueFeeLabel: string;
+    venueFeeInPlatformFeeBase: boolean;
   };
 };
 
@@ -41,6 +42,7 @@ function parse(formData: FormData): TaxesFeesState["values"] {
     depositPercent: String(formData.get("depositPercent") ?? "").trim(),
     venueFeeAmount: String(formData.get("venueFeeAmount") ?? "").trim(),
     venueFeeLabel: String(formData.get("venueFeeLabel") ?? "").trim(),
+    venueFeeInPlatformFeeBase: formData.get("venueFeeInPlatformFeeBase") === "1",
   };
 }
 
@@ -108,10 +110,14 @@ export async function updateTaxesFees(
       taxRateBps: Math.round((tax ?? 0) * 100),
       taxMode: values.taxMode as "passed_to_customer",
       // Only privileged users write the fee; operators leave it untouched.
+      // Fee fields are Turbo-only. Omitted entirely for an operator, so a form
+      // POST that doesn't include the checkbox can't clear it — an unchecked box
+      // and a hidden box are indistinguishable in form data.
       ...(canFee
         ? {
             platformFeeBps: Math.round((fee ?? 0) * 100),
             platformFeeMode: values.platformFeeMode as "passed_to_customer",
+            venueFeeInPlatformFeeBase: values.venueFeeInPlatformFeeBase,
           }
         : {}),
       depositMode: values.depositMode as "full",
@@ -126,8 +132,14 @@ export async function updateTaxesFees(
   await recordAudit({
     slug,
     action: "settings.taxes_fees.update",
-    summary: `Taxes & fees: tax ${tax}%${canFee ? `, fee ${fee}%` : ""}, deposit ${values.depositMode}`,
-    payload: { tax, fee: canFee ? fee : undefined, depositMode: values.depositMode },
+    summary: `Taxes & fees: tax ${tax}%${canFee ? `, fee ${fee}%${values.venueFeeInPlatformFeeBase ? " (incl. venue fee)" : ""}` : ""}, deposit ${values.depositMode}`,
+    payload: {
+      tax,
+      fee: canFee ? fee : undefined,
+      venueFeeInPlatformFeeBase: canFee ? values.venueFeeInPlatformFeeBase : undefined,
+      venueFeePerPersonCents,
+      depositMode: values.depositMode,
+    },
   });
   revalidatePath(`/locations/${slug}/settings/taxes-fees`);
   revalidatePath(`/locations/${slug}/settings`);

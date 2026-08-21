@@ -209,6 +209,13 @@ export const locations = pgTable("locations", {
   // Canonical comment in bookingsystem/src/lib/db/schema.ts.
   venueFeePerPersonCents: integer("venue_fee_per_person_cents").notNull().default(0),
   venueFeeLabel: text("venue_fee_label"),
+  // Whether the platform fee is charged on the venue fee too. OFF by default,
+  // because the venue fee is money the customer hands the park in cash and we
+  // never touch it — billing a percentage of it is a commercial decision, not a
+  // default. Turbo-only (manage_platform); operators never see the control.
+  venueFeeInPlatformFeeBase: boolean("venue_fee_in_platform_fee_base")
+    .notNull()
+    .default(false),
 
   // Optional FK to cancellation policy — null until policy is configured.
   // Self-referencing FK pattern: defined as nullable text(uuid) here and

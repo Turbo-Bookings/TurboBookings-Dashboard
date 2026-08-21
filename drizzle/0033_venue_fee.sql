@@ -19,3 +19,9 @@ ALTER TYPE "custom_field_kind" ADD VALUE IF NOT EXISTS 'notice';
 -- by deposits — routing deposits through it would double them on live data.
 ALTER TABLE "customer_types"
   ADD COLUMN IF NOT EXISTS "persons_per_unit" integer DEFAULT 1 NOT NULL;
+
+-- Whether the platform fee is charged on the venue fee as well. Off by default:
+-- the venue fee is cash the customer hands the park, so billing a percentage of
+-- it is a deliberate commercial choice rather than a default.
+ALTER TABLE "locations"
+  ADD COLUMN IF NOT EXISTS "venue_fee_in_platform_fee_base" boolean DEFAULT false NOT NULL;
