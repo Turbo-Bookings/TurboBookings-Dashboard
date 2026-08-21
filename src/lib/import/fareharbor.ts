@@ -203,23 +203,11 @@ export function formatLocal(d: Date, timezone: string): string {
   return DateTime.fromJSDate(d, { zone: timezone }).toFormat("ccc LLL d, yyyy h:mm a");
 }
 
-/**
- * US-centric E.164 normalization, matching what the booking flow stores.
- * Returns null rather than guessing when the digits don't look like a phone
- * number — a wrong number on a manifest is worse than a blank one.
- */
-export function normalizePhone(raw: string): string | null {
-  const s = (raw ?? "").trim();
-  if (!s) return null;
-  if (s.startsWith("+")) {
-    const digits = s.replace(/[^\d]/g, "");
-    return digits.length >= 8 && digits.length <= 15 ? `+${digits}` : null;
-  }
-  const digits = s.replace(/[^\d]/g, "");
-  if (digits.length === 10) return `+1${digits}`;
-  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
-  return null;
-}
+// E.164 normalization lives in lib/phone.ts, shared with the checkout and the
+// manual-booking path so an imported customer and a booked one are stored
+// identically. Re-exported here because the importer and its tests have always
+// reached for it through this module.
+export { normalizePhone } from "@/lib/phone";
 
 /** Split a full name into first/last the way the manifest renders it. */
 export function splitName(raw: string): { firstName: string | null; lastName: string | null } {

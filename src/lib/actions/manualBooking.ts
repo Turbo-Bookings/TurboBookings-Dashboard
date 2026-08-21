@@ -26,6 +26,7 @@ import { getWholeBookingFieldsForItem } from "@/lib/data/customFields";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
+import { phoneForStorage } from "@/lib/phone";
 import { emitEvent } from "@/lib/events/emit";
 import { notifyManualBookingEmails } from "@/lib/booking/notifyManualBookingEmails";
 import { computeBooking, type AmountMode, type PaymentMethod } from "@/lib/pricing/breakdown";
@@ -437,10 +438,10 @@ export async function createDirectBooking(
       const cust = (
         await tx
           .insert(customers)
-          .values({ locationId: location.id, emailLower, firstName: firstName || null, lastName, phoneE164: payload.contact.phone || null, firstSeenAt: new Date() })
+          .values({ locationId: location.id, emailLower, firstName: firstName || null, lastName, phoneE164: phoneForStorage(payload.contact.phone), firstSeenAt: new Date() })
           .onConflictDoUpdate({
             target: [customers.locationId, customers.emailLower],
-            set: { firstName: firstName || null, lastName, phoneE164: payload.contact.phone || null, updatedAt: new Date() },
+            set: { firstName: firstName || null, lastName, phoneE164: phoneForStorage(payload.contact.phone), updatedAt: new Date() },
           })
           .returning()
       )[0];
