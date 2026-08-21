@@ -90,37 +90,67 @@ the platform Dashboard**. Every future operator inherits this by default, and
 each would have to be walked through Radar in their own Stripe account — which
 is exactly what "built for non-technical operators" rules out.
 
-## The one lever that scales — 🧑 needs the platform login
+## The one lever that scales — measured 2026-08-20, on the platform account
 
-Stripe exposes a platform-level override for precisely this case. Signed in as
-the **platform** account (Yourmusicmanager / Turbo Bookings — *not* Richard's
-login, which only sees the two connected accounts):
+Stripe does expose a platform-level override, and it is real for our Standard
+accounts: **Settings → Radar → Platform controls for direct charges → Platform
+payments controls → Update configuration** on the **platform** account
+(`acct_1FM0clE69fk80FRq`, Yourmusicmanager — *not* Richard's login, which only
+sees the two connected accounts).
 
-1. **Settings → Radar**
-2. **Platform controls for direct charges → Platform payments controls →
-   Update configuration**
-3. Choose **"Both my platform and connected accounts"**
+Current setting: **"Only connected accounts."** The two options that would
+centralise anything are greyed out behind *"Upgrade your plan to apply platform
+rules to connected accounts"*:
 
-That makes our rules apply to direct charges on *every* connected account,
-present and future, while leaving an operator able to allow-list their own
-regulars. Platform rules evaluate first, and an allow rule on either side beats
-a block rule on the other. "Only my platform" is the stricter alternative and
-takes the ability away from operators entirely.
+| Option | Effect |
+|---|---|
+| Only connected accounts | **current** — each operator owns their own Radar; ours never applies |
+| Only my platform | our rules apply everywhere; operators lose all Radar control |
+| Both my platform and connected accounts | our rules apply everywhere, operators keep theirs; platform rules evaluate first, and an allow rule on either side beats a block rule on the other |
 
-Caveat to check while you're on that screen: Stripe notes these settings apply
-to "connected accounts controlled solely by your platform," and ours are
-**Standard** accounts. If the option isn't offered, the fallback is per-operator
-and belongs in the onboarding runbook rather than in code.
+The gate is the platform's **Radar plan**:
 
-Once the control exists, the rules worth having are few:
+| Plan | Price | Notes |
+|---|---|---|
+| Standard | **$0.00** per screened transaction | **current** — but **$0.05 from Jan 21 2027, 6:00 PM** |
+| Plus | **$0.07** per screened transaction | unlocks custom rules, risk tolerance, backtesting **and the platform controls above** |
+| Pro | $0.09 + $0.005 per screened customer | adaptive thresholds, multi-account abuse |
 
-- allow when the email has already succeeded on this account — repeat customers
-  should never be blocked, and this is the case the Customer attach now enables
-- do not treat a retry after a `do_not_honor` as card testing on its own
-- review, don't block, above a dollar threshold — a large-group booking is our
-  best transaction, and 0 disputes in 97 payments says the risk is theoretical
+Worth knowing before this gets re-litigated: because Standard stops being free
+in January 2027, the real delta for Plus is **$0.02** per transaction from then,
+not $0.07. At roughly 2,400 attempts/month across two locations that is about
+$170/month today, and one recovered booking averages ~$130 — so it pays for
+itself at about two rescued bookings a month.
 
-With 0 disputes, the correct risk setting is **Maximize revenue**.
+**Decision taken 2026-08-20: not yet.** The identity fix above is the biggest
+lever available on Lite and costs nothing; we wait for live data on whether
+false blocks persist before spending. Revisit if blocks continue.
+
+### What we ARE doing — free, and strictly better than today 🧑
+
+Both connected accounts sit on **Radar Lite**, which is *below* Standard: no
+rules, no allow-lists, no risk-setting choice, no reviews queue, and a blunt
+fixed model. **Radar Standard is $0.00 per screened transaction** and adds the
+full AI model across all payment methods, default rules and fraud analytics.
+
+This has to be done by **Richard, inside each connected account** — a platform
+login cannot reach it. Verified: opening
+`dashboard.stripe.com/acct_1U5aMoCxXcDic9eT/settings/plans-and-fees/plans/radar/choose`
+while signed in as the platform silently redirects to the platform's own plan
+page. That matches Stripe's rule that Radar config for a direct-charge Standard
+account is reachable only from that account's Dashboard.
+
+Steps, once per account (Dallas `acct_1U5aMoCxXcDic9eT`, Houston
+`acct_1U5aMoCWgKniCwxV`), signed in as `hernandez14_richard@yahoo.com`:
+
+1. Switch to the account in the top-left switcher.
+2. **Settings → Radar** → **View plans**.
+3. Choose **Standard**. Confirm the price reads **$0.00 per screened
+   transaction** in *his* account before accepting — the figures above were read
+   on the platform account, and plan pricing is per-account.
+4. Repeat for the second location.
+
+Reversible, and it changes nothing about how we charge.
 
 ## The readiness gate for a new location
 
@@ -154,6 +184,48 @@ pending* — instead of a red herring.
 
 Step 2 is the one that would have caught Houston. The account looked connected.
 
+## The other half of the checkout fix (2026-08-20)
+
+Separate from Radar, but the same page: H-Town's checkout showed **Total
+$107.40** in the money block while a free-text "Pricing Breakdown" field lower
+down said the real number was **$120** — the $20-per-person park admission the
+pricing engine knew nothing about. Staff were short too: the manifest asked for
+$80 cash on a single rider who actually owed $100.
+
+`locations.venue_fee_per_person_cents` + `venue_fee_label` now model money the
+**venue** collects in cash. It is deliberately not ours — excluded from the
+discount, the tax base and the platform fee base — and only ever moves
+`balanceDueAtVenueCents`, which is labelled "cash, at the venue" everywhere it
+surfaces. Default 0, so no other location changed.
+
+Admission is per **head**, and a "Double Rider ATV" is one unit carrying two, so
+`customer_types.persons_per_unit` now says how many people a unit puts on the
+ground. **Deposits deliberately do not use it** — H-Town's deposit is $20 per
+machine and routing it through here would silently double every deposit on a
+live location.
+
+Verified live against the operator's own published numbers:
+
+| Selection | Admission | Cash at check-in | Operator says |
+|---|---|---|---|
+| 1 × Single Rider ATV | $20 | $100.00 | $100 ✓ |
+| 1 × Double Rider ATV | **$40** (2 heads) | $170.00 | $170 ✓ |
+| 2 × Single Rider ATV | $40 | $200.00 | $200 ✓ |
+
+Our *total* runs higher than the operator's published total by exactly the
+online tax + processing fee ($7.40 on a single rider), which their copy omits.
+That is the copy being incomplete, not the engine being wrong.
+
+A `notice` custom-field kind was added for the text itself: display-only, stores
+nothing, can never be required. The pricing text was a `text` field for want of
+it, which put a block of prices in the middle of the contact form dressed up as
+a question.
+
+**Open:** H-Town's UTV / Four Seater Buggy is still `persons_per_unit = 1`, so it
+shows $20 admission regardless of how many ride. The buggy seats four; if the
+park charges each of them, this needs setting to the real number. Left alone
+rather than guessed, because it changes what customers are charged.
+
 ## Still open
 
 - **$127.00 owed to two customers** from the double-charge race fixed in
@@ -161,5 +233,16 @@ Step 2 is the one that would have caught Houston. The account looked connected.
   #0304 cancelled but never refunded) and togreen46@yahoo.com $28.60 (bookings
   0223 and 0224 are identical duplicates, Aug 29 6 PM). Operator's money to
   move; not issued.
-- Houston is confirmed able to take payments — checkout renders a card form and
-  Pay $27.40 — so the cutover env var can be re-set on Production.
+- **Houston is LIVE on our booking system as of 2026-08-20.**
+  `NEXT_PUBLIC_BOOKING_ORIGIN=https://book.htownatvrentals.org` is set on
+  Production and the site is redeployed: 15 booking links on the homepage, zero
+  FareHarbor references, all three tour ids returning 200.
+- `fareharbor.com` removed from Houston's GA4 cross-domain linking (property
+  "Texas ATV Rentals", stream `G-BQQMF72HGR`); `htownatvrentals.org` on
+  *Contains* remains and covers `book.htownatvrentals.org`. **Dallas lives in a
+  different GA4 property** — that property has only Houston's stream — so
+  Dallas's cross-domain list has not been checked for the same leftover.
+- The Stripe Customer / billing-details change has not yet been exercised by a
+  real card end to end. The booking-app preview environment has a stale
+  `DATABASE_URL` and 500s, so it could not be rehearsed there; the API shape was
+  verified against Stripe test mode instead. One live booking would close it.
