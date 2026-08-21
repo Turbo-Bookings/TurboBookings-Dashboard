@@ -33,11 +33,19 @@ the `bookingsystem` repo). Current: Sprints A–B done; **next is Sprint C
 
 ## Cross-repo responsibility split
 
-- **This dashboard (Vercel)** owns: client-facing portal, intake forms, asset library, tracking config (Edge Config bridge), external-setup tracking, cross-location analytics, operator-defined SMS/email flows
-- **Replit** owns: AI / voice receptionist, predictive marketing, multi-touch attribution, gclid/fbclid ad attribution, AI-driven reactive SMS sends
+- **This dashboard (Vercel)** owns: client-facing portal, catalog + bookings, intake forms, asset library, tracking config, cross-location analytics, the Storefront DB schema, and the outbound event queue + retry cron
+- **`bookingsystem` (Vercel)** owns: the customer-facing booking flow, checkout, and click-ID capture at checkout
+- **Ad cockpit — `~/ads/SHARED` (Railway, Python)** owns: ad + creative intelligence, the revenue ledger, and per-platform ROAS
+- **Replit (`~/takeovers-platform`)** owns: the AI voice/SMS receptionist — **and is a retiring PROTOTYPE**. Its production replacement is the Node platform service on Railway, not yet built
 
-If you're touching tracking-config, marketing-flow config, intake forms, or cross-location analytics — this is the right repo.
-If you're touching anything AI / voice / predictive / multi-touch — wrong repo (that's Replit).
+If you're touching tracking-config, catalog, bookings, intake forms, or cross-location analytics — this is the right repo.
+If you're touching ads, creative, or ROAS — that's the cockpit (`~/ads/SHARED`), not here.
+If you're touching AI voice/SMS — that's Replit, and prefer minimal keep-it-running fixes.
+
+> ⚠️ Corrected 2026-08-21. This section used to assign "multi-touch attribution, gclid/fbclid ad
+> attribution" to Replit. That was never true and is now actively wrong: click IDs are captured by
+> `bookingsystem` at checkout, stored on `customers`, and shipped to the **cockpit** on
+> `booking.created`. See `docs/cross-system/BOOKING_TO_COCKPIT_FEED.md`.
 
 # Git workflow
 
@@ -57,12 +65,12 @@ Vercel will be configured so `main` is the production branch (live at `dashboard
 - **TypeScript** + **Tailwind CSS v4**
 - **ESLint 9**
 
-# Stack (planned, not yet wired)
+# Stack (shipped)
 
-- **Neon Postgres** + **Drizzle ORM** — provision via Vercel Marketplace
-- **Clerk** — auth, orgs = locations, roles = operator | va | client
+- **Neon Postgres** + **Drizzle ORM** — the Storefront DB; schema owned by this repo
+- **Clerk** — auth on the production instance, roles via `publicMetadata`; capability gates in `lib/auth/roles.ts`
 - **Vercel Blob** — asset storage (logos, hero videos, gallery photos, OG images)
-- **Vercel Edge Config** — per-location runtime config bridge (tracking IDs, feature flags) written by this app
+- **Stripe Connect** — Standard, direct charges with `application_fee_amount`
 - **`node-vibrant`** — logo color palette extraction
 - **shadcn/ui** — component library on top of Tailwind
 - **Stripe** — Phase 2 (subscription billing)

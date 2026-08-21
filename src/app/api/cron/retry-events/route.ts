@@ -76,13 +76,17 @@ export async function GET(req: Request) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const url = process.env.REPLIT_WEBHOOK_URL;
-  const secret = process.env.REPLIT_WEBHOOK_SECRET;
+  // BRAIN_WEBHOOK_* first, legacy REPLIT_* as fallback — must match emit.ts exactly.
+  // This cron lives in the dashboard, so when it read only the REPLIT_ names,
+  // setting BRAIN_WEBHOOK_URL left the entire retry queue dormant while new
+  // bookings appeared to deliver fine.
+  const url = process.env.BRAIN_WEBHOOK_URL ?? process.env.REPLIT_WEBHOOK_URL;
+  const secret = process.env.BRAIN_WEBHOOK_SECRET ?? process.env.REPLIT_WEBHOOK_SECRET;
   if (!url || !secret) {
     return Response.json({
       ok: true,
       skipped: true,
-      reason: "REPLIT_WEBHOOK_URL or REPLIT_WEBHOOK_SECRET not set",
+      reason: "BRAIN_WEBHOOK_URL or BRAIN_WEBHOOK_SECRET not set",
     });
   }
 

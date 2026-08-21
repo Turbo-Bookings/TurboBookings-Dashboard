@@ -1,15 +1,44 @@
 # Cross-System Event Contract
 
-**Status:** Canonical. Both Vercel and Replit build to this exact schema.
-**Purpose:** Single source of truth for events flowing Vercel → Replit. If the two sides disagree on a field, this doc wins.
+**Status:** Canonical for the ENVELOPE and transport. The event catalog in §4 is partly aspirational —
+see the reality check below.
+**Purpose:** Single source of truth for events flowing Vercel → the brains.
+
+> ## ⚠️ Reality check (2026-08-21) — read before building against §4
+>
+> This document was written when the receiver was going to be the Replit app. **That receiver was never
+> built** — `source_surface` / `occurred_at` appear nowhere in `~/takeovers-platform`. The live receiver
+> is the **ad cockpit** on Railway; see **`BOOKING_TO_COCKPIT_FEED.md`** for what actually runs.
+>
+> Corrections to this document, verified against the code:
+>
+> | §4 says | Reality |
+> |---|---|
+> | 13 event types | **Six** are emitted: `booking.created`, `.cancelled`, `.checked_in`, `.no_show`, `.rescheduled`, `communication.requested`. The other 13 (`page.viewed`, `ad.click_landed`, `payment.succeeded`, `checkout.*`, `customer.*`, `dashboard.*`) have **zero call sites** |
+> | `booking.checked_in` / `.no_show` / `communication.requested` | Live, and absent from §4 entirely |
+> | Retry `1s, 5s, 30s, 5min, 30min, 6h` | Code uses **`1m, 5m, 30m, 6h, 6h, 6h`**, `MAX_ATTEMPTS = 6` |
+> | Secret in `location_secrets` | Read from `process.env` (`BRAIN_WEBHOOK_SECRET ?? REPLIT_WEBHOOK_SECRET`) |
+> | `tour_key`, `customer_type`, flat `email_lower` | Emitted as `tour_id`, `customer_type_id`, nested `data.customer{…}` |
+> | Dead letters queryable from the dashboard | Not built. Query `succeeded_at IS NULL AND attempt_count >= 6` |
+>
+> **`booking.created` has TWO shapes.** `source_surface: "booking_system"` sends the full payload;
+> `"dashboard"` (operator/manual bookings) once sent only `{booking_id, source}`. Fixed 2026-08-21 —
+> both now send the same payload via `buildBookingCreatedPayload()`. A receiver should still tolerate
+> the thin shape for replayed history.
+>
+> **`REPLIT_WEBHOOK_*` is a fossil — nothing is ever sent FROM Replit.** It is the key our storefront
+> signs outbound events with. `BRAIN_WEBHOOK_*` is preferred; the legacy names remain as a fallback.
+>
+> **Receivers MUST key off `occurred_at`, not receipt time.** The queue drains oldest-first and held
+> events two months old.
 
 ---
 
 ## 1. Direction and transport
 
-**Direction:** Vercel → Replit only. Replit never writes back to the Vercel database.
+**Direction:** Vercel → brains only. The brains never write back to the Vercel database.
 
-**Transport:** HTTPS POST to `https://<replit-deployment-url>/api/webhooks/inbound`.
+**Transport:** HTTPS POST. Live endpoint: `https://cockpit.turbobookings.net/api/webhooks/turbobookings` (see BOOKING_TO_COCKPIT_FEED.md).
 
 **Auth:** HMAC-SHA256 signature in the `X-Turbobookings-Signature` header, computed over the raw request body using a shared secret. Replit verifies signature before processing.
 

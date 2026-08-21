@@ -11,7 +11,7 @@ payments; Drizzle schema lives here). Vercel / Next.js. Hosts the event-retry cr
 ## ⚠️ CURRENT STATUS & THE INTEGRATE PHASE (updated 2026-06-06)
 - The **cockpit** (ad-management + creative-intelligence = the "Python ad service") is **DEPLOYED + LIVE**
   on Railway as a STANDALONE app (its own UI + Python API) at
-  `https://cockpit-production-5480.up.railway.app`, behind Clerk (shared SSO), creative-director access granted.
+  `https://cockpit.turbobookings.net` (the old `cockpit-production-5480.up.railway.app` still serves but production Clerk will not authenticate from that origin), behind Clerk (shared SSO), creative-director access granted.
 - **INTEGRATE PHASE (planned, NOT done yet):** that cockpit UI will **fold INTO this single unified Vercel
   dashboard as the "ads / creative" module**, and the Railway side becomes **API-ONLY** (the brain this
   dashboard calls). 🚫 **DO NOT rebuild the ad/creative tooling when building this dashboard** — design the
@@ -43,9 +43,16 @@ MEMORY  → NEON    : Postgres. TWO databases joined by a one-way event pipe (NO
   `page.viewed`, `ad.click_landed`, …) → the brains write them into the Intelligence DB (`touchpoints` +
   the unified customer record). Brains **never write back** to the storefront DB. (Queue + retry already
   exists: `outbound_event_queue` + cron — hosted in THIS repo.)
-- Each service has its OWN `DATABASE_URL`. The brains (Node platform + Python ad service) share the
-  Intelligence DB. The cockpit computes **true first-party ROAS** from bookings/touchpoints copied INTO
-  that DB — not by querying the storefront DB directly.
+- Each service has its OWN `DATABASE_URL`. The brains (Node platform + Python ad service) are INTENDED
+  to share the Intelligence DB.
+
+> ⚠️ **The Intelligence DB does not exist yet (verified 2026-08-21).** An earlier version of this file
+> claimed the cockpit computes true first-party ROAS from bookings/touchpoints in a shared Neon DB. It
+> does not. `grep DATABASE_URL|psycopg|sqlalchemy` across the cockpit returns **zero hits**: revenue
+> lives in **one SQLite table on the Railway volume** (`cockpit/bookings.py`), fed today by
+> `POST /api/webhooks/turbobookings` from our storefront. Per-campaign attribution is cockpit project
+> **#25** and is not built. Do not plan against the Neon path until Phase 0 lands.
+> See **`docs/cross-system/BOOKING_TO_COCKPIT_FEED.md`**.
 
 ## Decision-making by domain
 - Customer / email / SMS / AI-agent decisions → **Node platform service** (Intelligence DB).
@@ -56,12 +63,19 @@ MEMORY  → NEON    : Postgres. TWO databases joined by a one-way event pipe (NO
 - One **Clerk** login (orgs = locations/agencies; roles = operator / VA / creative / client).
 - One unified dashboard; what each person sees is scoped by role + tenant.
 
-## Status (updated 2026-06-27)
-- **Live:** marketing sites + the **FareHarbor-era** booking flow on them, the dashboard shell, the
-  Replit AI prototype.
-- **In active build (NOT live):** the **custom booking system** — `bookingsystem` repo (customer
-  engine) + `turbobookings-dashboard` catalog/config. This is the FareHarbor replacement and spans
-  two repos. **Canonical roadmap + exact next action:
-  `turbobookings-dashboard/docs/BOOKING_SYSTEM_SPRINTS.md`** (Sprints A–B done; **Sprint C next**).
-- **Building (in order):** cockpit → Railway (Clerk, creative-only) ▸ Phase 0 touchpoints/attribution ▸
-  multi-tenant Node platform on Railway.
+## Status (updated 2026-08-21)
+- **Live:** all three locations on the **custom booking system** — Dallas, Houston and Miami have each
+  cut over and FareHarbor is retired as a booking surface. Marketing sites, dashboard, cockpit
+  (`cockpit.turbobookings.net`, Clerk production), Replit AI prototype.
+- **Just shipped:** the booking → cockpit revenue feed, replacing the dead FareHarbor webhook. Click ids
+  now ride on `booking.created`, which unblocks cockpit project #25 (per-platform true ROAS).
+- **Next:** Phase 0 touchpoints/attribution (the Intelligence DB — never started) ▸ multi-tenant Node
+  platform on Railway ▸ INTEGRATE PHASE (cockpit UI folds into this dashboard).
+- **Roadmap:** `turbobookings-dashboard/docs/BOOKING_SYSTEM_SPRINTS.md`.
+
+> ⚠️ **"Phase 0" means two different things** across this doc set. In the Detailed Dev Docs it is the
+> brains-side touchpoint/identity build (**not started**). In `BOOKING_SYSTEM_SPRINTS.md` it is the
+> storefront schema/scaffold/emit plumbing (**done**). This file always means the former.
+
+> ⚠️ **The cockpit does NOT deploy from GitHub** (`source: None`). Deploy with
+> `cd ~/ads/SHARED && railway up --detach --yes`. Pushing to `main` deploys nothing.

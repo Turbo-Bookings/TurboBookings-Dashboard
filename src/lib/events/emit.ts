@@ -2,7 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 
 import { getDb, outboundEventQueue } from "@/lib/db";
 
-// Cross-system event channel: Vercel → Replit. Implements the contract in
+// Cross-system event channel: Vercel → the Railway brain. Implements the contract in
 // docs/cross-system/CROSS_SYSTEM_EVENT_CONTRACT.md. Same shape in both
 // dashboard and bookingsystem repos; both write to the shared
 // outbound_event_queue when delivery fails. The retry cron lives in the
@@ -44,14 +44,26 @@ function getTenantId(): string {
   return id;
 }
 
-function getReplitWebhookSecret(_tenantId: string): string | null {
+// The event target is the Railway "brain" — today the ad cockpit's
+// /api/webhooks/turbobookings. Prefer BRAIN_WEBHOOK_*; fall back to the legacy
+// REPLIT_* names until they are deleted. Same HMAC contract either way.
+//
+// The REPLIT_ prefix is a fossil and NOTHING is ever sent from Replit: this is
+// the key OUR storefront SIGNS outbound events with. It was named after the
+// receiver that was planned at the time and never built. This file used to read
+// the legacy names ONLY, while bookingsystem read BRAIN_ first — and since the
+// retry cron lives in THIS repo, setting only BRAIN_WEBHOOK_URL left the cron
+// and every dashboard-sourced event silently dark.
+function getBrainWebhookSecret(_tenantId: string): string | null {
   // V1: single tenant — env var. V2 (white-label) will look up per-tenant
   // from the location_secrets table.
-  return process.env.REPLIT_WEBHOOK_SECRET ?? null;
+  return (
+    process.env.BRAIN_WEBHOOK_SECRET ?? process.env.REPLIT_WEBHOOK_SECRET ?? null
+  );
 }
 
-function getReplitWebhookUrl(): string | null {
-  return process.env.REPLIT_WEBHOOK_URL ?? null;
+function getBrainWebhookUrl(): string | null {
+  return process.env.BRAIN_WEBHOOK_URL ?? process.env.REPLIT_WEBHOOK_URL ?? null;
 }
 
 export async function emitEvent(input: EmitInput): Promise<void> {
@@ -66,12 +78,12 @@ export async function emitEvent(input: EmitInput): Promise<void> {
     data: input.data,
   };
 
-  const url = getReplitWebhookUrl();
-  const secret = getReplitWebhookSecret(envelope.tenant_id);
+  const url = getBrainWebhookUrl();
+  const secret = getBrainWebhookSecret(envelope.tenant_id);
 
-  // Replit Phase 0 not deployed yet: queue everything for when it comes online.
+  // No receiver configured: queue everything for when one comes online.
   if (!url || !secret) {
-    await enqueueForRetry(envelope, "REPLIT_WEBHOOK_URL or _SECRET not set");
+    await enqueueForRetry(envelope, "BRAIN_WEBHOOK_URL or _SECRET not set");
     return;
   }
 
