@@ -28,7 +28,13 @@ function parse(formData: FormData): CustomFieldFormState["values"] {
     kind: String(formData.get("kind") ?? "text"),
     label: String(formData.get("label") ?? "").trim(),
     helpText: String(formData.get("helpText") ?? "").trim(),
-    required: formData.get("required") != null,
+    // A checkbox absent from the POST reads as null; the notice branch submits
+    // an empty string instead, which is NOT null. Test the value, not presence,
+    // and never mark a notice required — it collects nothing, so a required one
+    // is a field the customer can never satisfy.
+    required:
+      String(formData.get("kind") ?? "text") !== "notice" &&
+      Boolean(formData.get("required")),
     priceDollars: String(formData.get("priceDollars") ?? "").trim(),
     optionsText: String(formData.get("optionsText") ?? "").trim(),
   };
@@ -53,7 +59,7 @@ function toRow(v: CustomFieldFormState["values"]) {
           .map((l) => ({ value: l, label: l }))
       : null;
   return {
-    kind: v.kind as "text" | "checkbox" | "dropdown" | "quantity",
+    kind: v.kind as "text" | "checkbox" | "dropdown" | "quantity" | "notice",
     label: v.label,
     helpText: v.helpText || null,
     required: v.required,

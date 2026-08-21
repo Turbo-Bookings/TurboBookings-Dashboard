@@ -12,6 +12,7 @@ const KINDS = [
   { value: "checkbox", label: "Checkbox (acknowledgment)" },
   { value: "dropdown", label: "Dropdown (choose one)" },
   { value: "quantity", label: "Quantity add-on (priced)" },
+  { value: "notice", label: "Notice (information only — asks nothing)" },
 ];
 
 export function CustomFieldForm({
@@ -44,17 +45,30 @@ export function CustomFieldForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Label</label>
-        <input name="label" defaultValue={v?.label ?? ""} className={input} placeholder="e.g. I acknowledge the $100 security hold" />
+        <label className="block text-sm font-medium">
+          {kind === "notice" ? "Heading" : "Label"}
+        </label>
+        <input
+          name="label"
+          defaultValue={v?.label ?? ""}
+          className={input}
+          placeholder={
+            kind === "notice"
+              ? "e.g. What to bring"
+              : "e.g. I acknowledge the $100 security hold"
+          }
+        />
         {err.label && <p className="mt-1 text-xs text-red-600">{err.label}</p>}
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Help text (optional)</label>
+        <label className="block text-sm font-medium">
+          {kind === "notice" ? "Body text" : "Help text (optional)"}
+        </label>
         <textarea
           name="helpText"
           defaultValue={v?.helpText ?? ""}
-          rows={3}
+          rows={kind === "notice" ? 6 : 3}
           className={input}
           placeholder={"Add extra guidance for the customer.\nLine breaks are preserved."}
         />
@@ -76,10 +90,22 @@ export function CustomFieldForm({
         </div>
       )}
 
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="required" defaultChecked={v?.required ?? false} className="h-4 w-4" />
-        Required
-      </label>
+      {kind === "notice" ? (
+        /* A notice collects nothing, so "required" is meaningless — offering the
+           checkbox would let an operator build a field the customer can never
+           satisfy. The hidden input keeps the form shape stable. */
+        <>
+          <p className="text-xs text-zinc-500">
+            Shown to the customer at checkout as a block of information. It asks
+            nothing and stores nothing, so it can&rsquo;t be required.
+          </p>
+        </>
+      ) : (
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="required" defaultChecked={v?.required ?? false} className="h-4 w-4" />
+          Required
+        </label>
+      )}
 
       {err.form && <p className="text-sm text-red-600">{err.form}</p>}
 

@@ -109,6 +109,40 @@ export function TaxesFeesForm({
         </div>
       </section>
 
+      {/* Venue fee — money the customer pays the VENUE, not us */}
+      <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <h2 className="text-sm font-semibold">Venue fee (cash, at check-in)</h2>
+        <p className="text-xs text-zinc-500">
+          A per-person charge the venue collects in cash — park admission, a gate
+          fee, wristbands. We never touch this money: it isn&rsquo;t taxed, isn&rsquo;t
+          discounted and no processing fee is taken on it. Setting it here adds
+          it to the customer&rsquo;s total and to the cash your staff collect on the
+          manifest. Leave blank if there isn&rsquo;t one.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-3">
+          <div>
+            <label className={label}>Amount per person ($)</label>
+            <input
+              name="venueFeeAmount"
+              defaultValue={v.venueFeeAmount}
+              className={`${input} w-40`}
+              inputMode="decimal"
+              placeholder="20"
+            />
+          </div>
+          <div>
+            <label className={label}>What to call it</label>
+            <input
+              name="venueFeeLabel"
+              defaultValue={v.venueFeeLabel}
+              className={`${input} w-56`}
+              placeholder="Park admission"
+            />
+          </div>
+        </div>
+        {err.venueFee && <p className="mt-2 text-xs text-red-600">{err.venueFee}</p>}
+      </section>
+
       {err.form && <p className="text-sm text-red-600">{err.form}</p>}
       <div className="flex items-center gap-3">
         <button disabled={pending} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">

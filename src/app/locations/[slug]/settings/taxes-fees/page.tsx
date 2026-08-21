@@ -44,6 +44,8 @@ export default async function TaxesFeesPage({ params }: Props) {
           depositMode: loc.depositMode,
           depositAmount: loc.depositAmountCents != null ? String(loc.depositAmountCents / 100) : "",
           depositPercent: loc.depositPercentBps != null ? String(loc.depositPercentBps / 100) : "",
+          venueFeeAmount: loc.venueFeePerPersonCents ? String(loc.venueFeePerPersonCents / 100) : "",
+          venueFeeLabel: loc.venueFeeLabel ?? "",
         }}
       />
     </section>

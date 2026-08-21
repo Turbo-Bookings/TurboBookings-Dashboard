@@ -7,7 +7,9 @@ import { getDb, locations } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can, denyIfCannot } from "@/lib/auth/roles";
 
-type FieldErrors = Partial<Record<"taxRate" | "platformFee" | "deposit" | "form", string>>;
+type FieldErrors = Partial<
+  Record<"taxRate" | "platformFee" | "deposit" | "venueFee" | "form", string>
+>;
 
 export type TaxesFeesState = {
   ok: boolean;
@@ -20,6 +22,8 @@ export type TaxesFeesState = {
     depositMode: string;
     depositAmount: string;
     depositPercent: string;
+    venueFeeAmount: string;
+    venueFeeLabel: string;
   };
 };
 
@@ -35,6 +39,8 @@ function parse(formData: FormData): TaxesFeesState["values"] {
     depositMode: String(formData.get("depositMode") ?? "full"),
     depositAmount: String(formData.get("depositAmount") ?? "").trim(),
     depositPercent: String(formData.get("depositPercent") ?? "").trim(),
+    venueFeeAmount: String(formData.get("venueFeeAmount") ?? "").trim(),
+    venueFeeLabel: String(formData.get("venueFeeLabel") ?? "").trim(),
   };
 }
 
@@ -80,6 +86,14 @@ export async function updateTaxesFees(
     else depositPercentBps = Math.round(dp * 100);
   }
 
+  // The venue's own cash fee (park admission). Blank clears it.
+  let venueFeePerPersonCents = 0;
+  if (values.venueFeeAmount) {
+    const vf = Number(values.venueFeeAmount);
+    if (!(vf >= 0)) errors.venueFee = "Enter a valid amount";
+    else venueFeePerPersonCents = Math.round(vf * 100);
+  }
+
   if (Object.keys(errors).length) return { ok: false, errors, values };
 
   const location = await getLocationBySlug(slug);
@@ -103,6 +117,8 @@ export async function updateTaxesFees(
       depositMode: values.depositMode as "full",
       depositAmountCents,
       depositPercentBps,
+      venueFeePerPersonCents,
+      venueFeeLabel: values.venueFeeLabel || null,
       updatedAt: new Date(),
     })
     .where(eq(locations.id, location.id));

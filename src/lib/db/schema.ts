@@ -202,6 +202,14 @@ export const locations = pgTable("locations", {
   depositAmountCents: integer("deposit_amount_cents"),
   depositPercentBps: integer("deposit_percent_bps"),
 
+  // A per-person charge the VENUE collects in cash, not us — park admission,
+  // gate fee, wristband. Excluded from the platform fee base, untaxed by us and
+  // never discounted, because we neither collect nor remit it; it exists in the
+  // quote only so the customer-facing total is the truth. 0 hides the line.
+  // Canonical comment in bookingsystem/src/lib/db/schema.ts.
+  venueFeePerPersonCents: integer("venue_fee_per_person_cents").notNull().default(0),
+  venueFeeLabel: text("venue_fee_label"),
+
   // Optional FK to cancellation policy — null until policy is configured.
   // Self-referencing FK pattern: defined as nullable text(uuid) here and
   // turned into a real FK in the migration.
@@ -650,6 +658,14 @@ export const customerTypes = pgTable(
     sku: text("sku"),
     note: text("note"),
     minAge: integer("min_age"),
+    // How many PEOPLE one unit of this type puts on the ground. 1 for a solo
+    // rider; 2 for H-Town's "Double Rider ATV", which is one machine carrying
+    // two. Only per-person money uses it — the venue fee (park admission is
+    // charged per head, not per machine, so a double rider owes $40 not $20).
+    // Deposit math deliberately does NOT use it: H-Town's deposit is $20 per
+    // ATV, and routing it through here would silently double every deposit on
+    // a live location.
+    personsPerUnit: integer("persons_per_unit").notNull().default(1),
     // Visual differentiator on tickets/manifest — hex color, e.g. "#c8102e"
     ticketColor: text("ticket_color"),
     archived: boolean("archived").notNull().default(false),
@@ -818,6 +834,13 @@ export const customFieldKindEnum = pgEnum("custom_field_kind", [
   "checkbox",
   "dropdown",
   "quantity",
+  // Display-only. Collects nothing, stores nothing, can never be required —
+  // it exists so an operator can put a block of explanatory text in the
+  // checkout flow without dressing it up as a question. H-Town's park-admission
+  // "Pricing Breakdown" was a `text` field for want of this, which put a
+  // paragraph of prices in the middle of "Your details" and left the customer
+  // reading two different totals on the same page.
+  "notice",
 ]);
 
 // Where the field is attached on a booking — to a specific customer-type line
