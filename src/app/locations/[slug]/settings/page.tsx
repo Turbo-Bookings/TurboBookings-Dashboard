@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
+  BellRing,
   CalendarX,
   ClipboardCheck,
   CreditCard,
@@ -84,6 +85,7 @@ export default async function SettingsPage({
       items: [
         { label: "Team", desc: "Invite people & set their access", href: `${b}/settings/team`, icon: UserPlus, tone: "blue" },
         { label: "Setup", desc: "External-dependency checklist", href: `${b}/setup`, icon: ClipboardCheck, tone: "amber", platform: true },
+        { label: "Imported Bookings", desc: "Arm reminders for bookings from another system", href: `${b}/settings/imported-reminders`, icon: BellRing, tone: "violet", platform: true },
         { label: "Activity", desc: "Audit log of every change", href: `${b}/activity`, icon: History, tone: "zinc" },
       ],
     },
