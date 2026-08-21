@@ -48,6 +48,7 @@ export default async function TaxesFeesPage({ params }: Props) {
           venueFeeLabel: loc.venueFeeLabel ?? "",
           venueFeeInPlatformFeeBase: loc.venueFeeInPlatformFeeBase,
           venueFeeItemized: loc.venueFeeItemized,
+          venueFeeSectionPresent: true,
         }}
       />
     </section>

@@ -26,6 +26,7 @@ export type TaxesFeesState = {
     venueFeeLabel: string;
     venueFeeInPlatformFeeBase: boolean;
     venueFeeItemized: boolean;
+    venueFeeSectionPresent: boolean;
   };
 };
 
@@ -47,6 +48,7 @@ function parse(formData: FormData): TaxesFeesState["values"] {
     // A <select>, not a checkbox — it always posts, so absence can't silently
     // flip a location back to the default mid-season.
     venueFeeItemized: String(formData.get("venueFeeItemized") ?? "1") !== "0",
+    venueFeeSectionPresent: formData.get("venueFeeSection") === "1",
   };
 }
 
@@ -127,9 +129,15 @@ export async function updateTaxesFees(
       depositMode: values.depositMode as "full",
       depositAmountCents,
       depositPercentBps,
-      venueFeePerPersonCents,
-      venueFeeLabel: values.venueFeeLabel || null,
-      venueFeeItemized: values.venueFeeItemized,
+      // Only written when the posting page actually rendered the section, so a
+      // stale tab can't clear a fee the operator never touched.
+      ...(values.venueFeeSectionPresent
+        ? {
+            venueFeePerPersonCents,
+            venueFeeLabel: values.venueFeeLabel || null,
+            venueFeeItemized: values.venueFeeItemized,
+          }
+        : {}),
       updatedAt: new Date(),
     })
     .where(eq(locations.id, location.id));

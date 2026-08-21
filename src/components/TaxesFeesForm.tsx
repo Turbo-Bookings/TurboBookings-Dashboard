@@ -134,6 +134,12 @@ export function TaxesFeesForm({
 
       {/* Venue fee — money the customer pays the VENUE, not us */}
       <section className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Marks that this section was actually on the page that posted. Without
+            it, an absent input and a cleared input look identical in form data,
+            so an older cached copy of this page could silently wipe the venue
+            fee on save. The amount can still be cleared deliberately — empty is
+            not the same as missing. */}
+        <input type="hidden" name="venueFeeSection" value="1" />
         <h2 className="text-sm font-semibold">Venue fee (cash, at check-in)</h2>
         <p className="text-xs text-zinc-500">
           A per-person charge the venue collects in cash — park admission, a gate
