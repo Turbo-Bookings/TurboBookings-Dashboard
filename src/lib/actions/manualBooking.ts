@@ -27,6 +27,7 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { withTxn } from "@/lib/db/txn";
 import { phoneForStorage } from "@/lib/phone";
+import { buildBookingCreatedPayload } from "@/lib/events/bookingCreatedPayload";
 import { emitEvent } from "@/lib/events/emit";
 import { notifyManualBookingEmails } from "@/lib/booking/notifyManualBookingEmails";
 import { computeBooking, type AmountMode, type PaymentMethod } from "@/lib/pricing/breakdown";
@@ -557,11 +558,17 @@ export async function createDirectBooking(
       summary: `Operator booking for "${item.name}" · ${methodLabel}`,
       payload: { bookingId, paid, method },
     });
+    // Full payload, matching the booking app's. This used to send only
+    // `{ booking_id, source: "direct" }`, so every phone and walk-in booking reached the brains as
+    // zero revenue — invisible to the spend-vs-revenue objective it is measured against.
     await emitEvent({
       event_type: "booking.created",
       location_id: location.id,
       source_surface: "dashboard",
-      data: { booking_id: bookingId, source: "direct" },
+      data: (await buildBookingCreatedPayload(bookingId)) ?? {
+        booking_id: bookingId,
+        source: "direct",
+      },
     });
     // Send the customer their confirmation (+ arm reminders) via the booking
     // app, same as an online booking. Best-effort — never blocks the booking.
