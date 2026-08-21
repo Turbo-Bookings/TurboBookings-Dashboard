@@ -332,6 +332,37 @@ Property *Texas ATV Rentals*, stream **H-Town ATVs Website** (`G-BQQMF72HGR`,
   Vercel, and the live Dallas site loads no Google tag at all. The suggestion is
   historical, from before the Dallas fork was cleaned up.
 
+### ⚠ BEFORE ANY CUTOVER: grep the fork for `fareharbor.com`
+
+Added 2026-08-21 after finding this live on Houston a day after its cutover.
+
+Anything in a marketing site that names `fareharbor.com` in a **guard or a
+selector** is a cutover landmine. It keeps working right up until the day it
+matters, then fails **silently** — nothing errors, nothing alerts, the page
+looks fine.
+
+```
+grep -rn "fareharbor" src/ | grep -v "config/site.ts\|booking-origin"
+```
+
+Every hit should read from `LINKER_DOMAIN` / `ON_CUSTOM_BOOKING` instead of the
+literal. Known instances, all now fixed:
+
+| Where | Was | Failure mode after cutover |
+|---|---|---|
+| `GoogleAnalytics.tsx` | `linker: {domains:['fareharbor.com']}` | session splits at the handoff |
+| `BookingLinkDecorator.tsx` | `a[href*="fareharbor.com"]` | selects zero anchors |
+| `ad-tracking.ts` | `if (!href.includes("fareharbor.com")) return` | decorates nothing |
+| `tracking.ts` | fires `InitiateCheckout` on CTA click | double-counts against the booking app's real one |
+
+The first three cost the click-id **fallback** path, not attribution itself —
+the booking app reads `_fbc` / `_gcl_aw` directly off the shared registrable
+domain. The fourth is the one that actively corrupts data, by inflating the
+exact funnel step Smart Bidding optimises against.
+
+`dtown-atv-rentals-site` has none of these files; its fork is slimmer. Do not
+assume every fork has the same surface — check.
+
 ### Miami — Google Ads DONE 2026-08-21
 
 Account **Take over rentals `177-042-1744`**. Same shape as Houston, with the

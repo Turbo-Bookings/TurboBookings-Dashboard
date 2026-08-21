@@ -62,15 +62,91 @@ so the least attributable bookings were attributed worst. Now reads `_ga` /
 - **Conversion value** excludes tax and the platform fee on purpose, and matches
   the `booking.created` envelope so the cockpit's ROAS and Meta's value agree.
 
+## The decorator bug — read this before forking another site
+
+`decorateFareHarborUrl` guarded on a **hardcoded vendor string**:
+
+```ts
+if (!rawHref || !rawHref.includes("fareharbor.com")) return rawHref;   // WRONG
+```
+
+The moment a location cuts over, every Book href points at
+`book.<their-domain>`, so this early-returns on **every link** and the entire
+decorator goes silently dead. Its partner in `BookingLinkDecorator.tsx` had the
+same defect — `a[href*="fareharbor.com"]` selects zero anchors. Click ids are
+still captured on the marketing site and then forwarded nowhere.
+
+**This was live on Houston for a day** (cut over 2026-08-20, found 2026-08-21).
+Nothing alerted, and nothing looked wrong.
+
+**Severity, honestly: attribution did not break.** The booking app reads `_fbc`
+and `_gcl_aw` straight off the request because it shares the registrable domain
+with the marketing site — the cookie path carried it. The decorator is the
+FALLBACK for when those cookies are missing, blocked or cleared between visits.
+That is worth having and worth not losing silently, but it is not an outage.
+
+Both now key off `LINKER_DOMAIN`, so they follow wherever the CTAs actually
+point, and the function is renamed `decorateBookingUrl` so the name stops
+implying a FareHarbor-only scope.
+
+| Site | Status |
+|---|---|
+| `htown-atv-rentals-site` | Fixed and **on production** |
+| `takeovers-site` | Fixed, on `develop` — ships with the cutover |
+| `dtown-atv-rentals-site` | **Not affected** — the Dallas fork has neither file |
+
+**The general lesson, which is the reusable part:** anything in a marketing site
+that names `fareharbor.com` is a cutover landmine. It keeps working right up
+until the day it matters and then fails silently rather than loudly. Grep every
+fork for the literal before cutting one over:
+
+```
+grep -rn "fareharbor" src/ | grep -v "config/site.ts\|booking-origin"
+```
+
+Everything that legitimately survives should read from `LINKER_DOMAIN` /
+`ON_CUSTOM_BOOKING`, never from the literal.
+
+## GTM container GTM-PNVZ2GWD — REMOVED 2026-08-21
+
+The open question ("what is inside it?") is closed: **nothing that mattered.**
+The component's own comment recorded it — parent site had *no tags*, because
+direct gtag.js already handles GA4 and Ads there; the container's only tags were
+the purchase conversion and GA4 purchase that fire **inside the FareHarbor
+Lightframe**.
+
+So on the parent it loaded on every page load and fired nothing. Removed, script
+and `<noscript>` iframe both.
+
+**The FareHarbor Lightframe tags are untouched.** FareHarbor loads the container
+inside its own frame independently of the parent; the parent-side load existed
+only so GTM Preview could attach to the iframe debug session, and that goes away
+with the cutover anyway.
+
+This also settles a design question for good: there was never a case for
+teaching the booking app to load a GTM container. It would only have
+double-counted the GA4, Ads and Meta events the app already fires directly —
+which is why the app reads five `tracking_config` fields and deliberately
+ignores `mode` and `gtmContainerId`.
+
+## Also fixed here — GA4 server-side identity (affects ALL locations)
+
+Detail in the booking-app commit; kept here because it was found during this
+audit and is not Miami-specific.
+
+`sendGa4` sent `client_id: p.eventId` on a comment claiming no `_ga` cookie is
+reachable server-side. Untrue — the booking app shares the registrable domain
+and already read `_fbp` / `_fbc` / `_gcl_aw` from the same request.
+
+It only bit when the **browser event was blocked**, which is the one case
+server-side tracking exists for, because GA4 dedupes on `transaction_id` and
+discards the server copy whenever the browser one arrives. So the bookings
+hardest to attribute were attributed worst, and nothing looked wrong.
+
+Now captures `_ga` / `_ga_<STREAM>` at checkout, threads them through the
+`CapiContext` that already carries the Meta signals, and sends the real
+`client_id` + `session_id` plus `engagement_time_msec: 1`.
+
 ## Open — needs access I do not have
 
-**What is inside GTM container `GTM-PNVZ2GWD`.** Miami loads a GTM container
-*and* direct gtag. If the container only wraps GA4 / Ads / Meta, then loading it
-in the booking app too would **double-count everything we now fire directly** —
-which is why the booking app deliberately ignores `mode` and `gtmContainerId`
-(it reads five fields and no others; `tracking_config.mode` is recorded as
-`direct` for Miami because that is what actually happens).
-
-But if the container also carries Clarity, TikTok, Hotjar or remarketing tags,
-those will not fire during checkout at all. **Open the container and list its
-tags before cutover** — it is the last unknown in Miami's tracking.
+Nothing outstanding. The GTM question above was the last one and it is closed.
