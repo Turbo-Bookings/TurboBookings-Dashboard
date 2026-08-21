@@ -143,13 +143,33 @@ Point the apex + `www` at Vercel per Vercel's records, attach the domain.
   built from `BookClick`/AddToCart.
 - Remove `META_TEST_EVENT_CODE` before launch.
 
-## 9. Launch
+## 9. Payments readiness gate — all three, in order
+
+Do NOT set `NEXT_PUBLIC_BOOKING_ORIGIN` until every one of these passes. Houston
+was flipped live on 2026-08-19 with a connected account that could not yet take
+money, and checkout was silently dead for ~25 minutes. Full detail and the Radar
+findings: `docs/PAYMENT_RISK_AND_RADAR.md`.
+
+1. **`charges_enabled = true`** on the connected account. This is the gate.
+   `payouts_enabled` is NOT — it routinely lags for days while Stripe verifies
+   the bank account, holds the money in the Stripe balance, and blocks nothing
+   the customer sees.
+2. **Load the real checkout and confirm a card form renders**, with the Pay
+   button showing the right amount:
+   `https://book.<domain>/<slug>/tours/<item-id>` → pick a slot → Continue.
+   This is the only check that catches an inactive `card_payments` capability —
+   the Payment Element queries the connected account, finds nothing, and renders
+   an *empty box* with no error. Takes fifteen seconds. It is the step that
+   would have caught Houston; the account looked connected everywhere else.
+3. **One real booking, start to finish, then refund it.**
+
+## 10. Launch
 
 - Promote `develop` → `main` (production) once verified — **explicit operator
   confirmation required**.
 - Flip the location status to `launched` in the dashboard.
 
-## 10. Updating assets later
+## 11. Updating assets later
 
 Re-upload in the dashboard, then re-sync into the repo (no re-fork):
 
@@ -162,7 +182,7 @@ busts and returning visitors see the new media.
 
 ---
 
-## 11. Gotchas
+## 12. Gotchas
 
 - **Never reuse a pixel/GA property** across locations — always fresh.
 - **`--assets-only` requires the repo to already exist** (run a full fork first).
@@ -171,7 +191,7 @@ busts and returning visitors see the new media.
 - Fresh domain = no legacy redirects needed; the custom-booking transform drops
   the template's Miami/Wix redirect map.
 
-## 12. Roadmap (removing the terminal + more automation)
+## 13. Roadmap (removing the terminal + more automation)
 
 - **Dashboard "Generate site" button** → runs the fork via a GitHub Action (no
   terminal), so any team member can generate a repo from the dashboard.
