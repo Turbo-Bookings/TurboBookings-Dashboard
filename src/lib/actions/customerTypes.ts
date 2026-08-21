@@ -10,7 +10,13 @@ import { getLocationBySlug } from "@/lib/data/locations";
 
 type FieldErrors = Partial<
   Record<
-    "singular" | "plural" | "sku" | "minAge" | "ticketColor" | "form",
+    | "singular"
+    | "plural"
+    | "sku"
+    | "minAge"
+    | "personsPerUnit"
+    | "ticketColor"
+    | "form",
     string
   >
 >;
@@ -24,6 +30,7 @@ export type CustomerTypeFormState = {
     sku: string;
     note: string;
     minAge: string;
+    personsPerUnit: string;
     ticketColor: string;
     excludePricingModifiers: boolean;
     archived: boolean;
@@ -41,6 +48,7 @@ function parseFormData(formData: FormData): CustomerTypeFormState["values"] {
     sku: String(formData.get("sku") ?? "").trim(),
     note: String(formData.get("note") ?? "").trim(),
     minAge: String(formData.get("minAge") ?? "").trim(),
+    personsPerUnit: String(formData.get("personsPerUnit") ?? "").trim(),
     ticketColor: String(formData.get("ticketColor") ?? "").trim(),
     excludePricingModifiers: formData.get("excludePricingModifiers") === "on",
     archived: formData.get("archived") === "on",
@@ -63,6 +71,11 @@ function validate(
   if (values.sku && !SKU_RE.test(values.sku))
     errors.sku = "Letters, digits, dots, dashes, and underscores only";
 
+  if (values.personsPerUnit) {
+    const n = Number(values.personsPerUnit);
+    if (!Number.isInteger(n) || n < 1 || n > 20)
+      errors.personsPerUnit = "Whole number between 1 and 20";
+  }
   if (values.minAge) {
     const n = Number(values.minAge);
     if (!Number.isInteger(n) || n < 0 || n > 120)
@@ -108,6 +121,9 @@ export async function createCustomerType(
     sku: values.sku || null,
     note: values.note || null,
     minAge: values.minAge ? Number(values.minAge) : null,
+    // Blank means one rider per unit — the only sane default, and the value
+    // every existing type already carries.
+    personsPerUnit: values.personsPerUnit ? Number(values.personsPerUnit) : 1,
     ticketColor: values.ticketColor || null,
     excludePricingModifiers: values.excludePricingModifiers,
     archived: values.archived,
@@ -149,6 +165,9 @@ export async function updateCustomerType(
       sku: values.sku || null,
       note: values.note || null,
       minAge: values.minAge ? Number(values.minAge) : null,
+    // Blank means one rider per unit — the only sane default, and the value
+    // every existing type already carries.
+    personsPerUnit: values.personsPerUnit ? Number(values.personsPerUnit) : 1,
       ticketColor: values.ticketColor || null,
       excludePricingModifiers: values.excludePricingModifiers,
       archived: values.archived,

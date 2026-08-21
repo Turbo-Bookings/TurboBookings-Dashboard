@@ -25,6 +25,7 @@ const EMPTY: CustomerTypeFormState["values"] = {
   sku: "",
   note: "",
   minAge: "",
+  personsPerUnit: "",
   ticketColor: "",
   excludePricingModifiers: false,
   archived: false,
@@ -98,6 +99,15 @@ export function CustomerTypeForm({
           hint="Years; leave blank for no minimum"
           optional
           error={errors.minAge}
+        />
+        <Field
+          label="People per unit"
+          name="personsPerUnit"
+          defaultValue={values.personsPerUnit}
+          placeholder="1"
+          hint="How many riders one of these carries — 2 for a double-rider machine. Only used to charge the per-person venue fee; it does not change the deposit."
+          optional
+          error={errors.personsPerUnit}
         />
         <div className="space-y-1.5">
           <label

@@ -80,6 +80,7 @@ export default async function CustomerTypesPage({ params }: Props) {
                   Plural: {t.plural}
                   {t.sku ? ` · SKU: ${t.sku}` : ""}
                   {t.minAge != null ? ` · Min age: ${t.minAge}` : ""}
+                  {t.personsPerUnit > 1 ? ` · ${t.personsPerUnit} riders per unit` : ""}
                 </p>
               </div>
               <div className="flex items-center gap-3">
