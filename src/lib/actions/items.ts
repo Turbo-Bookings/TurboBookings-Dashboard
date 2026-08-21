@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, max } from "drizzle-orm";
+import { and, asc, eq, max } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/audit";
@@ -266,6 +266,67 @@ export async function updateItem(
 
   revalidatePath(`/locations/${slug}/catalog/tours`);
   redirect(`/locations/${slug}/catalog/tours`);
+}
+
+/**
+ * Move a tour one place up or down in the customer-facing list.
+ *
+ * The booking flow already orders by `sortOrder` then `createdAt`, so ordering
+ * was decided by creation order and could not be changed without SQL. Which
+ * tour sits first is a merchandising decision — the 1-Hour is the one most
+ * locations want at the top — so it belongs to the operator, not to whoever
+ * happened to seed the catalog.
+ *
+ * Swaps with the neighbour rather than rewriting the whole list, so two people
+ * reordering at once cannot silently renumber each other's work.
+ *
+ * `sortOrder` values may be duplicated or all-zero on catalogs seeded before
+ * this existed, which would make a swap a no-op. Normalising the whole list to
+ * 1..n first makes the operation total: it always produces a visible move.
+ */
+export async function moveItem(
+  slug: string,
+  id: string,
+  direction: "up" | "down",
+): Promise<{ ok: boolean; error?: string }> {
+  const deny = await denyIfCannot("manage_config", slug);
+  if (deny) return { ok: false, error: deny };
+  const location = await getLocationBySlug(slug);
+  if (!location) return { ok: false, error: "Location not found" };
+
+  const db = getDb();
+  const ordered = await db
+    .select({ id: items.id, name: items.name, sortOrder: items.sortOrder })
+    .from(items)
+    .where(eq(items.locationId, location.id))
+    .orderBy(asc(items.sortOrder), asc(items.createdAt));
+
+  const index = ordered.findIndex((r) => r.id === id);
+  if (index === -1) return { ok: false, error: "Tour not found" };
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= ordered.length) return { ok: true }; // already an end
+
+  const reordered = [...ordered];
+  [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+
+  // Rewrite 1..n so the result is stable regardless of what the old values were.
+  for (let i = 0; i < reordered.length; i++) {
+    if (reordered[i].sortOrder !== i + 1) {
+      await db
+        .update(items)
+        .set({ sortOrder: i + 1, updatedAt: new Date() })
+        .where(eq(items.id, reordered[i].id));
+    }
+  }
+
+  await recordAudit({
+    slug,
+    action: "catalog.item.reorder",
+    summary: `Moved "${ordered[index].name}" ${direction}`,
+    payload: { id, direction, order: reordered.map((r) => r.name) },
+  });
+  revalidatePath(`/locations/${slug}/catalog/tours`);
+  return { ok: true };
 }
 
 export async function deleteItem(

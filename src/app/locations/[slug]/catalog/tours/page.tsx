@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteItem } from "@/lib/actions/items";
+import { MoveTourButtons } from "@/components/MoveTourButtons";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { listItemsWithPricingSummary } from "@/lib/data/items";
 
@@ -66,7 +67,7 @@ export default async function ToursPage({ params }: Props) {
         </div>
       ) : (
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-          {rows.map((item) => {
+          {rows.map((item, i) => {
             const hidden = !item.listingVisible;
             const notBookable = !item.bookableOnline;
             return (
@@ -76,6 +77,17 @@ export default async function ToursPage({ params }: Props) {
                   hidden && notBookable ? "opacity-60" : ""
                 }`}
               >
+                {/* Order here IS the order customers see — the booking flow
+                    sorts by the same sortOrder. */}
+                {rows.length > 1 && (
+                  <MoveTourButtons
+                    slug={slug}
+                    id={item.id}
+                    name={item.name}
+                    isFirst={i === 0}
+                    isLast={i === rows.length - 1}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
