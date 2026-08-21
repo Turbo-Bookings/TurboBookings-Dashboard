@@ -332,6 +332,56 @@ Property *Texas ATV Rentals*, stream **H-Town ATVs Website** (`G-BQQMF72HGR`,
   Vercel, and the live Dallas site loads no Google tag at all. The suggestion is
   historical, from before the Dallas fork was cleaned up.
 
+### Miami — Google Ads DONE 2026-08-21
+
+Account **Take over rentals `177-042-1744`**. Same shape as Houston, with the
+differences that actually matter recorded below.
+
+Created `Purchase - Booking System`:
+
+| | |
+|---|---|
+| Data source | `book.takeoversmiamiatvrentals.com/miami` via Google tag `AW-10789560857` — Google's own scan reported **"Installed on site"**, which is the cheapest proof the booking app is tagged on the branded host |
+| Event | Manual event, page load |
+| Action optimization | **Secondary** — it defaults to PRIMARY in the wizard; switch it before saving or an untested action goes straight into Smart Bidding |
+| Value | Different values per conversion, via Event snippet |
+| Count / window | Every / 90 days — matches the GA4 Purchase action |
+| Attribution / EC | Data-driven · enhanced conversions via Google Tag |
+| **Label** | **`jpTBCNiXqeUcEJnE7pgo`** → `tracking_config.google_ads_purchase_label` |
+
+**The label was changed, not just added.** It previously pointed at
+`Online Booking Purchase` (`8xDPCPeauKQcEJnE7pgo`) — the action the marketing
+site's FareHarbor webhook feeds. That action **dies at cutover**, so aiming the
+booking app at it would have been a signal that silently stopped.
+
+**Do NOT delete `Online Booking Purchase` before cutover.** It reads 0.00 over
+30 days but **1.00 over 7 days** — `takeovers-site/src/app/api/webhooks/fareharbor/route.ts`
+is actively firing into it. It is removable only once Miami is off FareHarbor.
+
+Demoted `Book Tour Click` (Begin checkout) **Primary → Secondary** — ~963
+conversions / 30 days out of bidding. Removed `Purchases Dynamic Value`
+(Misconfigured, Secondary, 0 conversions).
+
+**What could NOT be demoted, and why it is not a UI problem.** Google owns these
+and exposes no per-action optimization control — the settings row has no expander
+and no radios at all:
+
+- `Store visits` — generated from Google's location data
+- `Calls from Smart Campaign Ads`, `Smart campaign map clicks to call`,
+  `Smart campaign ad clicks to call`, `Business profile - Call` — all 🔒, and
+  three are **Misconfigured while Primary**, feeding bidding with actions that
+  are not tracking. No Smart Campaigns are running (confirmed 2026-08-21), so
+  they are orphaned.
+
+The account-level Conversions → Settings page does not expose goal selection
+either (only call action, lapse window, data terms, enhanced conversions,
+engaged-view, app attribution). **The remaining lever is per-campaign: Campaign →
+Settings → Conversion goals**, which overrides account defaults and bypasses the
+lock. Not done — it changes what live, spending campaigns optimise for.
+
+Bidding never lost a primary at any point: `takeoversrentals.com - GA4 (web)
+purchase` stayed Primary throughout (53 purchases / $13.8K, last 7 days).
+
 ### Google Ads — Step 1 DONE 2026-08-20
 
 Created `Purchase - Booking System` in account `631-129-2539`:
