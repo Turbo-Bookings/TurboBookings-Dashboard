@@ -44,6 +44,7 @@ export default async function EditCustomerTypePage({ params }: Props) {
           note: ct.note ?? "",
           minAge: ct.minAge?.toString() ?? "",
           personsPerUnit: ct.personsPerUnit > 1 ? String(ct.personsPerUnit) : "",
+          personsVaries: ct.personsPerUnit === 0,
           ticketColor: ct.ticketColor ?? "",
           excludePricingModifiers: ct.excludePricingModifiers,
           archived: ct.archived,

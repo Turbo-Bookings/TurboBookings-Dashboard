@@ -26,6 +26,7 @@ const EMPTY: CustomerTypeFormState["values"] = {
   note: "",
   minAge: "",
   personsPerUnit: "",
+  personsVaries: false,
   ticketColor: "",
   excludePricingModifiers: false,
   archived: false,
@@ -100,15 +101,35 @@ export function CustomerTypeForm({
           optional
           error={errors.minAge}
         />
-        <Field
-          label="People per unit"
-          name="personsPerUnit"
-          defaultValue={values.personsPerUnit}
-          placeholder="1"
-          hint="How many riders one of these carries — 2 for a double-rider machine. Only used to charge the per-person venue fee; it does not change the deposit."
-          optional
-          error={errors.personsPerUnit}
-        />
+        <div className="space-y-1.5">
+          <Field
+            label="People per unit"
+            name="personsPerUnit"
+            defaultValue={values.personsPerUnit}
+            placeholder="1"
+            hint="How many riders one of these carries — 2 for a double-rider machine. Only used to charge the per-person venue fee; it does not change the deposit."
+            optional
+            error={errors.personsPerUnit}
+          />
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              name="personsVaries"
+              value="1"
+              defaultChecked={values.personsVaries}
+              className="mt-0.5 h-4 w-4"
+            />
+            <span>
+              Number of riders varies
+              <span className="mt-0.5 block text-xs text-zinc-500">
+                For something like a four-seater rented by a group of three. No
+                venue fee is quoted for this type — better to say nothing than a
+                number that&rsquo;s wrong for most groups. Pair it with a Notice
+                field explaining that admission is collected at the venue.
+              </span>
+            </span>
+          </label>
+        </div>
         <div className="space-y-1.5">
           <label
             htmlFor="ticketColor"

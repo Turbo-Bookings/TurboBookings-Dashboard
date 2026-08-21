@@ -31,6 +31,7 @@ export type CustomerTypeFormState = {
     note: string;
     minAge: string;
     personsPerUnit: string;
+    personsVaries: boolean;
     ticketColor: string;
     excludePricingModifiers: boolean;
     archived: boolean;
@@ -49,6 +50,7 @@ function parseFormData(formData: FormData): CustomerTypeFormState["values"] {
     note: String(formData.get("note") ?? "").trim(),
     minAge: String(formData.get("minAge") ?? "").trim(),
     personsPerUnit: String(formData.get("personsPerUnit") ?? "").trim(),
+    personsVaries: formData.get("personsVaries") === "1",
     ticketColor: String(formData.get("ticketColor") ?? "").trim(),
     excludePricingModifiers: formData.get("excludePricingModifiers") === "on",
     archived: formData.get("archived") === "on",
@@ -71,7 +73,7 @@ function validate(
   if (values.sku && !SKU_RE.test(values.sku))
     errors.sku = "Letters, digits, dots, dashes, and underscores only";
 
-  if (values.personsPerUnit) {
+  if (values.personsPerUnit && !values.personsVaries) {
     const n = Number(values.personsPerUnit);
     if (!Number.isInteger(n) || n < 1 || n > 20)
       errors.personsPerUnit = "Whole number between 1 and 20";
@@ -123,7 +125,12 @@ export async function createCustomerType(
     minAge: values.minAge ? Number(values.minAge) : null,
     // Blank means one rider per unit — the only sane default, and the value
     // every existing type already carries.
-    personsPerUnit: values.personsPerUnit ? Number(values.personsPerUnit) : 1,
+    // 0 is the sentinel for "varies"; it must beat any number left in the box.
+    personsPerUnit: values.personsVaries
+      ? 0
+      : values.personsPerUnit
+        ? Number(values.personsPerUnit)
+        : 1,
     ticketColor: values.ticketColor || null,
     excludePricingModifiers: values.excludePricingModifiers,
     archived: values.archived,
@@ -167,7 +174,12 @@ export async function updateCustomerType(
       minAge: values.minAge ? Number(values.minAge) : null,
     // Blank means one rider per unit — the only sane default, and the value
     // every existing type already carries.
-    personsPerUnit: values.personsPerUnit ? Number(values.personsPerUnit) : 1,
+    // 0 is the sentinel for "varies"; it must beat any number left in the box.
+    personsPerUnit: values.personsVaries
+      ? 0
+      : values.personsPerUnit
+        ? Number(values.personsPerUnit)
+        : 1,
       ticketColor: values.ticketColor || null,
       excludePricingModifiers: values.excludePricingModifiers,
       archived: values.archived,
