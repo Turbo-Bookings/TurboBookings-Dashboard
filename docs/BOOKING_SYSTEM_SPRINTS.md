@@ -61,6 +61,10 @@
 >   cross-domain entry. It is a different property from Houston's.
 > - **$72 owed back to Richard** from the reversed refund term — not authorised.
 >
+> **Marketing-site tracking audit: `docs/MIAMI_SITE_TRACKING_AUDIT.md`** — what
+> dies at cutover (one webhook route carrying four signals), what was fixed, and
+> the one open unknown (the contents of GTM container GTM-PNVZ2GWD).
+>
 > ### ▶ MIAMI — what is different, and what will bite
 >
 > Miami is **not** another Houston. Three things are genuinely new:
