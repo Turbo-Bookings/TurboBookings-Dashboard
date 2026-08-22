@@ -91,5 +91,8 @@ export async function buildBookingCreatedPayload(
     // The one field the booking app cannot set: how this booking was taken. "direct" covers phone,
     // walk-in and operator-entered.
     source: "direct",
+    // Provenance, so the receiver can defend itself rather than trusting the sender to have filtered.
+    // Non-null means this booking came from another system (FareHarbor) and the brains already hold it.
+    external_ref: b.externalRef ?? null,
   };
 }

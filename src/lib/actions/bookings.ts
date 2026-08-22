@@ -46,6 +46,13 @@ type Check = (typeof CHECK)[number];
 
 type Result = { ok: boolean; error?: string };
 
+/** True for a booking brought in from another system — see the FareHarbor importer, which stamps
+ *  `external_ref` as `fh:<their-pk>`. Such bookings must never be announced to the brains.
+ *  NOT exported: this is a "use server" module, where every export must be an async Server Action. */
+function isImported(externalRef: string | null | undefined): boolean {
+  return typeof externalRef === "string" && externalRef.startsWith("fh:");
+}
+
 async function emitLifecycle(
   location: Location,
   bookingId: string,
@@ -57,6 +64,15 @@ async function emitLifecycle(
       await db.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1)
     )[0];
     if (!b) return;
+    // Never emit for a booking we IMPORTED from FareHarbor. The brains already hold those from
+    // FareHarbor's own webhook, under FareHarbor's booking id — re-announcing them here is at best a
+    // no-op the receiver has to recognise and discard, and at worst a second copy of a booking that is
+    // already counted. The feed is for bookings that originated in OUR system.
+    //
+    // Revenue was never at risk (the CSV importer does not call emitEvent, so no booking.created for an
+    // imported booking has ever been queued) — this closes the lifecycle events, where an operator
+    // checking in or rescheduling an imported booking does queue one.
+    if (isImported(b.externalRef)) return;
     await emitEvent({
       event_type: eventType,
       location_id: location.id,
