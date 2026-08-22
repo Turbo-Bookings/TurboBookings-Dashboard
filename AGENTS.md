@@ -17,7 +17,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 3–5 more planned in 12 months, and those will be **operator clients** like Dallas and Houston — so per-operator friction (Radar config, Stripe onboarding, agreement language) is the thing that scales badly, not per-location catalog work.
 
-The approved plan lives at `~/.claude/plans/snazzy-jingling-squirrel.md` — read it before any non-trivial changes.
+**Starting a session?** `docs/RESUME_HERE.md` has the prompt to use and a map of which doc is which.
+
+**Editing `PLATFORM_ARCHITECTURE.md`?** It lives in SEVEN repos; the half below `## The decision` is
+shared. Edit it here, then `npm run arch:sync -- --write`, then commit each repo.
 
 **Booking-system build status & sprint roadmap:** `docs/BOOKING_SYSTEM_SPRINTS.md`
 is the live pick-up point — what sprint we're on, what's done, and the exact next

@@ -1,5 +1,13 @@
 # Platform Architecture & Build Topology (canonical)
 
+> **This file lives in SEVEN repos.** Everything from `## The decision (read this first)` down is
+> SHARED and must stay byte-identical; everything above it is that repo's own `## This repo's role`
+> header. `turbobookings-dashboard` holds the canonical copy — edit the shared half there, then sync:
+>
+> ```bash
+> npm run arch:sync            # from turbobookings-dashboard
+> ```
+>
 > Drop-in orientation so any work session understands how the Turbo Bookings systems fit together
 > without re-deriving it. Canonical spec: `~/Documents/Turbo Booking Saas/Detailed Dev Docs/LIVING_ARCHITECTURE.md`.
 > Last updated 2026-06-05.

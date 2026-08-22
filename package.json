@@ -28,7 +28,8 @@
     "push:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-push.ts",
     "htown:tours": "node --env-file-if-exists=.env.local --import tsx scripts/add-htown-tours.ts",
     "location:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/location-preflight.ts",
-    "terms:status": "node --env-file-if-exists=.env.local --import tsx scripts/terms-status.ts"
+    "terms:status": "node --env-file-if-exists=.env.local --import tsx scripts/terms-status.ts",
+    "arch:sync": "node scripts/sync-architecture.mjs"
   },
   "dependencies": {
     "@clerk/backend": "^3.4.12",

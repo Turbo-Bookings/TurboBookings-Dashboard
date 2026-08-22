@@ -5,7 +5,67 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
-> ### ▶ STATE AS OF 2026-08-21 (end of session) — Dallas AND Houston live; **Miami is next**
+> ### ▶ STATE AS OF 2026-08-22 — all three locations LIVE; cockpit revenue feed **CONNECTED**
+>
+> **Miami cut over 2026-08-21.** All three locations now run on our own booking system and FareHarbor
+> is retired as a booking surface. `fareharbor.com` appears 0 times on the Miami marketing site.
+>
+> **The cockpit revenue feed is live** — the thing that had never worked. See
+> **`docs/cross-system/BOOKING_TO_COCKPIT_FEED.md`** for the full contract; the short version:
+>
+> - New receiver `POST https://cockpit.turbobookings.net/api/webhooks/turbobookings`, HMAC-verified,
+>   **fails closed**. Writes into the cockpit's existing SQLite ledger as a third `source`.
+> - 355 of 362 queued events delivered. **232 bookings / $62,110 subtotal** landed
+>   (dallas 127, houston 60, miami 45), and **72 carried a click id** — the first values
+>   `bookings.ref` has ever held. That unblocks cockpit project **#25** (per-platform true ROAS).
+> - Verified in the cockpit: `data_through: 2026-08-22`, efficiency miami 12.4% / houston 11.4% /
+>   dallas 4.1% against a 10–16% target band. Dallas is materially **under**-spending.
+>
+> #### Three corrections that cost time — do not re-derive them
+> 1. **The cockpit does NOT deploy from GitHub** (`railway status --json` → `source: None`). Pushing to
+>    `main` deploys nothing. `cd ~/ads/SHARED && railway up --detach --yes`.
+> 2. **Saving a Vercel env var does nothing to a running deployment.** Vars are injected at deploy
+>    time. After changing one, redeploy — and target the *newest* deployment, or you roll production
+>    back (this happened; `vercel deploy --prod` from a clean checkout is the unambiguous fix).
+> 3. **There is no Intelligence Neon DB.** `PLATFORM_ARCHITECTURE.md` used to claim the cockpit reads
+>    ROAS from one. It has no Postgres client at all — revenue is one SQLite table on the Railway
+>    volume. Corrected in every copy.
+>
+> #### `REPLIT_WEBHOOK_*` is a fossil — nothing is ever sent FROM Replit
+> It is the key OUR storefront SIGNS outbound events with, named after a receiver that was planned and
+> never built. **`BRAIN_WEBHOOK_URL` / `BRAIN_WEBHOOK_SECRET` are now the real names**, read by both
+> repos with the legacy names as fallback. The old vars can be deleted.
+>
+> #### FareHarbor data must never reach the cockpit
+> Imported bookings (`external_ref` like `fh:%`) already exist there from FareHarbor's own webhook,
+> under FareHarbor's pk — our dedup keys on `tb|<booking_id>` and **cannot see that collision**. Two
+> locks: `emitLifecycle` skips them, and the receiver refuses any booking carrying `external_ref`.
+> 136 already-queued lifecycle events were dead-lettered rather than sent. **Never make the importer
+> call `emitEvent`.**
+>
+> #### ⚠ Known-open
+> - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should
+>   self-heal on backoff. Check: `succeeded_at IS NULL AND attempt_count < 6 AND last_error NOT LIKE 'retired:%'`.
+> - **The Railway `/data` volume is the only copy of the revenue ledger.** No backup exists.
+> - **Miami's site copy says "$50" in 81 places** while the deposit is $40. Two distinct meanings —
+>   reservation deposit (should track $40) vs a genuine **$50 rescheduling fee**. A blind replace
+>   corrupts the second. Needs a deliberate pass across `en.json`, `es.json`, a blog post and the chatbot.
+> - **Google Ads:** the FareHarbor-era `Online Booking Purchase` conversion action is still Active and
+>   can never fire again — archive it. Four goals read "Misconfigured" (pre-existing).
+> - **Spanish localisation** of the booking app is still unbuilt and was called out as a big conversion
+>   lever for Miami.
+> - **Retainers:** Dallas configured but `inactive` with no card; Houston and Miami unset. Nobody is
+>   being billed.
+> - **Radar Lite → Standard** on both connected accounts — free, strictly better, only Richard can do it.
+>
+> #### ▶▶ NEXT PHASE — Stage 3, the real Phase 0
+> Intelligence DB on Neon, `touchpoints`, identity resolution, and resolving the click ids we now
+> collect into **per-campaign** attribution (cockpit #25). Also fix `tb_aid`: the marketing sites never
+> issue that cookie, which is why `customers.anonymous_id` is **0 of 727** and anonymous→identified
+> stitching is dead.
+>
+> ---
+> ### ▶ PREVIOUS STATE (2026-08-21) — Dallas AND Houston live; Miami next
 >
 > **Legal / terms work landed this session — read `docs/LEGAL_AND_TERMS.md` first.**
 > The platform fee is now RETURNED on refunds (this reversed the 2026-08-18
