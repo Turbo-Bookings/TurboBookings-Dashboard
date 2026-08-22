@@ -54,7 +54,7 @@ type Payload = {
 };
 
 // ---- capacity-aware upcoming slots for one tour ----
-async function openSlotsForItem(
+export async function openSlotsForItem(
   locationId: string,
   itemId: string,
   days = 60,

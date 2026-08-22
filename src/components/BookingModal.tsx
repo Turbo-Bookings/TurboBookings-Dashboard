@@ -233,7 +233,7 @@ function Body({
       )}
 
       {b.status === "active" && caps.manage_bookings && (
-        <RescheduleControls slug={slug} bookingId={b.id} currentId={b.availabilityId} slots={rescheduleSlots} tz={tz} onChanged={reload} />
+        <RescheduleControls slug={slug} bookingId={b.id} currentId={b.availabilityId} currentItemId={b.itemId} slots={rescheduleSlots} tz={tz} onChanged={reload} />
       )}
 
       {/* Send message */}

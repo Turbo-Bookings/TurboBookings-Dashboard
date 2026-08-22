@@ -109,3 +109,37 @@ export async function releaseHold(
     reqOpts(account, "release a security hold"),
   );
 }
+
+/**
+ * Charge a saved card off-session, with the WHOLE amount as our application fee.
+ *
+ * Used to top up the platform fee when a booking's value rises after checkout — a cross-tour
+ * reschedule to a pricier tour, or an ATV added at check-in. The original charge's
+ * `application_fee_amount` settled long ago and cannot be amended, so the increment has to be its own
+ * charge.
+ *
+ * `application_fee_amount === amountCents` on purpose: the customer already agreed to pay the 6%, and
+ * the operator never sees this money. It is not additional tour revenue, so passing any of it through
+ * to their balance would misstate their earnings.
+ */
+export async function chargeCardOnFile(params: {
+  account: Acct;
+  paymentMethodId: string;
+  amountCents: number;
+  description: string;
+  metadata?: Record<string, string>;
+}): Promise<Stripe.PaymentIntent> {
+  return getStripe().paymentIntents.create(
+    {
+      amount: params.amountCents,
+      currency: "usd",
+      confirm: true,
+      off_session: true,
+      payment_method: params.paymentMethodId,
+      description: params.description,
+      application_fee_amount: params.amountCents,
+      metadata: params.metadata,
+    },
+    reqOpts(params.account, "charge a saved card"),
+  );
+}

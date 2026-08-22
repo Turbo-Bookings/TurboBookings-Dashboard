@@ -6,7 +6,15 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DateTime } from "luxon";
 import { rescheduleBooking } from "@/lib/actions/bookings";
 
-type Slot = { id: string; startsAt: string; remaining: number };
+// startsAt arrives as a Date from the server action; itemName lets the operator see when a slot
+// belongs to a DIFFERENT tour than the one booked.
+type Slot = {
+  id: string;
+  startsAt: string | Date;
+  remaining: number;
+  itemId?: string;
+  itemName?: string;
+};
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -14,6 +22,7 @@ export function RescheduleControls({
   slug,
   bookingId,
   currentId,
+  currentItemId,
   slots,
   tz,
   onChanged,
@@ -21,6 +30,8 @@ export function RescheduleControls({
   slug: string;
   bookingId: string;
   currentId: string;
+  /** The tour currently booked — used to flag slots that belong to a different one. */
+  currentItemId?: string;
   slots: Slot[];
   tz: string;
   onChanged?: () => void;
@@ -47,7 +58,8 @@ export function RescheduleControls({
       arr.push(s);
       m.set(key, arr);
     }
-    for (const arr of m.values()) arr.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    for (const arr of m.values())
+      arr.sort((a, b) => +new Date(a.startsAt) - +new Date(b.startsAt));
     return m;
   }, [options, tz]);
 
@@ -155,12 +167,33 @@ export function RescheduleControls({
                       }`}
                     >
                       {label} <span className="text-zinc-400">({s.remaining})</span>
+                      {/* Only when it differs from the booked tour — on a single-tour location this
+                          never renders, and on a multi-tour one it is the difference between moving
+                          the time and moving the customer onto a different (possibly pricier) tour. */}
+                      {s.itemId && currentItemId && s.itemId !== currentItemId && (
+                        <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                          {s.itemName}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
           )}
+
+          {/* Cross-tour warning — the price and the balance due will change on save. */}
+          {to &&
+            (() => {
+              const sel = slots.find((x) => x.id === to);
+              if (!sel?.itemId || !currentItemId || sel.itemId === currentItemId) return null;
+              return (
+                <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                  Moving to <strong>{sel.itemName}</strong>. The booking is re-priced at that
+                  tour&apos;s rates and any difference is added to the balance due at check-in.
+                </p>
+              );
+            })()}
 
           {/* Fee + reason + confirm */}
           {to && (

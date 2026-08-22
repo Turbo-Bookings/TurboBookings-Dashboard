@@ -1,7 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
 import {
@@ -23,9 +23,10 @@ import {
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
-import { getTourBookingData } from "@/lib/actions/manualBooking";
+import { getTourBookingData, openSlotsForItem } from "@/lib/actions/manualBooking";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
+import { syncPlatformFee } from "@/lib/booking/platformFee";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { withTxn } from "@/lib/db/txn";
@@ -676,13 +677,22 @@ export async function rescheduleBooking(
     performedBy = userId ?? null;
   } catch {}
 
+  let repricedSubtotal = b.subtotalCents;
   try {
     await withTxn(async (tx) => {
       const slot = (
         await tx.select().from(availabilities).where(eq(availabilities.id, toAvailabilityId)).for("update")
       )[0];
       if (!slot) throw new Error("New time not found");
-      if (slot.itemId !== b.itemId) throw new Error("That time is for a different tour");
+
+      // Cross-tour reschedule. This used to be blocked outright, which meant a customer moving from
+      // a 4pm day tour to a glow slot had to be cancelled and rebooked by hand — losing the booking
+      // number, the payment history and the reschedule trail.
+      const crossTour = slot.itemId !== b.itemId;
+      const targetItem = crossTour
+        ? (await tx.select().from(items).where(eq(items.id, slot.itemId)).limit(1))[0]
+        : item;
+      if (!targetItem) throw new Error("Tour for that time not found");
 
       const bookedRows = await tx
         .select({ qty: bookingLines.quantity })
@@ -692,7 +702,7 @@ export async function rescheduleBooking(
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
 
       let remaining: number;
-      if (item.capacityMode === "fixed") {
+      if (targetItem.capacityMode === "fixed") {
         let base = slot.capacityOverride;
         if (base == null && slot.scheduleId) {
           const sc = (
@@ -706,7 +716,7 @@ export async function rescheduleBooking(
           .select({ rr: resourceRequirements, r: resources })
           .from(resourceRequirements)
           .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-          .where(eq(resourceRequirements.itemId, b.itemId));
+          .where(eq(resourceRequirements.itemId, targetItem.id));
         const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
         for (const { rr: req, r } of rr) {
           const cur = byRes.get(r.id);
@@ -725,15 +735,59 @@ export async function rescheduleBooking(
       }
       if (partySize > remaining) throw new Error("Not enough capacity at the new time");
 
+      // Re-price against the target tour. Every rider type on the booking must exist on it, or we
+      // would silently keep the old tour's rate and under-bill.
+      let newSubtotal = b.subtotalCents;
+      if (crossTour) {
+        const priced = await tx
+          .select({ ctId: itemCustomerTypes.customerTypeId, price: itemCustomerTypes.priceCents })
+          .from(itemCustomerTypes)
+          .where(eq(itemCustomerTypes.itemId, targetItem.id));
+        const priceByType = new Map(priced.map((p) => [p.ctId, p.price]));
+
+        const fullLines = await tx
+          .select({ id: bookingLines.id, ctId: bookingLines.customerTypeId, qty: bookingLines.quantity })
+          .from(bookingLines)
+          .where(eq(bookingLines.bookingId, bookingId));
+
+        const missing = fullLines.filter((l) => !priceByType.has(l.ctId));
+        if (missing.length) {
+          const names = await tx
+            .select({ n: customerTypes.singular })
+            .from(customerTypes)
+            .where(inArray(customerTypes.id, missing.map((m) => m.ctId)));
+          throw new Error(
+            `"${targetItem.name}" doesn't offer ${names.map((x) => x.n).join(", ")} — cancel and rebook instead.`,
+          );
+        }
+
+        newSubtotal = 0;
+        for (const l of fullLines) {
+          const unit = priceByType.get(l.ctId)!;
+          newSubtotal += unit * l.qty;
+          await tx
+            .update(bookingLines)
+            .set({ unitPriceCents: unit, updatedAt: new Date() })
+            .where(eq(bookingLines.id, l.id));
+        }
+      }
+
+      // The reschedule fee is operator revenue and rides on the balance, like the tour price.
+      // `platform_fee_cents` is deliberately NOT recomputed here — syncPlatformFee() does that after
+      // the transaction commits, because it charges a card and must not run inside one.
+      const subtotalWithFee = newSubtotal + fee;
       await tx
         .update(bookings)
         .set({
           availabilityId: toAvailabilityId,
-          balanceDueCents: b.balanceDueCents + fee,
-          totalCents: b.totalCents + fee,
+          ...(crossTour ? { itemId: targetItem.id, subtotalCents: newSubtotal } : {}),
+          totalCents: subtotalWithFee + (b.taxCents ?? 0) + (b.platformFeeCents ?? 0),
+          balanceDueCents:
+            subtotalWithFee + (b.taxCents ?? 0) + (b.platformFeeCents ?? 0) - (b.depositPaidCents ?? 0),
           updatedAt: new Date(),
         })
         .where(eq(bookings.id, bookingId));
+      repricedSubtotal = subtotalWithFee;
       await tx.insert(bookingReschedules).values({
         bookingId,
         fromAvailabilityId: b.availabilityId,
@@ -746,6 +800,10 @@ export async function rescheduleBooking(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Reschedule failed" };
   }
+
+  // Outside the transaction on purpose — this charges a card, and taking money inside a transaction
+  // that might roll back is how you end up billing for something that never happened.
+  const feeSync = await syncPlatformFee(location, bookingId, repricedSubtotal, "reschedule");
 
   await recordAudit({
     slug,
@@ -792,6 +850,7 @@ export async function addVehicles(
   const item = (await getDb().select().from(items).where(eq(items.id, booking.itemId)).limit(1))[0];
   if (!item) return { ok: false, error: "Tour not found" };
 
+  let addedDelta = 0;
   try {
     await withTxn(async (tx) => {
       const slot = (
@@ -831,6 +890,7 @@ export async function addVehicles(
       if (qty > remaining) throw new Error("Not enough capacity in this slot");
 
       const delta = qty * line.unitPriceCents;
+      addedDelta = delta;
       await tx.update(bookingLines).set({ quantity: line.quantity + qty, updatedAt: new Date() }).where(eq(bookingLines.id, lineId));
       await tx
         .update(bookings)
@@ -845,6 +905,9 @@ export async function addVehicles(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not add vehicle" };
   }
+  // Adding a vehicle raises the booking's value, so our 6% rises with it. Charged to the saved card
+  // outside the transaction — see syncPlatformFee. This is the check-in "they want one more ATV" case.
+  await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added");
   await recordAudit({ slug, action: "catalog.booking.add_vehicles", summary: `Added ${qty} vehicle(s)`, payload: { bookingId: booking.id, lineId, qty } });
   revalidate(slug, booking.id);
   return { ok: true };
@@ -891,6 +954,7 @@ export async function addLine(
   if (!ict) return { ok: false, error: "That rider type isn't offered on this tour" };
   const unitPriceCents = ict.price;
 
+  let addedDelta = 0;
   try {
     await withTxn(async (tx) => {
       const slot = (
@@ -950,6 +1014,7 @@ export async function addLine(
       }
 
       const delta = qty * unitPriceCents;
+      addedDelta = delta;
       await tx
         .update(bookings)
         .set({
@@ -963,6 +1028,7 @@ export async function addLine(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not add rider" };
   }
+  await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added");
   await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty } });
   revalidate(slug, booking.id);
   return { ok: true };
@@ -1306,10 +1372,39 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     detail.booking.status === "active"
       ? await getTourBookingData(slug, detail.booking.itemId)
       : null;
+
+  // Reschedule targets span EVERY bookable tour at the location, not just this booking's own. A
+  // customer moving from a 4pm day tour to a glow slot used to require cancel-and-rebook, which threw
+  // away the booking number, the payment history and the reschedule trail. Each slot carries its tour
+  // name so the operator can see when they are switching tours — and, if the price differs, the
+  // balance due is re-priced on save.
+  let rescheduleSlots: {
+    id: string;
+    startsAt: Date;
+    remaining: number;
+    itemId: string;
+    itemName: string;
+  }[] = [];
+  if (detail.booking.status === "active") {
+    const bookable = await getDb()
+      .select({ id: items.id, name: items.name })
+      .from(items)
+      .where(and(eq(items.locationId, location.id), eq(items.bookableOnline, true)))
+      .orderBy(asc(items.sortOrder));
+    const perTour = await Promise.all(
+      bookable.map(async (it) => {
+        const slots = await openSlotsForItem(location.id, it.id);
+        return slots.map((sl) => ({ ...sl, itemId: it.id, itemName: it.name }));
+      }),
+    );
+    rescheduleSlots = perTour
+      .flat()
+      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  }
   return {
     detail,
     refund,
-    rescheduleSlots: tour && tour.ok ? tour.slots : [],
+    rescheduleSlots,
     // All rider types offered on this tour (incl. hidden/comp types), so an
     // operator can add one that isn't on the original reservation.
     riderTypes: tour && tour.ok ? tour.pricing : [],
