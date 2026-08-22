@@ -21,6 +21,7 @@ import {
   resources,
 } from "@/lib/db";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { overlappingResourceUsage } from "@/lib/availability/resourceUsage";
 
 export type CheckInRollup = "not_yet" | "checked_in" | "no_show" | "partial";
 
@@ -276,7 +277,7 @@ export async function gridForDate(
   const resourceItemIds = [
     ...new Set(slots.filter((s) => s.capacityMode === "resource_based").map((s) => s.a.itemId)),
   ];
-  const poolsByItem = new Map<string, { max: number; oos: number; maxQ: number }[]>();
+  const poolsByItem = new Map<string, { resourceId: string; max: number; oos: number; maxQ: number }[]>();
   if (resourceItemIds.length) {
     const rr = await db
       .select({ itemId: resourceRequirements.itemId, rr: resourceRequirements, r: resources })
@@ -295,11 +296,22 @@ export async function gridForDate(
         m.set(row.r.id, { max: row.r.maxConcurrentUses, oos: row.r.outOfServiceCount, maxQ: row.rr.quantityConsumed });
       else cur.maxQ = Math.max(cur.maxQ, row.rr.quantityConsumed);
     }
-    for (const [itemId, m] of byItemRes) poolsByItem.set(itemId, [...m.values()]);
+    for (const [itemId, m] of byItemRes)
+      poolsByItem.set(itemId, [...m.entries()].map(([resourceId, v]) => ({ resourceId, ...v })));
   }
+
+  // Shared-pool usage per slot. This grid is where the overbooking risk was visible: two tours on the
+  // same machines at overlapping times each showed the whole fleet as available.
+  const usage = resourceItemIds.length
+    ? await overlappingResourceUsage(
+        slots.map((s) => ({ id: s.a.id, startsAt: s.a.startsAt, endsAt: s.a.endsAt })),
+        locationId,
+      )
+    : new Map();
 
   return slots.map((s) => {
     const booked = bookedBySlot.get(s.a.id) ?? 0;
+    const slotUsage = usage.get(s.a.id);
     let available: number | null;
     if (s.capacityMode === "fixed") {
       const base = s.a.capacityOverride ?? s.schedCap;
@@ -312,7 +324,7 @@ export async function gridForDate(
               maxConcurrentUses: p.max,
               outOfServiceCount: p.oos,
               maxQuantityConsumed: p.maxQ,
-              consumed: booked,
+              consumed: slotUsage?.get(p.resourceId) ?? 0,
             })),
           )
         : null;

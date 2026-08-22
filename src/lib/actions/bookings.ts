@@ -27,6 +27,7 @@ import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { withTxn } from "@/lib/db/txn";
 import {
   captureHold as stripeCaptureHold,
@@ -712,8 +713,14 @@ export async function rescheduleBooking(
           if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
           else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
         }
+        // Shared across every tour overlapping this slot — `booked` sees only this availability row.
+        const usage = await overlappingUsageForSlot(
+          { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
+          location.id,
+          { db: tx },
+        );
         remaining = resourceRemaining(
-          [...byRes.values()].map<ResourcePool>((p) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: booked })),
+          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
         );
       }
       if (partySize > remaining) throw new Error("Not enough capacity at the new time");
@@ -813,7 +820,13 @@ export async function addVehicles(
           if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
           else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
         }
-        remaining = resourceRemaining([...byRes.values()].map<ResourcePool>((x) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: booked })));
+        // Shared across every tour overlapping this slot — `booked` sees only this availability row.
+        const usage = await overlappingUsageForSlot(
+          { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
+          location.id,
+          { db: tx },
+        );
+        remaining = resourceRemaining([...byRes.entries()].map<ResourcePool>(([resourceId, x]) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: usage.get(resourceId) ?? 0 })));
       }
       if (qty > remaining) throw new Error("Not enough capacity in this slot");
 
@@ -906,7 +919,13 @@ export async function addLine(
           if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
           else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
         }
-        remaining = resourceRemaining([...byRes.values()].map<ResourcePool>((x) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: booked })));
+        // Shared across every tour overlapping this slot — `booked` sees only this availability row.
+        const usage = await overlappingUsageForSlot(
+          { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
+          location.id,
+          { db: tx },
+        );
+        remaining = resourceRemaining([...byRes.entries()].map<ResourcePool>(([resourceId, x]) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: usage.get(resourceId) ?? 0 })));
       }
       if (qty > remaining) throw new Error("Not enough capacity in this slot");
 
@@ -1214,8 +1233,14 @@ export async function moveSlotBookings(
           if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
           else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
         }
+        // Shared across every tour overlapping this slot — `booked` sees only this availability row.
+        const usage = await overlappingUsageForSlot(
+          { id: target.id, startsAt: target.startsAt, endsAt: target.endsAt },
+          location.id,
+          { db: tx },
+        );
         remaining = resourceRemaining(
-          [...byRes.values()].map<ResourcePool>((p) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: booked })),
+          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
         );
       }
       if (groupSize > remaining) throw new Error("Not enough capacity at the target time");

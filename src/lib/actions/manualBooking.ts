@@ -20,6 +20,7 @@ import {
   resources,
 } from "@/lib/db";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { overlappingResourceUsage, overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { validateDiscountForBooking, type DiscountLine } from "@/lib/booking/discount";
 import { getItemPricing } from "@/lib/data/items";
 import { getWholeBookingFieldsForItem } from "@/lib/data/customFields";
@@ -93,7 +94,7 @@ async function openSlotsForItem(
   const bySlot = new Map<string, number>();
   for (const b of booked) bySlot.set(b.availabilityId, (bySlot.get(b.availabilityId) ?? 0) + b.qty);
 
-  let pools: { max: number; oos: number; maxQ: number }[] = [];
+  let pools: { resourceId: string; max: number; oos: number; maxQ: number }[] = [];
   if (item.capacityMode === "resource_based") {
     const rr = await db
       .select({ rr: resourceRequirements, r: resources })
@@ -106,11 +107,22 @@ async function openSlotsForItem(
       if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
       else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
     }
-    pools = [...byRes.values()];
+    pools = [...byRes.entries()].map(([resourceId, v]) => ({ resourceId, ...v }));
   }
+
+  // Shared-pool usage: peak concurrent use of each resource by EVERY tour overlapping the slot, not
+  // just this one. Without it, two tours on the same machines each see the whole fleet as free.
+  const usage =
+    item.capacityMode === "resource_based"
+      ? await overlappingResourceUsage(
+          slots.map(({ a }) => ({ id: a.id, startsAt: a.startsAt, endsAt: a.endsAt })),
+          item.locationId,
+        )
+      : new Map();
 
   return slots.map(({ a, cap }) => {
     const bk = bySlot.get(a.id) ?? 0;
+    const slotUsage = usage.get(a.id);
     const remaining =
       item.capacityMode === "fixed"
         ? fixedRemaining(a.capacityOverride ?? cap, bk)
@@ -119,7 +131,7 @@ async function openSlotsForItem(
               maxConcurrentUses: p.max,
               outOfServiceCount: p.oos,
               maxQuantityConsumed: p.maxQ,
-              consumed: bk,
+              consumed: slotUsage?.get(p.resourceId) ?? 0,
             })),
           );
     return { id: a.id, startsAt: a.startsAt, remaining };
@@ -427,8 +439,14 @@ export async function createDirectBooking(
           if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
           else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
         }
+        // Shared across every tour overlapping this slot — `booked` sees only this availability row.
+        const usage = await overlappingUsageForSlot(
+          { id: payload.availabilityId, startsAt: slot.startsAt, endsAt: slot.endsAt },
+          location.id,
+          { db: tx },
+        );
         remaining = resourceRemaining(
-          [...byRes.values()].map<ResourcePool>((p) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: booked })),
+          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
         );
       }
       if (requested > remaining) throw new Error("Not enough capacity in this slot");
