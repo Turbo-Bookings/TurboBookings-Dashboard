@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { BookingActions } from "@/components/BookingActions";
 import { BookingStamps } from "@/components/BookingStamps";
+import { CustomerEditor } from "@/components/CustomerEditor";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
@@ -105,11 +106,17 @@ export default async function BookingDetailPage({ params }: Props) {
       {/* Customer */}
       <div className="mt-5 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Customer</h3>
-        <p className="mt-1 text-sm">
-          {[customer?.firstName, customer?.lastName].filter(Boolean).join(" ") || "—"}
-          {customer?.emailLower ? ` · ${customer.emailLower}` : ""}
-          {customer?.phoneE164 ? ` · ${customer.phoneE164}` : ""}
-        </p>
+        <div className="mt-1">
+          <CustomerEditor
+            slug={slug}
+            bookingId={b.id}
+            firstName={customer?.firstName ?? null}
+            lastName={customer?.lastName ?? null}
+            email={customer?.emailLower ?? null}
+            phone={customer?.phoneE164 ?? null}
+            canEdit={canManage}
+          />
+        </div>
       </div>
 
       {/* Riders + per-vehicle check-in */}

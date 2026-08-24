@@ -11,6 +11,7 @@ import { BookingActions } from "@/components/BookingActions";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { BookingStamps } from "@/components/BookingStamps";
+import { CustomerEditor } from "@/components/CustomerEditor";
 import { useCaps } from "@/components/CapabilitiesProvider";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -131,9 +132,18 @@ function Body({
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
           {[cust?.firstName, cust?.lastName].filter(Boolean).join(" ") || "Customer"}
         </h2>
-        <p className="mt-0.5 text-sm text-zinc-500">
-          {cust?.phoneE164 ? `${cust.phoneE164} · ` : ""}{cust?.emailLower}
-        </p>
+        <div className="mt-0.5">
+          <CustomerEditor
+            slug={slug}
+            bookingId={b.id}
+            firstName={cust?.firstName ?? null}
+            lastName={cust?.lastName ?? null}
+            email={cust?.emailLower ?? null}
+            phone={cust?.phoneE164 ?? null}
+            canEdit={caps.manage_bookings}
+            onChanged={reload}
+          />
+        </div>
         <BookingStamps createdAt={detail.createdAt} cancelledAt={detail.cancelledAt} tz={tz} />
       </div>
 
