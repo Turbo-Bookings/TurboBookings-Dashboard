@@ -78,6 +78,16 @@ npm run arch:sync -- --write
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried
 three different status dates and disagreed about whether the booking system was live.
 
+## 🔴 Open task, today — platform-fee top-ups collecting nothing
+
+30 top-ups since 2026-08-22, **0 collected, $649.80 outstanding**, and
+`bookings.platform_fee_cents` now overstates what we received on those bookings. One real bug
+(`chargeCardOnFile` omits Stripe's `customer` param, which breaks every real card) plus a visibility
+gap (failures live only in an unfiltered, 200-row, per-location activity feed).
+
+Full detail, causes, options and the SQL to re-run: the 🔴 block in
+`docs/BOOKING_SYSTEM_SPRINTS.md`. Ready for plan mode.
+
 ## Next phase — Stage 3, the real Phase 0
 
 Intelligence DB on Neon, `touchpoints`, identity resolution, and resolving the click ids we now collect
