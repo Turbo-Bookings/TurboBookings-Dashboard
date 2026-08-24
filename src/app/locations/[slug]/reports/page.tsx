@@ -43,6 +43,17 @@ export default async function ReportsPage({ params, searchParams }: Props) {
     <section>
       <PageHeader title="Reports" description={`By tour date · ${tz}`} />
 
+      {/* Admin-only, like the fee column itself — this is Turbo Bookings' revenue, not the
+          operator's. Linked from here rather than the nav so it stays out of operators' way. */}
+      {showFees && (
+        <a
+          href={`${base}/uncollected-fees`}
+          className="mb-4 inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+        >
+          Uncollected platform fees →
+        </a>
+      )}
+
       <form className="mb-5 flex flex-wrap items-end gap-2" action={base}>
         <label className="text-sm">
           From

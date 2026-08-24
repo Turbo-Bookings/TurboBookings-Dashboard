@@ -5,7 +5,24 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
-> ### ▶ STATE AS OF 2026-08-22 — all three locations LIVE; cockpit revenue feed **CONNECTED**
+> ### ▶ STATE AS OF 2026-08-24 — booking system v1.3; operator tooling hardened
+>
+> **What shipped 2026-08-24** (all live on `main`, all in `turbobookings-dashboard` unless noted):
+>
+> | Area | Change |
+> |---|---|
+> | **Rep payments** | The charge button froze on "Charging…" and took nothing. Card-only on the rep form, `try/catch` + `finally`, `!stripe` gate, `return_url`, idempotency key. `processing` no longer reported as failure *after* money moved. Post-charge fetches timeboxed |
+> | **Customer edits** | Managers (`director`+) can fix name/email/phone on a booking, with **Resend confirmation**. Email collisions re-point the booking to the existing customer |
+> | **Payment country** | Dashboard defaults to US; the customer site deliberately still follows IP for overseas tourists |
+> | **Booking timestamps** | "Booked …" and "Cancelled …" in location-local time, UTC-projected. `cancelled_at` previously had ZERO references in any component |
+> | **Cancel/refund** | Merged into one control. The loud red button used to pay out the *policy* figure — $0.00 on a late cancellation — while the correct action sat below it looking optional |
+> | **Shared resource pools** | Two tours on the same machines each saw the whole fleet. Peak-concurrency, not sum. `bookingsystem` + 7 dashboard call sites |
+> | **Cross-tour reschedule** | Now allowed, with re-pricing; platform fee ratchets up and is charged to the saved card |
+> | **Uncollected fees** | `platform_fee_cents` now means money RECEIVED; new report at `reports/uncollected-fees` |
+> | **Dallas Glow Tour** | New tour, 1 ATV + 1 Glow Kit so the 10 kits cap it without leaving the shared ATV pool |
+>
+> ---
+> ### ▶ PREVIOUS STATE (2026-08-22) — all three locations LIVE; cockpit revenue feed **CONNECTED**
 >
 > **Miami cut over 2026-08-21.** All three locations now run on our own booking system and FareHarbor
 > is retired as a booking surface. `fareharbor.com` appears 0 times on the Miami marketing site.
@@ -43,65 +60,41 @@
 > 136 already-queued lifecycle events were dead-lettered rather than sent. **Never make the importer
 > call `emitEvent`.**
 >
-> #### 🔴 OPEN TASK — platform-fee top-ups are collecting NOTHING (found 2026-08-24)
+> #### ✅ RESOLVED 2026-08-24 — uncollected platform fees
 >
-> **Status: not started. Ready for plan mode. Pick this up today.**
->
-> Since cross-tour reschedule + the fee ratchet shipped (dashboard `002a597`, 2026-08-22):
+> The 🔴 task logged earlier today is done. What it turned out to be:
 >
 > ```
-> 30 top-ups triggered · 0 collected · $649.80 uncollected
->   dtown 14  $271.20      htown 8  $217.20      miami 8  $161.40
->   contexts: reschedule 20 · rider added 6 · vehicle added 4
+> $649.80 across 26 bookings, 0 collected
+>   $582.00  FareHarbor CSV imports — no Stripe payment behind them, uncollectable forever
+>    $33.00  operator/phone bookings — no card saved
+>    $34.80  online bookings — only ONE of seven had a usable card
 > ```
 >
-> **This is worse than "not collected".** `syncPlatformFee` raises
-> `bookings.platform_fee_cents` to the new figure whether or not the card charge succeeds — by
-> design, so the row states what is OWED. With collection at 0%, our stored fee now overstates
-> what we have actually received on 30 bookings. Any revenue report reading
-> `platform_fee_cents` is currently wrong by $649.80.
+> **The decisive finding was not the bug — it was Link.** A card payment leaves a reusable card on
+> file 113 times out of 113. A **Link** payment leaves one **1 time in 60**; Cash App and Klarna, never.
+> `commit.ts` guards the save with `if (pm?.card)`, and a Link PaymentMethod has no `.card`. So
+> "charge the saved card" only ever works for customers who paid by plain card, and roughly 90% of
+> the backlog was never chaseable.
 >
-> **Cause 1 — a real bug in our code (1 of 30, but it breaks EVERY real card).**
-> Stripe returned:
-> `"The payment_method parameter supplied pm_… belongs to the Customer cus_…. Please include the
-> Customer in the customer parameter on the PaymentIntent."`
-> `chargeCardOnFile()` in `src/lib/stripe/payments.ts` does not pass `customer`. Checkout uses
-> `setup_future_usage`, so every saved card IS attached to a Stripe Customer — meaning this fails
-> for every card we actually hold. It only surfaced once because the other 29 never reached Stripe.
-> Two-line fix; needs the customer id, which is not currently stored on `payment_methods_on_file`.
+> **Fixed:**
+> - `chargeCardOnFile` omitted Stripe's `customer` parameter. Because checkout uses
+>   `setup_future_usage`, every saved card IS attached to a Customer — so it failed for every real
+>   card we hold. It surfaced only once because the other 29 never reached Stripe. It now resolves
+>   the customer from the PaymentMethod at call time rather than requiring a new column.
+> - **`platform_fee_cents` now means money RECEIVED.** It was recording what was owed regardless of
+>   collection, so every revenue figure overstated by whatever failed. New
+>   `platform_fee_uncollected_cents` + `platform_fee_written_off_at` (migration
+>   `drizzle/0035_platform_fee_uncollected.sql`, applied by hand — the drizzle journal has drifted,
+>   see below). The historical $649.80 was moved across.
+> - **New report:** `/locations/<slug>/reports/uncollected-fees`, admin-only, linked from Reports.
+>   Splits chaseable (has a card → Retry) from not (→ Write off). A write-off is an acknowledgement,
+>   not an erasure: the amount stays recorded so the running total of what we have forgone is visible.
 >
-> **Cause 2 — no card on file (29 of 30).** Expected for **21** of them: those bookings are
-> `source='api'`, i.e. the FareHarbor CSV imports, which never went through our checkout and never
-> will have a card. That fee is genuinely uncollectable by card and needs a different route or a
-> write-off. The remaining 8 (7 `online`, 2 `direct`) should be investigated — there are 112 active
-> cards on file across the three locations, so some of those bookings may have one that the lookup
-> is missing.
->
-> **Visibility is the other half of the problem.** The only surface is
-> `/locations/<slug>/activity` — no filter, no search, hard cap of 200 rows with no pagination, and
-> Houston alone writes ~112 audit entries/day, so the window there is under two days. It is also
-> per-location and has no notion of "resolved". Worst of all, a SUCCESSFUL top-up writes a
-> `payments` row and is queryable, while a FAILED one exists only in the audit log — the thing you
-> most need to see is the least visible.
->
-> **Options discussed, nothing chosen yet:**
-> 1. An "uncollected fees" report across all locations — amount, booking, reason, date — with retry
->    and write-off. Most useful, most work. Leaning here, scoped to read-only first.
-> 2. Filter the existing activity feed + raise the 200 cap. Cheap, still per-location, still a feed.
-> 3. No UI; query on request. Zero work, does not scale to the 2027 team.
->
-> **Re-run the numbers with:**
-> ```sql
-> SELECT l.slug, (a.payload->>'charged')::boolean AS charged, count(*),
->        sum((a.payload->>'delta')::int)/100.0 AS dollars
-> FROM audit_log a JOIN locations l ON l.id=a.location_id
-> WHERE a.action='catalog.booking.platform_fee_topup' GROUP BY 1,2 ORDER BY 1,2;
->
-> SELECT a.payload->>'uncollectedReason' AS reason, count(*),
->        sum((a.payload->>'delta')::int)/100.0 AS dollars
-> FROM audit_log a WHERE a.action='catalog.booking.platform_fee_topup'
->   AND (a.payload->>'charged')::boolean IS NOT TRUE GROUP BY 1 ORDER BY 2 DESC;
-> ```
+> ⚠️ **The drizzle migration journal is out of sync with production.** `0033`/`0034`/`0035` are
+> hand-written and applied directly; `npm run db:generate` will try to re-create `terms_acceptances`
+> and the venue-fee columns that already exist. Write new migrations by hand with `IF NOT EXISTS`
+> and apply them directly until someone reconciles the journal.
 >
 > #### ⚠ Known-open
 > - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should

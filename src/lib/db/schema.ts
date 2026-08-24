@@ -1241,6 +1241,17 @@ export const bookings = pgTable(
     subtotalCentsOverride: integer("subtotal_cents_override"),
     taxCents: integer("tax_cents").notNull().default(0),
     platformFeeCents: integer("platform_fee_cents").notNull().default(0),
+  // Fee we were owed but could NOT take. Kept separate so platform_fee_cents stays a true record of
+  // money received and revenue reports don't overstate.
+  //
+  // It fills when a booking's value rises after checkout — a cross-tour reschedule, an ATV added at
+  // check-in — and the top-up charge cannot land: no card on file, an expired card, or a customer who
+  // paid by Link / Cash App / Klarna, none of which leave a reusable card. FareHarbor-imported
+  // bookings can never pay it at all, having no Stripe payment behind them.
+  platformFeeUncollectedCents: integer("platform_fee_uncollected_cents").notNull().default(0),
+  // Set when an operator accepts that the uncollected amount will never be recovered, so it stops
+  // appearing as outstanding work.
+  platformFeeWrittenOffAt: timestamp("platform_fee_written_off_at", { withTimezone: true }),
     discountCents: integer("discount_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull(),
 

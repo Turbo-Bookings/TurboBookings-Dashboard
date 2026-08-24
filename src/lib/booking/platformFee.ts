@@ -1,8 +1,10 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   bookings,
+  customers,
   getDb,
+  locations,
   paymentMethodsOnFile,
   payments,
   type Location,
@@ -119,12 +121,24 @@ export async function syncPlatformFee(
     }
   }
 
-  // The stored fee moves to the correct figure whether or not collection succeeded. It states what
-  // the booking OWES; whether it has been received is the payments table's job.
+  // Two honest numbers instead of one optimistic one.
+  //
+  // `platform_fee_cents` only moves when the money actually arrives, so revenue reports read as
+  // money RECEIVED. The shortfall goes to `platform_fee_uncollected_cents` where it can be seen,
+  // retried or written off. Recording the full target regardless — the old behaviour — had every
+  // revenue figure overstating by whatever could not be charged, $649.80 across 30 bookings by the
+  // time it was noticed.
+  //
+  // The customer's own total and balance still use the FULL target: they agreed to the 6%, and what
+  // they owe does not change because our collection failed.
+  const feeForRecords = charged ? target : current;
   await db
     .update(bookings)
     .set({
-      platformFeeCents: target,
+      platformFeeCents: feeForRecords,
+      platformFeeUncollectedCents: charged
+        ? (b.platformFeeUncollectedCents ?? 0)
+        : (b.platformFeeUncollectedCents ?? 0) + delta,
       totalCents: newSubtotalCents + (b.taxCents ?? 0) + target,
       balanceDueCents:
         newSubtotalCents + (b.taxCents ?? 0) + target - (b.depositPaidCents ?? 0),
@@ -158,4 +172,118 @@ export async function syncPlatformFee(
   });
 
   return { feeCents: target, deltaCents: delta, charged, uncollectedReason };
+}
+
+
+export type UncollectedFee = {
+  bookingId: string;
+  displayNumber: string;
+  slug: string;
+  locationName: string;
+  amountCents: number;
+  customerEmail: string | null;
+  chaseable: boolean;
+  reason: string;
+  createdAt: Date;
+};
+
+/**
+ * Every booking still owing platform fee we could not take.
+ *
+ * `chaseable` is the column that matters: a retry can only work when the customer has a saved card.
+ * Roughly 90% of the current backlog cannot be chased at all — FareHarbor CSV imports never had a
+ * Stripe payment, and customers who paid by Link, Cash App or Klarna leave no reusable card (1 of 60
+ * Link payments produced one, against 113 of 113 for plain card). Those need writing off, not
+ * retrying, and separating them is what stops the list becoming noise that nobody reads.
+ */
+export async function listUncollectedFees(slug?: string): Promise<UncollectedFee[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      displayNumber: bookings.displayNumber,
+      slug: locations.slug,
+      locationName: locations.brandDisplayName,
+      amountCents: bookings.platformFeeUncollectedCents,
+      externalRef: bookings.externalRef,
+      customerEmail: customers.emailLower,
+      customerId: bookings.customerId,
+      createdAtIso: sql<string>`to_char(${bookings.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+      hasCard: sql<boolean>`EXISTS (SELECT 1 FROM payment_methods_on_file p WHERE p.customer_id = ${bookings.customerId} AND NOT p.archived)`,
+    })
+    .from(bookings)
+    .innerJoin(locations, eq(locations.id, bookings.locationId))
+    .leftJoin(customers, eq(customers.id, bookings.customerId))
+    .where(
+      and(
+        gt(bookings.platformFeeUncollectedCents, 0),
+        isNull(bookings.platformFeeWrittenOffAt),
+        ...(slug ? [eq(locations.slug, slug)] : []),
+      ),
+    )
+    .orderBy(desc(bookings.platformFeeUncollectedCents));
+
+  return rows.map((r) => ({
+    bookingId: r.bookingId,
+    displayNumber: r.displayNumber,
+    slug: r.slug,
+    locationName: r.locationName ?? r.slug,
+    amountCents: r.amountCents,
+    customerEmail: r.customerEmail,
+    chaseable: !!r.hasCard,
+    reason: r.externalRef?.startsWith("fh:")
+      ? "Imported from FareHarbor — no Stripe payment to charge against"
+      : r.hasCard
+        ? "Card on file — a retry should work"
+        : "No saved card (paid by Link/Cash App, or booked by phone)",
+    createdAt: new Date(r.createdAtIso),
+  }));
+}
+
+/** Retry the charge for one booking. Only ever succeeds when a usable card is on file. */
+export async function retryUncollectedFee(
+  location: Location,
+  bookingId: string,
+): Promise<FeeSyncResult> {
+  const b = (
+    await getDb().select().from(bookings).where(eq(bookings.id, bookingId)).limit(1)
+  )[0];
+  if (!b) return { feeCents: 0, deltaCents: 0, charged: false, uncollectedReason: "Booking not found" };
+  // Re-derive the target from the CURRENT subtotal rather than trusting the stored split, so a retry
+  // after another change still lands on the right number.
+  const bps = location.platformFeeBps ?? 0;
+  const target = Math.round(Math.max(0, b.subtotalCents ?? 0) * (bps / 10000));
+  return syncPlatformFee(location, bookingId, (target * 10000) / (bps || 1), "manual retry");
+}
+
+/** Accept that an amount will never be recovered, so it stops showing as outstanding. */
+export async function writeOffUncollectedFee(
+  location: Location,
+  bookingId: string,
+  note: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const db = getDb();
+  const b = (
+    await db
+      .select({ displayNumber: bookings.displayNumber, amount: bookings.platformFeeUncollectedCents })
+      .from(bookings)
+      .where(and(eq(bookings.id, bookingId), eq(bookings.locationId, location.id)))
+      .limit(1)
+  )[0];
+  if (!b) return { ok: false, error: "Booking not found" };
+
+  // The amount is KEPT, not zeroed — writing off is an acknowledgement, not an erasure, and the
+  // running total of what we have forgone is worth being able to see.
+  await db
+    .update(bookings)
+    .set({ platformFeeWrittenOffAt: new Date(), updatedAt: new Date() })
+    .where(eq(bookings.id, bookingId));
+
+  await recordAudit({
+    slug: location.slug,
+    action: "catalog.booking.platform_fee_written_off",
+    summary: `Wrote off $${(b.amount / 100).toFixed(2)} of platform fee on #${b.displayNumber}${note ? ` — ${note}` : ""}`,
+    payload: { bookingId, amountCents: b.amount, note },
+  });
+  return { ok: true };
 }

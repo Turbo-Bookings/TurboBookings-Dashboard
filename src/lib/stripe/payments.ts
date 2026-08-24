@@ -129,6 +129,29 @@ export async function chargeCardOnFile(params: {
   description: string;
   metadata?: Record<string, string>;
 }): Promise<Stripe.PaymentIntent> {
+  const opts = reqOpts(params.account, "charge a saved card");
+
+  // Saved cards come from checkout's `setup_future_usage`, which attaches the PaymentMethod to a
+  // Stripe Customer. Reusing an attached PM off-session REQUIRES naming that Customer, or Stripe
+  // rejects the whole intent:
+  //
+  //   "The payment_method parameter supplied pm_… belongs to the Customer cus_….
+  //    Please include the Customer in the `customer` parameter on the PaymentIntent."
+  //
+  // We do not store the Stripe customer id, so resolve it from the PaymentMethod itself rather than
+  // adding a column and a migration for one rarely-hit path. One extra API call on a fee top-up is
+  // cheap; getting this wrong meant EVERY real saved card failed.
+  let customer: string | undefined;
+  try {
+    // retrieve() takes (id, params, options) — the empty params object is required so the
+    // connected-account option lands in the right argument slot.
+    const pm = await getStripe().paymentMethods.retrieve(params.paymentMethodId, {}, opts);
+    customer = typeof pm.customer === "string" ? pm.customer : (pm.customer?.id ?? undefined);
+  } catch {
+    // Fall through un-customered. An unattached PM charges fine without it; an attached one will
+    // fail with the message above, which the caller records rather than swallows.
+  }
+
   return getStripe().paymentIntents.create(
     {
       amount: params.amountCents,
@@ -136,10 +159,11 @@ export async function chargeCardOnFile(params: {
       confirm: true,
       off_session: true,
       payment_method: params.paymentMethodId,
+      ...(customer ? { customer } : {}),
       description: params.description,
       application_fee_amount: params.amountCents,
       metadata: params.metadata,
     },
-    reqOpts(params.account, "charge a saved card"),
+    opts,
   );
 }

@@ -78,15 +78,15 @@ npm run arch:sync -- --write
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried
 three different status dates and disagreed about whether the booking system was live.
 
-## 🔴 Open task, today — platform-fee top-ups collecting nothing
+## Where things stand (2026-08-24)
 
-30 top-ups since 2026-08-22, **0 collected, $649.80 outstanding**, and
-`bookings.platform_fee_cents` now overstates what we received on those bookings. One real bug
-(`chargeCardOnFile` omits Stripe's `customer` param, which breaks every real card) plus a visibility
-gap (failures live only in an unfiltered, 200-row, per-location activity feed).
+Booking system **v1.3**. All three locations live; cockpit revenue feed connected. This session
+hardened the operator tooling — rep payments, customer edits, cancel/refund, shared resource pools,
+cross-tour reschedule, uncollected fees. Full table in the ⭐ block of `docs/BOOKING_SYSTEM_SPRINTS.md`.
 
-Full detail, causes, options and the SQL to re-run: the 🔴 block in
-`docs/BOOKING_SYSTEM_SPRINTS.md`. Ready for plan mode.
+> ⚠️ **The drizzle migration journal is out of sync with production.** `0033`–`0035` are hand-written
+> and applied directly; `npm run db:generate` will try to re-create tables that already exist. Write
+> new migrations by hand with `IF NOT EXISTS` until someone reconciles it.
 
 ## Next phase — Stage 3, the real Phase 0
 
