@@ -92,7 +92,10 @@ export async function syncPlatformFee(
               eq(paymentMethodsOnFile.archived, false),
             ),
           )
-          .orderBy(desc(paymentMethodsOnFile.createdAt))
+          // Prefer a real CARD. Now that wallets (Link, Cash App) are saved too, the newest method
+          // may be one Stripe will not accept for an off-session charge or a manual-capture hold.
+          // `last4` is populated only for cards, so it is the discriminator.
+          .orderBy(sql`${paymentMethodsOnFile.last4} IS NULL`, desc(paymentMethodsOnFile.createdAt))
           .limit(1)
       )[0]
     : undefined;
@@ -142,6 +145,15 @@ export async function syncPlatformFee(
   const depositPaid = (b.depositPaidCents ?? 0) + (charged ? delta : 0);
   const newTotal = newSubtotalCents + (b.taxCents ?? 0) + target;
 
+  // A FareHarbor import has no Stripe payment behind it and never will, so there is nothing to charge
+  // and nothing to chase. Write the shortfall off in the same breath as recording it, rather than
+  // parking it on a report as work somebody might do. Those rows were 21 of the first 27 and $612.00
+  // of the first $649.80 — cutover residue drowning the six bookings that are genuinely ours.
+  //
+  // Written off is not erased: the amount stays on the booking, so what the cutover cost stays legible.
+  const autoWriteOff =
+    !charged && !b.platformFeeWrittenOffAt && !!b.externalRef?.startsWith("fh:");
+
   await db
     .update(bookings)
     .set({
@@ -154,6 +166,7 @@ export async function syncPlatformFee(
       // Falls by exactly the amount just taken from the card. The customer's TOTAL outlay is
       // unchanged either way — only which side of the counter it arrives on.
       balanceDueCents: newTotal - depositPaid,
+      ...(autoWriteOff ? { platformFeeWrittenOffAt: new Date() } : {}),
       updatedAt: new Date(),
     })
     .where(eq(bookings.id, bookingId));
@@ -179,7 +192,8 @@ export async function syncPlatformFee(
       `#${b.displayNumber} fee $${(current / 100).toFixed(2)} → $${(target / 100).toFixed(2)} (${context})` +
       (charged
         ? ` · charged $${(delta / 100).toFixed(2)} to card`
-        : ` · $${(delta / 100).toFixed(2)} NOT COLLECTED — ${uncollectedReason}`),
+        : ` · $${(delta / 100).toFixed(2)} NOT COLLECTED — ${uncollectedReason}` +
+          (autoWriteOff ? " · written off automatically (FareHarbor import)" : "")),
     payload: { bookingId, from: current, to: target, delta, charged, uncollectedReason, context },
   });
 
@@ -203,10 +217,13 @@ export type UncollectedFee = {
  * Every booking still owing platform fee we could not take.
  *
  * `chaseable` is the column that matters: a retry can only work when the customer has a saved card.
- * Roughly 90% of the current backlog cannot be chased at all — FareHarbor CSV imports never had a
- * Stripe payment, and customers who paid by Link, Cash App or Klarna leave no reusable card (1 of 60
- * Link payments produced one, against 113 of 113 for plain card). Those need writing off, not
- * retrying, and separating them is what stops the list becoming noise that nobody reads.
+ *
+ * FareHarbor-era imports are written off on sight (see `syncPlatformFee`) and so never reach this
+ * list. That is deliberate: they were 21 of the first 27 rows, and a report where the real work is
+ * outnumbered three to one by rows nobody can act on is a report nobody opens.
+ *
+ * What remains is bookings taken through our own system, where the fee rose after checkout and the
+ * top-up did not land — either no card was saved, or the charge failed.
  */
 export async function listUncollectedFees(slug?: string): Promise<UncollectedFee[]> {
   const db = getDb();

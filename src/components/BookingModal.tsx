@@ -293,19 +293,30 @@ function Row({ label, value, strong, muted }: { label: string; value: string; st
 function VehicleEditor({ slug, lineId, reload }: { slug: string; lineId: string; reload: () => void }) {
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
-  function act(fn: () => Promise<{ ok: boolean; error?: string }>) {
+  const [notice, setNotice] = useState<string | null>(null);
+  function act(fn: () => Promise<{ ok: boolean; error?: string; notice?: string }>) {
     setErr(null);
+    setNotice(null);
     start(async () => {
       const r = await fn();
       if (!r.ok) setErr(r.error ?? "Failed");
-      else reload();
+      else {
+        // Our 6% rises with the booking value, and the top-up is charged separately to the card on
+        // file. It can fail. The operator needs to know THAT, right now, because the balance the
+        // customer settles at the desk already contains the fee — collecting it is the whole fix.
+        setNotice(r.notice ?? null);
+        reload();
+      }
     });
   }
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex flex-wrap items-center gap-1">
       <button type="button" disabled={pending} onClick={() => act(() => removeVehicles(slug, lineId, 1))} className="rounded-md border border-zinc-300 p-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800" title="Remove a vehicle"><Minus className="h-3.5 w-3.5" /></button>
       <button type="button" disabled={pending} onClick={() => act(() => addVehicles(slug, lineId, 1))} className="rounded-md border border-zinc-300 p-1 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800" title="Add a vehicle"><Plus className="h-3.5 w-3.5" /></button>
       {err && <span className="text-xs text-red-600">{err}</span>}
+      {notice && (
+        <span className="basis-full text-xs text-amber-700 dark:text-amber-400">{notice}</span>
+      )}
     </span>
   );
 }
@@ -327,13 +338,16 @@ function AddRider({
   const [qty, setQty] = useState(1);
   const [pending, start] = useTransition();
   const [err, setErr] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   function submit() {
     setErr(null);
+    setNotice(null);
     start(async () => {
       const r = await addLine(slug, bookingId, ctId, qty);
       if (!r.ok) setErr(r.error ?? "Failed");
       else {
+        setNotice(r.notice ?? null);
         setQty(1);
         reload();
       }
@@ -374,6 +388,7 @@ function AddRider({
         </button>
         {err && <span className="text-xs text-red-600">{err}</span>}
       </div>
+      {notice && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{notice}</p>}
       <p className="mt-1 text-xs text-zinc-400">Added riders bill to the balance due at the venue.</p>
     </div>
   );

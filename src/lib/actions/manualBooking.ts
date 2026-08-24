@@ -396,7 +396,11 @@ export async function createDirectBooking(
     piId = pi.id;
     const pm = pi.payment_method && typeof pi.payment_method !== "string" ? pi.payment_method : null;
     last4 = pm?.card?.last4 ?? null;
-    if (pm?.card) pmCard = { id: pm.id, brand: pm.card.brand, last4: pm.card.last4, expMonth: pm.card.exp_month, expYear: pm.card.exp_year };
+    // Save whatever method was used, not only cards. This path is card-only today (the rep's form
+    // passes `paymentMethodTypes: ["card"]`), so it changes nothing now — but it matches the online
+    // path, where gating on `.card` silently dropped every Link and Cash App method and left those
+    // customers with nothing to charge a later fee top-up against.
+    if (pm) pmCard = { id: pm.id, brand: pm.card?.brand ?? pm.type ?? null, last4: pm.card?.last4 ?? null, expMonth: pm.card?.exp_month ?? null, expYear: pm.card?.exp_year ?? null };
   } else if (method === "groupon_ota") {
     paid = p.c.onlineBaseCents; // entered prepaid (clamped), no online fee/tax
   }

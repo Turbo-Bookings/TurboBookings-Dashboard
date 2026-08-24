@@ -14,6 +14,9 @@ const usd = (c: number) =>
  * saved card can never work, and a list that mixes the two becomes noise nobody reads. The
  * un-chaseable rows want a write-off, which is an acknowledgement rather than an erasure — the
  * amount stays on the booking so the running total of what we have forgone is still visible.
+ *
+ * FareHarbor imports no longer appear at all — they are written off on sight, since they have no
+ * Stripe payment to charge. Everything here came through our own booking system.
  */
 export function UncollectedFees({ slug, rows }: { slug: string; rows: UncollectedFee[] }) {
   const [pending, start] = useTransition();
@@ -110,11 +113,10 @@ export function UncollectedFees({ slug, rows }: { slug: string; rows: Uncollecte
             No way to charge — write these off
           </h3>
           <p className="mt-1 text-xs text-zinc-400">
-            Mostly FareHarbor bookings imported before the cutover, plus anyone who paid by Link,
-            Cash App or Klarna — none of which leave a card we can re-charge. Retrying cannot work.
-            The customer is still billed: it sits in the balance they pay at check-in, so the
-            operator collects it. Settle with the operator, then write it off here to clear it. The
-            amount stays recorded.
+            No card was saved at checkout, so there is nothing to charge and a retry cannot work.
+            The customer is still billed either way: the fee sits in the balance they pay at
+            check-in, so the operator collects it in cash. Settle with the operator, then write it
+            off here to clear it — the amount stays recorded.
           </p>
           <ul className="mt-1">
             {stuck.map((r) => (

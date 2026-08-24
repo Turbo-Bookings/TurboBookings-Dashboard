@@ -46,7 +46,22 @@ import type { Location } from "@/lib/db/schema";
 const CHECK = ["not_yet", "checked_in", "no_show"] as const;
 type Check = (typeof CHECK)[number];
 
-type Result = { ok: boolean; error?: string };
+type Result = { ok: boolean; error?: string; notice?: string };
+
+/**
+ * A one-line note for the operator when our fee could not be taken from the card.
+ *
+ * The balance the customer settles at the desk ALREADY includes the fee, so collecting it is the
+ * whole recovery — there is nothing else to set up. Saying nothing, which is what happened before,
+ * wasted the only moment the customer is physically present.
+ */
+function feeNotice(fee: { charged: boolean; deltaCents: number }): string | undefined {
+  if (fee.deltaCents <= 0) return undefined;
+  const amt = `$${(fee.deltaCents / 100).toFixed(2)}`;
+  return fee.charged
+    ? `Charged ${amt} booking fee to their card on file.`
+    : `Couldn't charge the ${amt} booking fee — it's included in the balance due, so collect it at the desk.`;
+}
 
 /** True for a booking brought in from another system — see the FareHarbor importer, which stamps
  *  `external_ref` as `fh:<their-pk>`. Such bookings must never be announced to the brains.
@@ -500,7 +515,10 @@ export async function placeHold(
           eq(paymentMethodsOnFile.archived, false),
         ),
       )
-      .orderBy(desc(paymentMethodsOnFile.createdAt))
+      // Prefer a real CARD. Now that wallets (Link, Cash App) are saved too, the newest method
+      // may be one Stripe will not accept for an off-session charge or a manual-capture hold.
+      // `last4` is populated only for cards, so it is the discriminator.
+      .orderBy(sql`${paymentMethodsOnFile.last4} IS NULL`, desc(paymentMethodsOnFile.createdAt))
       .limit(1)
   )[0];
   if (!pm) return { ok: false, error: "No card on file for this customer" };
@@ -907,10 +925,13 @@ export async function addVehicles(
   }
   // Adding a vehicle raises the booking's value, so our 6% rises with it. Charged to the saved card
   // outside the transaction — see syncPlatformFee. This is the check-in "they want one more ATV" case.
-  await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added");
+  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added");
   await recordAudit({ slug, action: "catalog.booking.add_vehicles", summary: `Added ${qty} vehicle(s)`, payload: { bookingId: booking.id, lineId, qty } });
   revalidate(slug, booking.id);
-  return { ok: true };
+  // Tell the operator NOW. This runs at check-in with the customer standing at the desk — the one
+  // moment the shortfall is trivially recoverable. Previously the result was discarded and `{ ok:
+  // true }` returned, so a failed charge was invisible until it surfaced days later on a report.
+  return { ok: true, notice: feeNotice(fee) };
 }
 
 // Add a rider of ANY customer type to an existing booking — even a type not on
@@ -1028,10 +1049,10 @@ export async function addLine(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not add rider" };
   }
-  await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added");
+  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added");
   await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty } });
   revalidate(slug, booking.id);
-  return { ok: true };
+  return { ok: true, notice: feeNotice(fee) };
 }
 
 // Remove vehicles from a line (can't go below already checked-in/no-show units).
