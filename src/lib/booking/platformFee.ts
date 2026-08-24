@@ -132,6 +132,16 @@ export async function syncPlatformFee(
   // The customer's own total and balance still use the FULL target: they agreed to the 6%, and what
   // they owe does not change because our collection failed.
   const feeForRecords = charged ? target : current;
+
+  // ⚠️ THE DOUBLE-CHARGE. Balance due is `total − deposit_paid`, and `total` already contains the
+  // full fee. So when the top-up succeeds, the delta must ALSO be added to `deposit_paid` — otherwise
+  // the customer pays it once by card here and again in the balance they settle at the venue.
+  //
+  // Nobody was ever hit by this, purely because no top-up had ever succeeded. It would have started
+  // firing the moment card coverage improved, which is exactly what the next change does.
+  const depositPaid = (b.depositPaidCents ?? 0) + (charged ? delta : 0);
+  const newTotal = newSubtotalCents + (b.taxCents ?? 0) + target;
+
   await db
     .update(bookings)
     .set({
@@ -139,9 +149,11 @@ export async function syncPlatformFee(
       platformFeeUncollectedCents: charged
         ? (b.platformFeeUncollectedCents ?? 0)
         : (b.platformFeeUncollectedCents ?? 0) + delta,
-      totalCents: newSubtotalCents + (b.taxCents ?? 0) + target,
-      balanceDueCents:
-        newSubtotalCents + (b.taxCents ?? 0) + target - (b.depositPaidCents ?? 0),
+      totalCents: newTotal,
+      depositPaidCents: depositPaid,
+      // Falls by exactly the amount just taken from the card. The customer's TOTAL outlay is
+      // unchanged either way — only which side of the counter it arrives on.
+      balanceDueCents: newTotal - depositPaid,
       updatedAt: new Date(),
     })
     .where(eq(bookings.id, bookingId));
