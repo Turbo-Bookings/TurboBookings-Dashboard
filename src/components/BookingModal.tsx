@@ -10,6 +10,7 @@ import { Mail, Minus, Plus, X } from "lucide-react";
 import { BookingActions } from "@/components/BookingActions";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
+import { BookingStamps } from "@/components/BookingStamps";
 import { useCaps } from "@/components/CapabilitiesProvider";
 import { Badge } from "@/components/ui/Badge";
 import {
@@ -133,6 +134,7 @@ function Body({
         <p className="mt-0.5 text-sm text-zinc-500">
           {cust?.phoneE164 ? `${cust.phoneE164} · ` : ""}{cust?.emailLower}
         </p>
+        <BookingStamps createdAt={detail.createdAt} cancelledAt={detail.cancelledAt} tz={tz} />
       </div>
 
       {/* Summary */}

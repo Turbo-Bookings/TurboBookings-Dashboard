@@ -221,7 +221,10 @@ function CardSetup({
   const stripePromise = useMemo<Promise<Stripe | null>>(() => loadStripe(pk), [pk]);
   return (
     <div className="mt-3">
-      <Elements stripe={stripePromise} options={{ clientSecret, appearance: { theme: "stripe" } }}>
+      <Elements
+        stripe={stripePromise}
+        options={{ clientSecret, appearance: { theme: "stripe" }, locale: "en" }}
+      >
         <CardInner slug={slug} onCancel={onCancel} onSaved={onSaved} />
       </Elements>
     </div>
@@ -263,7 +266,14 @@ function CardInner({ slug, onCancel, onSaved }: { slug: string; onCancel: () => 
 
   return (
     <div className="space-y-3">
-      <PaymentElement options={{ layout: "tabs" }} />
+      <PaymentElement
+        options={{
+          layout: "tabs",
+          // Internal surface, same reasoning as the rep booking form: default the billing country to
+          // the business's, not whatever IP the staff member happens to be behind.
+          defaultValues: { billingDetails: { address: { country: "US" } } },
+        }}
+      />
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button

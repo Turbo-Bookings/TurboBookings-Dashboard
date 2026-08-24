@@ -496,8 +496,27 @@ export async function getBookingDetail(id: string, locationId: string) {
       .limit(1)
   )[0];
 
+  // `bookings.created_at` is `timestamp` WITHOUT time zone holding UTC, so the driver parses it in
+  // the NODE PROCESS's zone — correct on Vercel (UTC), silently wrong anywhere else. Project it
+  // explicitly instead of trusting the parse. Same fix as listRecentBookings in actions/bookings.ts,
+  // which learned this the hard way.
+  const stamps = (
+    await db
+      .select({
+        createdAtIso: sql<string>`to_char(${bookings.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+        cancelledAtIso: sql<string | null>`to_char(${bookings.cancelledAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+      })
+      .from(bookings)
+      .where(eq(bookings.id, id))
+      .limit(1)
+  )[0];
+
   return {
     booking: b,
+    // Trustworthy instants for display. `cancelled_at` IS timestamptz already, but it is projected
+    // here too so both render through one path.
+    createdAt: stamps?.createdAtIso ? new Date(stamps.createdAtIso) : null,
+    cancelledAt: stamps?.cancelledAtIso ? new Date(stamps.cancelledAtIso) : null,
     item: item[0] ?? null,
     slot: slot[0] ?? null,
     customer: customer[0] ?? null,

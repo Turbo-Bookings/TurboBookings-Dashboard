@@ -3,6 +3,7 @@ import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { BookingActions } from "@/components/BookingActions";
+import { BookingStamps } from "@/components/BookingStamps";
 import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
@@ -65,6 +66,7 @@ export default async function BookingDetailPage({ params }: Props) {
           <p className="mt-1 text-sm text-zinc-500">
             {when} · {sourceLabel(b.source)} · <span className="font-medium">{b.status}</span>
           </p>
+          <BookingStamps createdAt={d.createdAt} cancelledAt={d.cancelledAt} tz={tz} />
         </div>
       </div>
 
