@@ -318,12 +318,18 @@ export async function createOperatorIntent(
       {
         amount: due,
         currency: "usd",
-        automatic_payment_methods: { enabled: true },
+        // Card only — must match `paymentMethodTypes` on <Elements> in NewBookingForm.tsx or
+        // deferred-intent mode refuses to confirm. With automatic_payment_methods the rep's form
+        // offered Link and Cash App Pay: a phone rep cannot complete either, and both finish via a
+        // redirect that hangs the confirm promise behind an overlay. That was the frozen button.
+        payment_method_types: ["card"],
         setup_future_usage: "off_session",
         metadata: { location_id: location.id, item_id: payload.itemId, availability_id: payload.availabilityId, source: "direct" },
         application_fee_amount: appFee,
       },
-      { stripeAccount: connected },
+      // Idempotency, matching the customer checkout. A rep who clicks twice — or a retry after a
+      // network blip — must not mint a second intent and take a second payment.
+      { stripeAccount: connected, idempotencyKey: `op-intent:${payload.availabilityId}:${due}:${payload.contact.email.toLowerCase()}` },
     );
     return { ok: true, clientSecret: pi.client_secret as string, stripeAccount: connected };
   } catch (e) {

@@ -54,6 +54,11 @@ export async function notifyManualBookingEmails(
         Authorization: `Bearer ${secret}`,
       },
       body: JSON.stringify(parts ? { bookingId, parts } : { bookingId }),
+      // Timeboxed for the same reason as emit.ts: this is awaited AFTER the booking is committed and
+      // the card charged, so a slow booking app must not freeze the operator's charge button. The
+      // caller already treats false as non-fatal. Generous, because the endpoint declares
+      // maxDuration = 60 and genuinely does send mail.
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) {
       console.error("notifyManualBookingEmails: booking app returned", res.status, {

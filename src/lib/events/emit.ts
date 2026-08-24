@@ -100,6 +100,11 @@ export async function emitEvent(input: EmitInput): Promise<void> {
         "X-Turbobookings-Event-Id": envelope.event_id,
       },
       body,
+      // Timeboxed. This runs inline after a booking has already been committed — and in the operator
+      // flow, after a card has already been charged. A slow or black-holing receiver used to hang the
+      // whole server action, leaving the rep on a frozen button with the money taken. Failure here is
+      // already non-fatal: the envelope falls through to outbound_event_queue and the cron retries.
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {

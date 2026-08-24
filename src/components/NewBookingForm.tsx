@@ -503,7 +503,26 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
                 Stripe isn&apos;t configured — add keys to charge cards, or use Walk-in / Groupon-OTA.
               </p>
             ) : dueNow >= 50 ? (
-              <Elements key={dueNow} stripe={stripePromise} options={{ mode: "payment", amount: dueNow, currency: "usd", setupFutureUsage: "off_session" }}>
+              <Elements
+                key={dueNow}
+                stripe={stripePromise}
+                options={{
+                  mode: "payment",
+                  amount: dueNow,
+                  currency: "usd",
+                  setupFutureUsage: "off_session",
+                  // Card ONLY on the rep form. Left unrestricted, the element offered every method
+                  // enabled on the connected account — Link and Cash App Pay among them. Neither is
+                  // completable by a rep reading a card number down the phone, and both finish via a
+                  // redirect that, under `redirect: "if_required"`, opens an overlay or popup whose
+                  // promise never settles if it is blocked or dismissed. That was the frozen button.
+                  // MUST match payment_method_types on the intent (manualBooking.ts) or deferred mode
+                  // refuses to confirm.
+                  paymentMethodTypes: ["card"],
+                  // "en" not "en-US": StripeElementLocale has no en-US member.
+                  locale: "en",
+                }}
+              >
                 <CardCheckout slug={slug} getPayload={buildPayload} amountCents={dueNow} disabled={!canSubmit} missing={missing} onError={setError} onDone={(id) => router.push(`/locations/${slug}/bookings/${id}`)} />
               </Elements>
             ) : (
@@ -564,42 +583,80 @@ function CardCheckout({
     if (!stripe || !elements) return;
     onError("");
     setBusy(true);
-    const payload = getPayload();
-    const { error: subErr } = await elements.submit();
-    if (subErr) {
-      onError(subErr.message ?? "Check card details");
+    // EVERY exit runs through finally. Before this, setBusy(false) existed only inside the four
+    // "returned an error" branches — so any REJECTION (a failed server action, a tab left open across
+    // a deploy, or Stripe throwing an IntegrationError on a deferred-intent amount mismatch) skipped
+    // all four and left the button reading "Charging…" forever with nothing logged and nothing shown.
+    // That is what reps were hitting: not one bug, but every bug rendered invisible.
+    try {
+      const payload = getPayload();
+      const { error: subErr } = await elements.submit();
+      if (subErr) {
+        onError(subErr.message ?? "Check card details");
+        return;
+      }
+      const intent = await createOperatorIntent(slug, payload);
+      if (!intent.ok) {
+        onError(intent.error);
+        return;
+      }
+      const { error: confErr, paymentIntent } = await stripe.confirmPayment({
+        elements,
+        clientSecret: intent.clientSecret,
+        // The intent is pinned to card only, so nothing here should ever redirect. return_url is
+        // belt-and-braces: if a redirect method somehow reaches this call without one, Stripe rejects
+        // outright rather than opening an overlay whose promise never settles.
+        confirmParams: { return_url: window.location.href },
+        redirect: "if_required",
+      });
+      if (confErr) {
+        onError(confErr.message ?? "Payment failed");
+        return;
+      }
+      // `processing` is a SUCCESS for our purposes — the money has moved and Stripe will settle it.
+      // Treating it as failure meant a customer was charged, the rep was told "Payment failed", and
+      // no booking was written. `requires_capture` is here for the same reason if capture is ever
+      // made manual. createDirectBooking re-checks the intent server-side regardless.
+      const ok =
+        paymentIntent &&
+        ["succeeded", "processing", "requires_capture"].includes(paymentIntent.status);
+      if (!ok) {
+        onError(
+          paymentIntent
+            ? `Payment did not complete (${paymentIntent.status}).`
+            : "Payment failed",
+        );
+        return;
+      }
+      const r = await createDirectBooking(slug, payload, paymentIntent.id);
+      if (!r.ok) {
+        // The card HAS been charged at this point. Say so, or the rep retries and double-charges.
+        onError(`${r.error} — the card was charged, so do not retry; check the booking list.`);
+        return;
+      }
+      onDone(r.bookingId);
+    } catch (e) {
+      onError(
+        e instanceof Error
+          ? e.message
+          : "Something went wrong taking the payment. Check the booking list before retrying.",
+      );
+    } finally {
       setBusy(false);
-      return;
     }
-    const intent = await createOperatorIntent(slug, payload);
-    if (!intent.ok) {
-      onError(intent.error);
-      setBusy(false);
-      return;
-    }
-    const { error: confErr, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      clientSecret: intent.clientSecret,
-      redirect: "if_required",
-    });
-    if (confErr || !paymentIntent || paymentIntent.status !== "succeeded") {
-      onError(confErr?.message ?? "Payment failed");
-      setBusy(false);
-      return;
-    }
-    const r = await createDirectBooking(slug, payload, paymentIntent.id);
-    if (!r.ok) {
-      onError(r.error);
-      setBusy(false);
-      return;
-    }
-    onDone(r.bookingId);
   }
 
   return (
     <div className="space-y-3">
-      <PaymentElement />
-      <button type="button" disabled={busy || disabled} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+      <PaymentElement
+        options={{
+          // Reps take these over the phone from an operator's laptop, so the billing country must be
+          // the OPERATOR's, not whatever IP the rep happens to be sitting behind — reps work from
+          // Egypt and Peru and were getting their own country pre-selected.
+          defaultValues: { billingDetails: { address: { country: "US" } } },
+        }}
+      />
+      <button type="button" disabled={busy || disabled || !stripe} onClick={charge} className="w-full rounded-md bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
         {busy ? "Charging…" : `Charge ${usd(amountCents)} & book`}
       </button>
       {disabled && <MissingList missing={missing} />}
