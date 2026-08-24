@@ -24,6 +24,12 @@ export default async function UncollectedFeesPage({ params }: Props) {
         cannot be amended, so the difference is charged separately to the customer&apos;s saved card.
         These are the ones that could not be charged.
       </p>
+      <p className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+        <strong>This is not lost money.</strong> The customer is still billed the fee — it is inside
+        the balance they pay at check-in. What failed is only our ability to take it from their card
+        automatically, so the cash goes to the operator and the operator ends up holding our share.
+        Retry where a card exists; otherwise settle it with the operator and write it off here.
+      </p>
       <UncollectedFees slug={slug} rows={rows} />
     </div>
   );
