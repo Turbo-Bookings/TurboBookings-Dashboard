@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { UncollectedFees } from "@/components/UncollectedFees";
 import { getUncollectedFees } from "@/lib/actions/uncollectedFees";
@@ -21,7 +23,14 @@ export default async function UncollectedFeesPage({ params }: Props) {
   const retainerActive = retainerWillCollect(loc);
 
   return (
-    <div className="mt-6 max-w-3xl">
+    <div className="max-w-3xl">
+      {/* Reachable from the reports index now, so it needs a way back like every other report. */}
+      <Link
+        href={`/locations/${slug}/reports`}
+        className="mb-3 inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> All reports
+      </Link>
       <h2 className="text-lg font-semibold tracking-tight">Uncollected platform fees</h2>
       <p className="mt-1 text-sm text-zinc-500">
         When a booking&apos;s value rises after checkout — a reschedule to a pricier tour, or an ATV
