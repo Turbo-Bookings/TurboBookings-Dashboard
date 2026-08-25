@@ -144,7 +144,25 @@ export async function syncPlatformFee(
   // Nobody was ever hit by this, purely because no top-up had ever succeeded. It would have started
   // firing the moment card coverage improved, which is exactly what the next change does.
   const depositPaid = (b.depositPaidCents ?? 0) + (charged ? delta : 0);
-  const newTotal = newSubtotalCents + (b.taxCents ?? 0) + target;
+  // Adjust the total by the FEE delta. Do NOT recompute it from the subtotal.
+  //
+  // This read `newSubtotalCents + tax + target`, which silently overwrote whatever the total actually
+  // was. Callers had already applied their own change correctly — `addVehicles` does
+  // `totalCents: booking.totalCents + delta` — and this undid it, then destroyed anything else living
+  // in the total that is not subtotal, tax or our fee:
+  //
+  //   * FareHarbor imports carry their gross total with the old system's tax inside it, so adding one
+  //     ATV to a migrated booking deleted that tax from what the guest owed.
+  //   * `subtotal_cents_override` lets an operator set a custom price; recomputing threw it away and
+  //     put the rack rate back.
+  //
+  // It has already fired: all 16 bookings that have had something added at the desk now reconcile
+  // exactly, including imports that should carry a residue. 609 imported and 69 custom-priced
+  // bookings were exposed to it.
+  //
+  // `b` is re-read after the caller's transaction commits, so `b.totalCents` already includes their
+  // change. Ours is the fee and nothing else.
+  const newTotal = (b.totalCents ?? 0) + delta;
 
   // A FareHarbor import has no Stripe payment behind it and never will, so there is nothing to charge
   // and nothing to chase. Write the shortfall off in the same breath as recording it, rather than
@@ -305,9 +323,10 @@ export async function retryUncollectedFee(
   if (!b) return { feeCents: 0, deltaCents: 0, charged: false, uncollectedReason: "Booking not found" };
   // Re-derive the target from the CURRENT subtotal rather than trusting the stored split, so a retry
   // after another change still lands on the right number.
-  const bps = location.platformFeeBps ?? 0;
-  const target = Math.round(Math.max(0, b.subtotalCents ?? 0) * (bps / 10000));
-  return syncPlatformFee(location, bookingId, (target * 10000) / (bps || 1), "manual retry");
+  // Pass the real subtotal. This used to reconstruct one by dividing the ROUNDED fee back out
+  // (`target * 10000 / bps`), which round-trips to within a rounding error of where it started — a
+  // laundered number where the actual one was already in hand.
+  return syncPlatformFee(location, bookingId, b.subtotalCents ?? 0, "manual retry");
 }
 
 /** Accept that an amount will never be recovered, so it stops showing as outstanding. */

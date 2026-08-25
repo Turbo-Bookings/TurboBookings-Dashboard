@@ -26,6 +26,10 @@ export type RetainerValues = {
 };
 
 export async function getRetainerValues(slug: string): Promise<RetainerValues> {
+  // A `"use server"` export is a POST endpoint and the CALLER supplies the identifier, so scoping
+  // the query is not access control — it only decides whose data comes back. Without this, any
+  // signed-in user could read this for any location by passing a different one.
+  if (await denyIfCannot("manage_config", slug)) throw new Error("Not permitted");
   const loc = await getLocationBySlug(slug);
   return {
     amount: loc?.retainerCents != null ? String(loc.retainerCents / 100) : "",

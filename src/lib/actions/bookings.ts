@@ -23,7 +23,8 @@ import {
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
-import { getTourBookingData, openSlotsForItem } from "@/lib/actions/manualBooking";
+import { getTourBookingData } from "@/lib/actions/manualBooking";
+import { openSlotsForItem } from "@/lib/data/availability";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { syncPlatformFee } from "@/lib/booking/platformFee";

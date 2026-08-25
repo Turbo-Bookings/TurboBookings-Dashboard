@@ -5,7 +5,7 @@ import { Search } from "lucide-react";
 import { searchBookings, type BookingSearchHit } from "@/lib/actions/bookings";
 import { BookingModal } from "@/components/BookingModal";
 
-export function SearchBookings({ slug }: { slug: string }) {
+export function SearchBookings({ slug, tz }: { slug: string; tz: string }) {
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<BookingSearchHit[]>([]);
   const [open, setOpen] = useState(false);
@@ -35,7 +35,9 @@ export function SearchBookings({ slug }: { slug: string }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+  // The LOCATION's zone, not the viewer's. Reps work from Egypt and Peru, and a 9pm tour renders as
+  // the next day for them — on the one control that exists to find a specific booking fast.
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric" });
 
   return (
     <div ref={boxRef} className="relative">

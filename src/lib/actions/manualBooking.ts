@@ -22,6 +22,7 @@ import {
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { overlappingResourceUsage, overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { validateDiscountForBooking, type DiscountLine } from "@/lib/booking/discount";
+import { openSlotsForItem } from "@/lib/data/availability";
 import { getItemPricing } from "@/lib/data/items";
 import { getWholeBookingFieldsForItem } from "@/lib/data/customFields";
 import { getLocationBySlug } from "@/lib/data/locations";
@@ -54,89 +55,6 @@ type Payload = {
 };
 
 // ---- capacity-aware upcoming slots for one tour ----
-export async function openSlotsForItem(
-  locationId: string,
-  itemId: string,
-  days = 60,
-): Promise<{ id: string; startsAt: Date; remaining: number }[]> {
-  const db = getDb();
-  const item = (
-    await db
-      .select()
-      .from(items)
-      .where(and(eq(items.id, itemId), eq(items.locationId, locationId)))
-      .limit(1)
-  )[0];
-  if (!item) return [];
-  const now = new Date();
-  const until = new Date(now.getTime() + days * 86_400_000);
-  const slots = await db
-    .select({ a: availabilities, cap: availabilitySchedules.capacityPerSlot })
-    .from(availabilities)
-    .leftJoin(availabilitySchedules, eq(availabilities.scheduleId, availabilitySchedules.id))
-    .where(
-      and(
-        eq(availabilities.itemId, itemId),
-        gte(availabilities.startsAt, now),
-        lt(availabilities.startsAt, until),
-        ne(availabilities.onlineBookingStatus, "off"),
-      ),
-    )
-    .orderBy(asc(availabilities.startsAt));
-  if (slots.length === 0) return [];
-
-  const ids = slots.map((s) => s.a.id);
-  const booked = await db
-    .select({ availabilityId: bookings.availabilityId, qty: bookingLines.quantity })
-    .from(bookings)
-    .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
-    .where(and(inArray(bookings.availabilityId, ids), eq(bookings.status, "active")));
-  const bySlot = new Map<string, number>();
-  for (const b of booked) bySlot.set(b.availabilityId, (bySlot.get(b.availabilityId) ?? 0) + b.qty);
-
-  let pools: { resourceId: string; max: number; oos: number; maxQ: number }[] = [];
-  if (item.capacityMode === "resource_based") {
-    const rr = await db
-      .select({ rr: resourceRequirements, r: resources })
-      .from(resourceRequirements)
-      .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-      .where(eq(resourceRequirements.itemId, itemId));
-    const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-    for (const { rr: req, r } of rr) {
-      const cur = byRes.get(r.id);
-      if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-      else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-    }
-    pools = [...byRes.entries()].map(([resourceId, v]) => ({ resourceId, ...v }));
-  }
-
-  // Shared-pool usage: peak concurrent use of each resource by EVERY tour overlapping the slot, not
-  // just this one. Without it, two tours on the same machines each see the whole fleet as free.
-  const usage =
-    item.capacityMode === "resource_based"
-      ? await overlappingResourceUsage(
-          slots.map(({ a }) => ({ id: a.id, startsAt: a.startsAt, endsAt: a.endsAt })),
-          item.locationId,
-        )
-      : new Map();
-
-  return slots.map(({ a, cap }) => {
-    const bk = bySlot.get(a.id) ?? 0;
-    const slotUsage = usage.get(a.id);
-    const remaining =
-      item.capacityMode === "fixed"
-        ? fixedRemaining(a.capacityOverride ?? cap, bk)
-        : resourceRemaining(
-            pools.map<ResourcePool>((p) => ({
-              maxConcurrentUses: p.max,
-              outOfServiceCount: p.oos,
-              maxQuantityConsumed: p.maxQ,
-              consumed: slotUsage?.get(p.resourceId) ?? 0,
-            })),
-          );
-    return { id: a.id, startsAt: a.startsAt, remaining };
-  });
-}
 
 export type TourField = {
   id: string;

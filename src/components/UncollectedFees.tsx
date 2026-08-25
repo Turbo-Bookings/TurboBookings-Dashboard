@@ -29,10 +29,13 @@ export function UncollectedFees({
   slug,
   rows,
   retainerActive,
+  tz,
 }: {
   slug: string;
   rows: UncollectedFee[];
   retainerActive: boolean;
+  /** The LOCATION's timezone — see tourDate below. */
+  tz: string;
 }) {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
@@ -64,8 +67,16 @@ export function UncollectedFees({
     );
   }
 
+  // In the LOCATION's zone. Without it this used the server's zone during SSR (UTC on Vercel) and
+  // the viewer's on hydration — so a 9pm Dallas glow tour rendered as the NEXT day, and a rep abroad
+  // saw a different date again. The tour date is the whole basis for "has this already run", so a
+  // day out is not cosmetic.
   const tourDate = (d: Date | null) =>
-    d ? new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "no date";
+    d
+      ? new Intl.DateTimeFormat("en-US", { timeZone: tz, month: "short", day: "numeric" }).format(
+          new Date(d),
+        )
+      : "no date";
 
   const Row = ({ r }: { r: UncollectedFee }) => (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-zinc-100 py-2 text-sm last:border-0 dark:border-zinc-800">

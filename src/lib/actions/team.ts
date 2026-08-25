@@ -53,6 +53,10 @@ export type TeamMember = {
 // Everyone with access to this location: per-location role holders + global
 // master/admin (who can access every location).
 export async function getTeamForLocation(slug: string): Promise<TeamMember[]> {
+  // A `"use server"` export is a POST endpoint and the CALLER supplies the identifier, so scoping
+  // the query is not access control — it only decides whose data comes back. Without this, any
+  // signed-in user could read this for any location by passing a different one.
+  if (await denyIfCannot("manage_team", slug)) return [];
   const locId = await locationIdBySlug(slug);
   if (!locId) return [];
   const client = await clerkClient();
@@ -86,6 +90,10 @@ export type PendingInvite = { id: string; email: string; role: Role };
 export async function getPendingInvitesForLocation(
   slug: string,
 ): Promise<PendingInvite[]> {
+  // A `"use server"` export is a POST endpoint and the CALLER supplies the identifier, so scoping
+  // the query is not access control — it only decides whose data comes back. Without this, any
+  // signed-in user could read this for any location by passing a different one.
+  if (await denyIfCannot("manage_team", slug)) return [];
   const locId = await locationIdBySlug(slug);
   if (!locId) return [];
   const client = await clerkClient();
@@ -135,6 +143,22 @@ export async function assignRole(
     if (target.id === actorId)
       return { ok: false, error: "You can't change your own role." };
     const meta = (target.publicMetadata ?? {}) as Meta;
+
+    // Check what they ARE, not only what you are granting them.
+    //
+    // `assignableRoles` was applied to the incoming role and nothing else, so an operator could
+    // demote a peer operator to director or basic_user — stripping their `manage_config` and
+    // `manage_team` — while being explicitly blocked from REMOVING that same person a few lines
+    // below. Demoting someone out of their own permissions is removal by another name, and the
+    // asymmetry between the two paths was the giveaway that it was unintended.
+    const allowedHere = await assignableRoles(slug);
+    const currentGlobal = globalRoleOf(meta);
+    const currentLocal = (meta.locationRoles ?? {})[locId] as Role | undefined;
+    const current = currentGlobal ?? currentLocal;
+    if (current && !allowedHere.includes(current)) {
+      return { ok: false, error: "You can't change that member's role." };
+    }
+
     const next: Meta = { ...meta };
     if (isGlobalRole(role)) {
       next.role = role;

@@ -40,7 +40,12 @@ export default async function BookingDetailPage({ params }: Props) {
   const tourData = b.status === "active" ? await getTourBookingData(slug, b.itemId) : null;
   // What the desk would charge if the customer pays the rest by card. Null when there is nothing to
   // collect, or the caller cannot take payments — the component then renders nothing.
-  const balanceQuote = canManage ? await getBalanceQuote(slug, id) : null;
+  // `collect_payment`, not `manage_bookings`. Taking the balance at the desk IS the front-line job —
+  // that is why the capability exists — and gating the panel on manage_bookings meant a check-in user
+  // saw the card form in the modal (which checks `checkin`) and not on the booking page. Same person,
+  // same booking, two different answers.
+  const canCollect = await can("collect_payment", slug);
+  const balanceQuote = canCollect ? await getBalanceQuote(slug, id) : null;
   // "Who changed this booking" is the entire reason audit rows carry a user id, and the history has
   // been rendering the timestamp and the summary while dropping the one column that answers it.
   // Resolved in one batch — fifty rows written by three people is three Clerk lookups.

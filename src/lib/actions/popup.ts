@@ -48,6 +48,10 @@ const ALLOWED_IMG = new Set(["image/png", "image/jpeg", "image/webp", "image/gif
 const MAX_IMG_BYTES = 5 * 1024 * 1024;
 
 export async function getPopupValues(slug: string): Promise<PopupValues> {
+  // A `"use server"` export is a POST endpoint and the CALLER supplies the identifier, so scoping
+  // the query is not access control — it only decides whose data comes back. Without this, any
+  // signed-in user could read this for any location by passing a different one.
+  if (await denyIfCannot("manage_config", slug)) throw new Error("Not permitted");
   const location = await getLocationBySlug(slug);
   if (!location) return DEFAULTS;
   const row = (

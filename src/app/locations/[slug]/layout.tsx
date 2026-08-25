@@ -34,6 +34,7 @@ export default async function LocationLayout({ children, params }: Props) {
       <TourProvider slug={loc.slug} caps={caps} autoStart={autoStart}>
         <LocationShell
           slug={loc.slug}
+          tz={loc.timezone ?? "America/Chicago"}
           brandName={loc.brandDisplayName ?? loc.slug}
           status={loc.status}
           locations={locations}

@@ -75,6 +75,10 @@ export type ImportedReminderCount = { pending: number };
 export async function countImportedWithoutReminders(
   slug: string,
 ): Promise<ImportedReminderCount> {
+  // A `"use server"` export is a POST endpoint and the CALLER supplies the identifier, so scoping
+  // the query is not access control — it only decides whose data comes back. Without this, any
+  // signed-in user could read this for any location by passing a different one.
+  if (await denyIfCannot("manage_config", slug)) return { pending: 0 };
   const db = getDb();
   const loc = (
     await db.select({ id: locations.id }).from(locations).where(eq(locations.slug, slug)).limit(1)

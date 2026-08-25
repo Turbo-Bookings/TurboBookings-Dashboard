@@ -45,7 +45,12 @@ export default async function UncollectedFeesPage({ params }: Props) {
         still owes the balance and a retry collects our share; after it, the operator has already
         taken that balance in cash, and charging the card would bill the same money twice.
       </p>
-      <UncollectedFees slug={slug} rows={rows} retainerActive={retainerActive} />
+      <UncollectedFees
+        slug={slug}
+        rows={rows}
+        retainerActive={retainerActive}
+        tz={loc.timezone ?? "America/Chicago"}
+      />
     </div>
   );
 }

@@ -107,6 +107,8 @@ const NAV: NavItem[] = [
 
 type Props = {
   slug: string;
+  /** The LOCATION's timezone, for the header search results. */
+  tz: string;
   brandName: string;
   status: Location["status"];
   locations: { slug: string; name: string; status: string }[];
@@ -114,7 +116,7 @@ type Props = {
   children: React.ReactNode;
 };
 
-export function LocationShell({ slug, brandName, status, locations, caps, children }: Props) {
+export function LocationShell({ slug, tz, brandName, status, locations, caps, children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const { startTour } = useTour();
@@ -262,7 +264,7 @@ export function LocationShell({ slug, brandName, status, locations, caps, childr
           </div>
           {/* shrink-0 so the controls are never the thing that collapses. */}
           <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
-            <SearchBookings slug={slug} />
+            <SearchBookings slug={slug} tz={tz} />
             <button
               type="button"
               onClick={startTour}
