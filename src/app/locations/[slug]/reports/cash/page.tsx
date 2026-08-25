@@ -112,7 +112,10 @@ function Line({ label, cents, strong }: { label: string; cents: number; strong?:
     >
       <dt className={strong ? "" : "text-zinc-500"}>{label}</dt>
       <dd className="tabular-nums">
-        {cents < 0 ? `−${usd(-cents)}` : usd(cents)}
+        {/* `|| 0` collapses NEGATIVE ZERO. `-0 < 0` is false, so -0 fell through to the positive
+            branch and Intl rendered it as "-$0.00" — which reads as a data error on a
+            reconciliation page, the one place a stray minus sign is least welcome. */}
+        {cents < 0 ? `−${usd(-cents)}` : usd(cents || 0)}
       </dd>
     </div>
   );
