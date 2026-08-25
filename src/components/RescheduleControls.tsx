@@ -39,6 +39,7 @@ export function RescheduleControls({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [feeDollars, setFeeDollars] = useState("0");
   const [reason, setReason] = useState("");
   const [to, setTo] = useState("");
@@ -77,10 +78,15 @@ export function RescheduleControls({
   function go() {
     if (!to) return;
     setError(null);
+    setNotice(null);
     startTransition(async () => {
       const r = await rescheduleBooking(slug, bookingId, to, Math.round(Number(feeDollars) * 100), reason);
       if (!r.ok) setError(r.error ?? "Failed");
       else {
+        // A move to a pricier tour ratchets our fee up and charges the card on file. That can decline,
+        // and the balance then carries the difference — the operator needs to hear it now, not from a
+        // report later.
+        setNotice(r.notice ?? null);
         setTo("");
         setSelectedDate(null);
         router.refresh();
@@ -209,6 +215,9 @@ export function RescheduleControls({
         </div>
       )}
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {notice && (
+        <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{notice}</p>
+      )}
     </div>
   );
 }

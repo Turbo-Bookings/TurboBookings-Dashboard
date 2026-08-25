@@ -13,6 +13,9 @@ import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 import { BookingNote } from "@/components/BookingNote";
+import { CollectBalance } from "@/components/CollectBalance";
+import { getBalanceQuote } from "@/lib/actions/collectBalance";
+import { stripePublishableKey } from "@/lib/stripe/client";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +38,9 @@ export default async function BookingDetailPage({ params }: Props) {
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
   const refund = await getCancellationRefund(loc.id, id);
   const tourData = b.status === "active" ? await getTourBookingData(slug, b.itemId) : null;
+  // What the desk would charge if the customer pays the rest by card. Null when there is nothing to
+  // collect, or the caller cannot take payments — the component then renders nothing.
+  const balanceQuote = canManage ? await getBalanceQuote(slug, id) : null;
   const rescheduleSlots = tourData && tourData.ok ? tourData.slots : [];
   const tz = loc.timezone ?? "America/Chicago";
   const when = slot
@@ -163,6 +169,15 @@ export default async function BookingDetailPage({ params }: Props) {
           {b.refundedCents > 0 && <Row label="Refunded" value={usd(b.refundedCents)} muted />}
         </dl>
       </div>
+
+      {balanceQuote && !("error" in balanceQuote) && (
+        <CollectBalance
+          slug={slug}
+          quote={balanceQuote}
+          publishableKey={stripePublishableKey()}
+          stripeAccount={loc.stripeAccountId ?? null}
+        />
+      )}
 
       {/* Payments */}
       {payments.length > 0 && (

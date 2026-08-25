@@ -832,7 +832,9 @@ export async function rescheduleBooking(
   await emitLifecycle(location, bookingId, "booking.rescheduled");
   await onBookingRescheduled(bookingId, toAvailabilityId);
   revalidate(slug, bookingId);
-  return { ok: true };
+  // Same silent failure that `addVehicles` and `addLine` had: the result was captured and thrown
+  // away, so a reschedule onto a pricier tour whose fee top-up declined looked like a clean success.
+  return { ok: true, notice: feeNotice(feeSync) };
 }
 
 // ---------- Modal quick-actions ----------
