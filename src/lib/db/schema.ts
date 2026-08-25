@@ -1252,6 +1252,13 @@ export const bookings = pgTable(
   // Set when an operator accepts that the uncollected amount will never be recovered, so it stops
   // appearing as outstanding work.
   platformFeeWrittenOffAt: timestamp("platform_fee_written_off_at", { withTimezone: true }),
+  // Recovered from the OPERATOR rather than the customer. Once the tour has run the fee was collected
+  // in the venue balance, so charging the customer's card would take it twice — it is billed back to
+  // the operator instead, as a Stripe invoice item on their platform customer.
+  platformFeeBilledToOperatorAt: timestamp("platform_fee_billed_to_operator_at", {
+    withTimezone: true,
+  }),
+  platformFeeOperatorInvoiceItemId: text("platform_fee_operator_invoice_item_id"),
     discountCents: integer("discount_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull(),
 

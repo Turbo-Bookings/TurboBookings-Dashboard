@@ -3,6 +3,7 @@ import { UncollectedFees } from "@/components/UncollectedFees";
 import { getUncollectedFees } from "@/lib/actions/uncollectedFees";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { requirePageCapability } from "@/lib/auth/roles";
+import { retainerWillCollect } from "@/lib/billing/operatorRecovery";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -14,6 +15,10 @@ export default async function UncollectedFeesPage({ params }: Props) {
   if (!loc) notFound();
 
   const rows = await getUncollectedFees(slug);
+  // A pending invoice item is only collected when Stripe next invoices that customer. Without a live
+  // retainer there is no next invoice, and "billed to the operator" would quietly mean "recorded and
+  // going nowhere".
+  const retainerActive = retainerWillCollect(loc);
 
   return (
     <div className="mt-6 max-w-3xl">
@@ -25,12 +30,13 @@ export default async function UncollectedFeesPage({ params }: Props) {
         These are the ones that could not be charged.
       </p>
       <p className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
-        <strong>This is not lost money.</strong> The customer is still billed the fee — it is inside
-        the balance they pay at check-in. What failed is only our ability to take it from their card
-        automatically, so the cash goes to the operator and the operator ends up holding our share.
-        Retry where a card exists; otherwise settle it with the operator and write it off here.
+        <strong>This is not lost money.</strong> The fee is inside the balance the customer pays at
+        the venue. What failed is only our ability to take it from their card automatically. So the
+        question is just <em>who</em> pays it — and the tour date decides: before it, the customer
+        still owes the balance and a retry collects our share; after it, the operator has already
+        taken that balance in cash, and charging the card would bill the same money twice.
       </p>
-      <UncollectedFees slug={slug} rows={rows} />
+      <UncollectedFees slug={slug} rows={rows} retainerActive={retainerActive} />
     </div>
   );
 }

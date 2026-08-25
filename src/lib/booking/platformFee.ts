@@ -1,6 +1,7 @@
 import "server-only";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import {
+  availabilities,
   bookings,
   customers,
   getDb,
@@ -208,9 +209,16 @@ export type UncollectedFee = {
   locationName: string;
   amountCents: number;
   customerEmail: string | null;
+  /** A card exists AND the customer has not yet settled at the venue. Both must hold. */
   chaseable: boolean;
+  /**
+   * The tour has run, so the customer has already paid the balance — and our fee was inside it.
+   * The money is with the operator, not lost, and must be billed back rather than charged again.
+   */
+  settledAtVenue: boolean;
   reason: string;
   createdAt: Date;
+  tourStartsAt: Date | null;
 };
 
 /**
@@ -239,34 +247,50 @@ export async function listUncollectedFees(slug?: string): Promise<UncollectedFee
       customerId: bookings.customerId,
       createdAtIso: sql<string>`to_char(${bookings.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
       hasCard: sql<boolean>`EXISTS (SELECT 1 FROM payment_methods_on_file p WHERE p.customer_id = ${bookings.customerId} AND NOT p.archived)`,
+      tourStartsAt: availabilities.startsAt,
     })
     .from(bookings)
     .innerJoin(locations, eq(locations.id, bookings.locationId))
     .leftJoin(customers, eq(customers.id, bookings.customerId))
+    .leftJoin(availabilities, eq(availabilities.id, bookings.availabilityId))
     .where(
       and(
         gt(bookings.platformFeeUncollectedCents, 0),
         isNull(bookings.platformFeeWrittenOffAt),
+        isNull(bookings.platformFeeBilledToOperatorAt),
         ...(slug ? [eq(locations.slug, slug)] : []),
       ),
     )
     .orderBy(desc(bookings.platformFeeUncollectedCents));
 
-  return rows.map((r) => ({
-    bookingId: r.bookingId,
-    displayNumber: r.displayNumber,
-    slug: r.slug,
-    locationName: r.locationName ?? r.slug,
-    amountCents: r.amountCents,
-    customerEmail: r.customerEmail,
-    chaseable: !!r.hasCard,
-    reason: r.externalRef?.startsWith("fh:")
-      ? "Imported from FareHarbor — no Stripe payment to charge against"
-      : r.hasCard
-        ? "Card on file — a retry should work"
-        : "No saved card (paid by Link/Cash App, or booked by phone)",
-    createdAt: new Date(r.createdAtIso),
-  }));
+  const now = Date.now();
+  return rows.map((r) => {
+    // The tour having run is the line that matters. Up to it, the fee is still inside a balance the
+    // customer has not paid, so charging the card collects it and drops their balance by the same
+    // amount. After it, the operator already took that balance in cash — charging now bills the same
+    // money twice, to the wrong person.
+    //
+    // Absent a slot we assume settled, because the failure that costs the customer money is worse
+    // than the one that costs us a click.
+    const settledAtVenue = r.tourStartsAt ? r.tourStartsAt.getTime() < now : true;
+    return {
+      bookingId: r.bookingId,
+      displayNumber: r.displayNumber,
+      slug: r.slug,
+      locationName: r.locationName ?? r.slug,
+      amountCents: r.amountCents,
+      customerEmail: r.customerEmail,
+      chaseable: !!r.hasCard && !settledAtVenue,
+      settledAtVenue,
+      reason: settledAtVenue
+        ? "Tour has run — the operator collected this in the venue balance"
+        : r.hasCard
+          ? "Card on file — a retry should work"
+          : "No saved card — it will be collected with the balance at check-in",
+      createdAt: new Date(r.createdAtIso),
+      tourStartsAt: r.tourStartsAt ?? null,
+    };
+  });
 }
 
 /** Retry the charge for one booking. Only ever succeeds when a usable card is on file. */
