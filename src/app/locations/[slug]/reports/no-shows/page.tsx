@@ -24,9 +24,10 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
   if (!loc) notFound();
   const tz = loc.timezone ?? "America/Chicago";
 
-  // Defaults to today, which is how it gets used: yesterday's no-shows, called this morning. The
-  // week and rolling-7 presets in the shell cover the wider sweep.
-  const range = resolveRange(sp, tz, "today");
+  // Last 7 days, not today. A call list should open with people to call: at 10am on a Tuesday
+  // nothing has no-showed yet, so "today" is an empty screen for most of the working day — the same
+  // trap the check-in report fell into. The team works recent no-shows, not this hour's.
+  const range = resolveRange(sp, tz, "rolling7");
   const rows = await noShowReport(loc.id, range.from, range.to);
   const canLog = await can("manage_bookings", slug);
 

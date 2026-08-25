@@ -19,11 +19,15 @@ export async function GET(request: Request, ctx: { params: Promise<{ slug: strin
   const tz = loc.timezone ?? "America/Chicago";
 
   const url = new URL(request.url);
-  const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
+  // Same default as the page.
+  const now = DateTime.now().setZone(tz);
   const range = resolveRange(
-    { from: dayParam(url, "from", today), to: dayParam(url, "to", today) },
+    {
+      from: dayParam(url, "from", now.minus({ days: 6 }).toFormat("yyyy-LL-dd")),
+      to: dayParam(url, "to", now.toFormat("yyyy-LL-dd")),
+    },
     tz,
-    "today",
+    "rolling7",
   );
 
   const rows = await noShowReport(loc.id, range.from, range.to);
