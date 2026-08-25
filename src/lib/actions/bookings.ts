@@ -981,7 +981,10 @@ export async function addVehicles(
   // Adding a vehicle raises the booking's value, so our 6% rises with it. Charged to the saved card
   // outside the transaction — see syncPlatformFee. This is the check-in "they want one more ATV" case.
   const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added");
-  await recordAudit({ slug, action: "catalog.booking.add_vehicles", summary: `Added ${qty} vehicle(s)`, payload: { bookingId: booking.id, lineId, qty } });
+  // `addedCents` is recorded so the sales-by-user report can value what the desk upsold. The audit
+  // row is the only place this lives: an addition changes the booking's subtotal but leaves nothing
+  // saying who caused it or what it was worth.
+  await recordAudit({ slug, action: "catalog.booking.add_vehicles", summary: `Added ${qty} vehicle(s)`, payload: { bookingId: booking.id, lineId, qty, addedCents: addedDelta } });
   revalidate(slug, booking.id);
   // Tell the operator NOW. This runs at check-in with the customer standing at the desk — the one
   // moment the shortfall is trivially recoverable. Previously the result was discarded and `{ ok:
@@ -1105,7 +1108,7 @@ export async function addLine(
     return { ok: false, error: e instanceof Error ? e.message : "Could not add rider" };
   }
   const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added");
-  await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty } });
+  await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty, addedCents: addedDelta } });
   revalidate(slug, booking.id);
   return { ok: true, notice: feeNotice(fee) };
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
+  auditLog,
   availabilities,
   bookingFollowups,
   bookingLines,
@@ -328,6 +329,65 @@ export async function salesByUser(
     if (hit) hit.vehicles = u.vehicles;
   }
   return [...byUser.values()].sort((a, b) => b.salesCents - a.salesCents);
+}
+
+// ------------------------------------------------------- upsells at the desk
+
+export type UpsellRow = {
+  userId: string | null;
+  additions: number;
+  vehicles: number;
+  addedCents: number;
+  /** Additions from before the value was recorded, so `addedCents` understates them. */
+  unvalued: number;
+};
+
+/**
+ * Vehicles and riders added to an EXISTING booking, by whoever added them.
+ *
+ * This is real selling — "do you want one more ATV" with the customer already at the desk — and it
+ * was invisible. An addition raises the booking's subtotal but leaves nothing on the booking saying
+ * who caused it, so `salesByUser` credited it to whoever created the booking days earlier, or to
+ * nobody at all when the booking came in online.
+ *
+ * The audit log is the only record of who, which is why this reads from there rather than from
+ * `bookings`. `payload.addedCents` was added 2026-08-25; earlier rows carry a quantity but no value
+ * and are counted separately rather than valued at zero — a silent zero would read as "sold
+ * nothing", which is the opposite of what happened.
+ */
+export async function upsellsByUser(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<UpsellRow[]> {
+  const rows = await getDb()
+    .select({ userId: auditLog.userId, payload: auditLog.payload })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.locationId, locationId),
+        inArray(auditLog.action, ["catalog.booking.add_vehicles", "catalog.booking.add_line"]),
+        // `audit_log.created_at` is a naked `timestamp` holding UTC, compared against UTC instants —
+        // the same way `bookingsTaken` treats `bookings.created_at`.
+        gte(auditLog.createdAt, from),
+        lt(auditLog.createdAt, to),
+      ),
+    );
+
+  const UNATTRIBUTED = "__unattributed__";
+  const byUser = new Map<string, UpsellRow>();
+  for (const r of rows) {
+    const key = r.userId ?? UNATTRIBUTED;
+    const hit =
+      byUser.get(key) ?? { userId: r.userId, additions: 0, vehicles: 0, addedCents: 0, unvalued: 0 };
+    const p = (r.payload ?? {}) as { qty?: unknown; addedCents?: unknown };
+    hit.additions += 1;
+    hit.vehicles += typeof p.qty === "number" ? p.qty : 0;
+    if (typeof p.addedCents === "number") hit.addedCents += p.addedCents;
+    else hit.unvalued += 1;
+    byUser.set(key, hit);
+  }
+  return [...byUser.values()].sort((a, b) => b.addedCents - a.addedCents);
 }
 
 // ------------------------------------------------------------------- CSV
