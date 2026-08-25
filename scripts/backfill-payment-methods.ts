@@ -18,11 +18,14 @@
  *   npx tsx scripts/backfill-payment-methods.ts --commit
  *   npx tsx scripts/backfill-payment-methods.ts --commit --slug=miami --limit=50
  *
+ * It asks for the Stripe live secret key and hides what you type. Nothing else to set up.
+ *
  * One Stripe read per payment, so it is chunked and paced. Re-running is safe: it only considers
  * payments still missing a method type, and the payment-method insert is ON CONFLICT DO NOTHING.
  */
 import { neon } from "@neondatabase/serverless";
 import { readFileSync } from "node:fs";
+import * as readline from "node:readline";
 import Stripe from "stripe";
 
 const COMMIT = process.argv.includes("--commit");
@@ -39,6 +42,39 @@ function fromDotenv(key: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Ask for the Stripe key on the terminal, echoing nothing.
+ *
+ * `vercel env pull` returns sensitive values as empty strings, so this key cannot be fetched — it has
+ * to be typed. The obvious shell one-liner (`read -rs … && export … && npx tsx …`) is a trap: it
+ * silently breaks apart if it wraps when pasted, and then `export` dumps the environment while the
+ * variable name runs as a command. Asking from inside the program is one short command that cannot
+ * wrap into something else.
+ */
+function promptSecret(label: string): Promise<string> {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      terminal: true,
+    });
+    // Echo the prompt itself, swallow everything typed after it — the key must never reach the screen
+    // or the scrollback.
+    const iface = rl as unknown as {
+      _writeToOutput?: (s: string) => void;
+      output: NodeJS.WriteStream;
+    };
+    iface._writeToOutput = (s: string) => {
+      if (s.includes(label)) iface.output.write(s);
+    };
+    rl.question(label, (answer) => {
+      rl.close();
+      process.stdout.write("\n");
+      resolve(answer.trim());
+    });
+  });
 }
 
 function databaseUrl(): string {
@@ -65,8 +101,19 @@ type Row = {
 };
 
 async function main() {
-  const key = process.env.STRIPE_SECRET_KEY || fromDotenv("STRIPE_SECRET_KEY");
-  if (!key) throw new Error("STRIPE_SECRET_KEY is not set");
+  const key =
+    process.env.STRIPE_SECRET_KEY ||
+    fromDotenv("STRIPE_SECRET_KEY") ||
+    (await promptSecret("Stripe live secret key (nothing will appear as you type): "));
+  if (!key) throw new Error("No key given.");
+  if (!key.startsWith("sk_")) {
+    throw new Error("That does not look like a Stripe secret key — it should begin with `sk_`.");
+  }
+  if (key.startsWith("sk_test_")) {
+    // These are live payments on live connected accounts. A test key would report every one of them
+    // as "No such payment_intent", which reads like missing data rather than the wrong key.
+    throw new Error("That is a TEST key. These are live payments — use the live key (`sk_live_…`).");
+  }
   const stripe = new Stripe(key);
   const sql = neon(databaseUrl());
 
@@ -160,6 +207,8 @@ async function main() {
 }
 
 main().catch((e) => {
-  console.error(e);
+  // A mistyped key is an ordinary mistake, not a crash. Print the sentence and stop — a stack trace
+  // buries the one line that says what to do differently.
+  console.error(`\n  ${e instanceof Error ? e.message : String(e)}\n`);
   process.exit(1);
 });
