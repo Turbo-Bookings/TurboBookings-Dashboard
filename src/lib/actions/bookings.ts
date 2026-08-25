@@ -30,6 +30,8 @@ import { syncPlatformFee } from "@/lib/booking/platformFee";
 import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
 import { overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { withTxn } from "@/lib/db/txn";
+import { getBalanceQuote } from "@/lib/actions/collectBalance";
+import { stripePublishableKey } from "@/lib/stripe/client";
 import {
   captureHold as stripeCaptureHold,
   createManualHold,
@@ -1437,6 +1439,12 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     // modal is a client component. Keeps the override's ceiling identical to
     // the one refundBookingOverride enforces.
     refundableCents: stripeRefundableCents(detail.payments),
+    // Everything the desk needs to take the remaining balance on a card without leaving the modal.
+    // Computed here because the quote, the publishable key and the connected account are all
+    // server-side, and the modal is a client component.
+    balanceQuote: await getBalanceQuote(slug, bookingId),
+    publishableKey: stripePublishableKey(),
+    stripeAccount: location.stripeAccountId ?? null,
   };
 }
 

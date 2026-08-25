@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CreditCard } from "lucide-react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -28,14 +28,48 @@ export function CollectBalance({
   quote,
   publishableKey,
   stripeAccount,
+  onPaid,
+  onBusyChange,
 }: {
   slug: string;
   quote: BalanceQuoteView;
   publishableKey: string | null;
   stripeAccount: string | null;
+  /** Refresh the surrounding view. The page refreshes the route; the modal refetches itself. */
+  onPaid?: () => void;
+  /**
+   * Raised while a charge is in flight, so the host can refuse to disappear underneath it. The window
+   * between "card submitted" and "payment recorded" is the one moment where losing this component
+   * means a customer is charged and the booking never hears about it.
+   */
+  onBusyChange?: (busy: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  // The quote is FROZEN when the form opens. Any other action in the modal — a rider added at the
+  // next desk, a reload triggered elsewhere — pushes a fresh `quote` prop down, and letting that
+  // reach a mounted <Elements> changes the amount out from under a card that is already being typed.
+  // The server re-derives the amount at charge time regardless, and refuses if it has moved, so
+  // freezing here costs nothing and removes a whole class of surprise.
+  const [locked, setLocked] = useState<BalanceQuoteView | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const open = locked !== null;
+
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+
+  // Guards the crudest interruption of all — closing the tab or hitting back mid-charge. The browser
+  // shows its own generic "leave site?" prompt; the wording is not ours to choose, but the stop is.
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      // Legacy assignment, still required by Chrome for the prompt to appear.
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [busy]);
 
   const stripePromise = useMemo<Promise<Stripe | null> | null>(() => {
     if (!publishableKey) return null;
@@ -71,7 +105,7 @@ export function CollectBalance({
         {!open && (
           <button
             type="button"
-            onClick={() => setOpen(true)}
+            onClick={() => setLocked(quote)}
             className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-700"
           >
             <CreditCard className="h-4 w-4" /> Charge a card
@@ -81,7 +115,15 @@ export function CollectBalance({
 
       {error && <p className="mt-2 text-sm font-medium text-red-600">{error}</p>}
 
-      {open && (
+      {/* Says out loud what the disabled close button only implies. Someone at a desk needs to know
+          the screen is frozen ON PURPOSE, or they will start hunting for a way out of it. */}
+      {busy && (
+        <p className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+          Payment going through — don&apos;t close this window. It will unlock on its own.
+        </p>
+      )}
+
+      {locked && (
         <div className="mt-3">
           {!stripePromise ? (
             <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
@@ -92,7 +134,7 @@ export function CollectBalance({
               stripe={stripePromise}
               options={{
                 mode: "payment",
-                amount: quote.chargeCents,
+                amount: locked.chargeCents,
                 currency: "usd",
                 setupFutureUsage: "off_session",
                 // Card ONLY, and it must match `payment_method_types` on the intent or deferred-intent
@@ -105,11 +147,13 @@ export function CollectBalance({
             >
               <BalanceCheckout
                 slug={slug}
-                bookingId={quote.bookingId}
-                amountCents={quote.chargeCents}
+                bookingId={locked.bookingId}
+                amountCents={locked.chargeCents}
                 onError={setError}
+                onBusy={setBusy}
+                onPaid={onPaid}
                 onCancel={() => {
-                  setOpen(false);
+                  setLocked(null);
                   setError(null);
                 }}
               />
@@ -126,17 +170,25 @@ function BalanceCheckout({
   bookingId,
   amountCents,
   onError,
+  onBusy,
+  onPaid,
   onCancel,
 }: {
   slug: string;
   bookingId: string;
   amountCents: number;
   onError: (e: string) => void;
+  onBusy: (busy: boolean) => void;
+  onPaid?: () => void;
   onCancel: () => void;
 }) {
   const stripe = useStripe();
   const elements = useElements();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyLocal] = useState(false);
+  const setBusy = (v: boolean) => {
+    setBusyLocal(v);
+    onBusy(v);
+  };
   const [, startRefresh] = useTransition();
   const router = useRouter();
 
@@ -194,7 +246,8 @@ function BalanceCheckout({
         return;
       }
       onCancel();
-      startRefresh(() => router.refresh());
+      if (onPaid) onPaid();
+      else startRefresh(() => router.refresh());
     } catch (e) {
       onError(
         e instanceof Error

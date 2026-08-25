@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { BookingNote } from "@/components/BookingNote";
+import { CollectBalance } from "@/components/CollectBalance";
 import { createPortal } from "react-dom";
 import { sourceLabel } from "@/lib/bookingSource";
 import Link from "next/link";
@@ -50,6 +51,10 @@ export function BookingModal({
 }) {
   const [data, setData] = useState<Data>(null);
   const [loading, setLoading] = useState(true);
+  // Raised by CollectBalance between "card submitted" and "payment recorded". For that window the
+  // modal must not be dismissible: unmounting it mid-charge means the customer is charged and the
+  // booking never records it, which is the single worst outcome this screen can produce.
+  const [paymentBusy, setPaymentBusy] = useState(false);
 
   const reload = useCallback(() => {
     getBookingModalData(slug, bookingId).then((d) => {
@@ -84,7 +89,13 @@ export function BookingModal({
         than pushing the page.
       */}
       <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-200 bg-white shadow-2xl sm:max-h-none sm:rounded-2xl dark:border-zinc-800 dark:bg-zinc-900">
-        <button onClick={onClose} className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" aria-label="Close">
+        <button
+          onClick={onClose}
+          disabled={paymentBusy}
+          className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800"
+          aria-label={paymentBusy ? "Can't close — a payment is going through" : "Close"}
+          title={paymentBusy ? "A payment is going through. This will unlock when it finishes." : "Close"}
+        >
           <X className="h-5 w-5" />
         </button>
 
@@ -93,7 +104,13 @@ export function BookingModal({
         ) : !data ? (
           <div className="p-10 text-center text-sm text-zinc-500">Booking not found.</div>
         ) : (
-          <Body slug={slug} base={base} data={data} reload={reload} />
+          <Body
+            slug={slug}
+            base={base}
+            data={data}
+            reload={reload}
+            onPaymentBusyChange={setPaymentBusy}
+          />
         )}
       </div>
     </div>
@@ -110,14 +127,36 @@ function Body({
   base,
   data,
   reload,
+  onPaymentBusyChange,
 }: {
   slug: string;
   base: string;
   data: NonNullable<Data>;
   reload: () => void;
+  onPaymentBusyChange: (busy: boolean) => void;
 }) {
   const caps = useCaps();
-  const { detail, refund, rescheduleSlots, riderTypes, tz, hasCardOnFile } = data;
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  // Stable identity: CollectBalance reports through an effect keyed on this callback, so a fresh
+  // arrow each render would re-fire it on every render of the booking.
+  const handlePaymentBusy = useCallback(
+    (bsy: boolean) => {
+      setPaymentBusy(bsy);
+      onPaymentBusyChange(bsy);
+    },
+    [onPaymentBusyChange],
+  );
+  const {
+    detail,
+    refund,
+    rescheduleSlots,
+    riderTypes,
+    tz,
+    hasCardOnFile,
+    balanceQuote,
+    publishableKey,
+    stripeAccount,
+  } = data;
   const b = detail.booking;
   const cust = detail.customer;
   const when = detail.slot
@@ -126,7 +165,21 @@ function Body({
   const checkin = rollup(detail.lines);
 
   return (
-    <div className="max-h-[85vh] overflow-y-auto p-5">
+    // `relative` so the in-payment shield below can cover the whole booking, however long it is.
+    <div className="relative max-h-[85vh] overflow-y-auto p-5">
+      {/*
+        While a card is being charged, everything except the payment panel stops responding.
+        Disabling the close button alone was not enough — the modal is full of live controls and
+        links (add a rider, reschedule, cancel, open the full booking page), and any of them fired
+        mid-charge either mutates the booking underneath the payment or navigates away from it.
+        A shield is one element and covers every one of them, including the ones added later.
+      */}
+      {paymentBusy && (
+        <div
+          className="absolute inset-0 z-20 cursor-not-allowed bg-white/60 dark:bg-zinc-900/60"
+          aria-hidden="true"
+        />
+      )}
       {/* Contact header */}
       <div className="pr-8">
         <h2 className="text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
@@ -189,19 +242,24 @@ function Body({
       {/* Pricing */}
       <Section title="Pricing">
         <dl className="space-y-1 text-sm">
+          {/*
+            The CUSTOMER's breakdown, exactly as they saw it at checkout — subtotal, discount, one
+            combined "Taxes & fees" line, total. Nobody sees our processing fee split out, admins
+            included.
+
+            It used to itemize "Processing fee" for `manage_platform` holders. Two reasons that had
+            to go. It put our margin on a screen an operator stands over at a busy desk, where role
+            gating is worth very little. And it made the dashboard disagree with the confirmation
+            email in the customer's hand, so staff read two different breakdowns of one booking while
+            answering a question about it.
+
+            Our own fee accounting is unaffected and still exact — it lives on the admin-only
+            uncollected-fees report and in Stripe.
+          */}
           <Row label="Subtotal" value={usd(b.subtotalCents)} />
           {b.discountCents > 0 && <Row label="Discount" value={`−${usd(b.discountCents)}`} />}
-          {/* Platform processing fee is Turbo-internal — operators see it bundled
-              with tax (as the customer does at checkout); admins see it itemized. */}
-          {caps.manage_platform ? (
-            <>
-              {b.platformFeeCents > 0 && <Row label="Processing fee" value={usd(b.platformFeeCents)} />}
-              {b.taxCents > 0 && <Row label="Tax (paid online)" value={usd(b.taxCents)} />}
-            </>
-          ) : (
-            (b.platformFeeCents + b.taxCents) > 0 && (
-              <Row label="Taxes & fees" value={usd(b.platformFeeCents + b.taxCents)} />
-            )
+          {b.platformFeeCents + b.taxCents > 0 && (
+            <Row label="Taxes & fees" value={usd(b.platformFeeCents + b.taxCents)} />
           )}
           <Row label="Total" value={usd(b.totalCents)} strong />
           <Row label="Paid" value={usd(b.depositPaidCents)} />
@@ -211,6 +269,24 @@ function Body({
         {b.status === "active" && caps.manage_bookings && (
           <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
             <PriceEditors slug={slug} bookingId={b.id} total={b.totalCents} reload={reload} />
+          </div>
+        )}
+        {/*
+          Taking the balance belongs HERE, not one page away. Check-in runs out of the manifest:
+          tap the booking, check riders in, take payment. Having the card form on the separate
+          booking page meant leaving that flow with a customer standing at the desk — so in practice
+          the card got run on an outside terminal and we saw none of it.
+        */}
+        {balanceQuote && !("error" in balanceQuote) && (
+          <div className="relative z-30 mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+            <CollectBalance
+              slug={slug}
+              quote={balanceQuote}
+              publishableKey={publishableKey}
+              stripeAccount={stripeAccount}
+              onPaid={reload}
+              onBusyChange={handlePaymentBusy}
+            />
           </div>
         )}
       </Section>

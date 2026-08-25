@@ -31,8 +31,6 @@ export default async function BookingDetailPage({ params }: Props) {
   if (!loc) notFound();
   const d = await getBookingDetail(id, loc.id);
   if (!d || !d.booking) notFound();
-  // Platform processing fee is Turbo-internal revenue — only admins see it.
-  const showFees = await can("manage_platform", slug);
   const canManage = await can("manage_bookings", slug);
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
@@ -149,20 +147,13 @@ export default async function BookingDetailPage({ params }: Props) {
       <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Pricing</h3>
         <dl className="mt-2 space-y-1 text-sm">
+          {/* The CUSTOMER's breakdown, matching their confirmation and the modal. Our processing fee
+              is never split out for anyone — see the note in BookingModal.tsx. */}
           <Row label="Subtotal" value={usd(b.subtotalCents)} />
-          {/* Platform fee is Turbo-internal — operators see it bundled with tax
-              (as the customer does at checkout); admins see it itemized. */}
-          {showFees ? (
-            <>
-              {b.taxCents > 0 && <Row label="Tax" value={usd(b.taxCents)} />}
-              {b.platformFeeCents > 0 && <Row label="Platform fee" value={usd(b.platformFeeCents)} />}
-            </>
-          ) : (
-            (b.taxCents + b.platformFeeCents) > 0 && (
-              <Row label="Taxes & fees" value={usd(b.taxCents + b.platformFeeCents)} />
-            )
-          )}
           {b.discountCents > 0 && <Row label="Discount" value={`-${usd(b.discountCents)}`} />}
+          {b.taxCents + b.platformFeeCents > 0 && (
+            <Row label="Taxes & fees" value={usd(b.taxCents + b.platformFeeCents)} />
+          )}
           <Row label="Total" value={usd(b.totalCents)} strong />
           <Row label="Paid online" value={usd(b.depositPaidCents)} />
           {b.balanceDueCents > 0 && <Row label="Balance at venue" value={usd(b.balanceDueCents)} muted />}
