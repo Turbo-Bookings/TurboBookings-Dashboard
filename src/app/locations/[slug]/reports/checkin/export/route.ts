@@ -17,11 +17,16 @@ export async function GET(request: Request, ctx: { params: Promise<{ slug: strin
   const tz = loc.timezone ?? "America/Chicago";
 
   const url = new URL(request.url);
-  const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
+  // Same default as the page — a CSV that covers a different range than the screen it was
+  // downloaded from is worse than no CSV.
+  const now = DateTime.now().setZone(tz);
   const range = resolveRange(
-    { from: dayParam(url, "from", today), to: dayParam(url, "to", today) },
+    {
+      from: dayParam(url, "from", now.minus({ days: 6 }).toFormat("yyyy-LL-dd")),
+      to: dayParam(url, "to", now.toFormat("yyyy-LL-dd")),
+    },
     tz,
-    "today",
+    "rolling7",
   );
 
   const rows = await checkInRowsForCsv(loc.id, range.from, range.to);
@@ -44,7 +49,12 @@ export async function GET(request: Request, ctx: { params: Promise<{ slug: strin
       r.checkedIn,
       r.noShow,
       // "not_yet" is the honest label — nobody marked it, which is not the same as "did not arrive".
-      r.status === "not_yet" ? "never marked" : r.status.replace("_", " "),
+      // "never marked" only if the tour has actually run — otherwise it has simply not happened.
+      r.status === "not_yet"
+        ? r.startsAt.getTime() > Date.now()
+          ? "not run yet"
+          : "never marked"
+        : r.status.replace("_", " "),
     ]),
   );
 }

@@ -23,8 +23,13 @@ export default async function CheckInReportPage({ params, searchParams }: Props)
   if (!loc) notFound();
   const tz = loc.timezone ?? "America/Chicago";
 
-  // Defaults to today: this is the report the desk pulls about the day it just worked.
-  const range = resolveRange(sp, tz, "today");
+  // Defaults to the last 7 days, NOT today.
+  //
+  // Opening on today meant opening on tours that have not run yet: 0 checked in, every booked
+  // vehicle unmarked. That reads as "nobody was checked in" — which is exactly how it was reported
+  // as a bug — rather than as "today has not happened". A report whose default view looks broken is
+  // a broken report, whatever the numbers technically mean.
+  const range = resolveRange(sp, tz, "rolling7");
   const r = await checkInReport(loc.id, range.from, range.to);
   const t = r.totals;
 
@@ -34,8 +39,24 @@ export default async function CheckInReportPage({ params, searchParams }: Props)
         <StatTile label="Vehicles booked" value={String(t.vehicles)} sub={`${t.bookings} bookings`} tone="blue" icon={Truck} />
         <StatTile label="Checked in" value={String(t.checkedIn)} sub={pct(t.checkedIn, t.vehicles)} tone="emerald" icon={CircleCheck} />
         <StatTile label="No-show" value={String(t.noShow)} sub={pct(t.noShow, t.vehicles)} tone="orange" icon={CircleX} />
-        <StatTile label="Never marked" value={String(t.notMarked)} sub={pct(t.notMarked, t.vehicles)} tone="zinc" icon={CircleHelp} />
+        <StatTile
+          label="Never marked"
+          value={String(t.notMarked)}
+          sub={pct(t.notMarked, t.vehicles)}
+          tone="zinc"
+          icon={CircleHelp}
+        />
       </div>
+
+      {/* Tours in the range that have not run yet. Held apart from "never marked" because one is a
+          desk miss and the other is simply the future, and adding them together made every range
+          containing today look like a check-in failure. */}
+      {r.hasUpcoming && (
+        <p className="mt-3 text-sm text-zinc-500">
+          {t.upcoming} more vehicle{t.upcoming === 1 ? " is" : "s are"} on tours in this range that
+          have not run yet. They are not counted above.
+        </p>
+      )}
 
       {/*
         The one number that decides whether the other two mean anything. A no-show rate computed over
@@ -44,9 +65,10 @@ export default async function CheckInReportPage({ params, searchParams }: Props)
       */}
       {t.notMarked > 0 && (
         <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-          <strong>{t.notMarked}</strong> of {t.vehicles} vehicles were never marked either way, so
-          the check-in and no-show rates above cover only {pct(t.vehicles - t.notMarked, t.vehicles)}{" "}
-          of the range. Treat them as a floor, not a rate.
+          <strong>{t.notMarked}</strong> vehicle{t.notMarked === 1 ? "" : "s"} on tours that already
+          ran were never marked either way, so the rates above cover only{" "}
+          {pct(t.checkedIn + t.noShow, t.checkedIn + t.noShow + t.notMarked)} of what happened. Treat
+          them as a floor, not a rate.
         </p>
       )}
 
@@ -87,6 +109,9 @@ export default async function CheckInReportPage({ params, searchParams }: Props)
                     {row.noShow}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{row.notMarked}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-400">
+                    {row.upcoming || "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

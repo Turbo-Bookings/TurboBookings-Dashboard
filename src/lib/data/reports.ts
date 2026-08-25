@@ -100,8 +100,10 @@ export type CheckInTourRow = {
   vehicles: number;
   checkedIn: number;
   noShow: number;
-  /** Units nobody marked either way. */
+  /** Units on a tour that has ALREADY RUN and was never marked either way — a desk miss. */
   notMarked: number;
+  /** Units on a tour that has not run yet. Not a miss; nothing has happened to them. */
+  upcoming: number;
 };
 
 export type CheckInReport = {
@@ -109,6 +111,8 @@ export type CheckInReport = {
   totals: Omit<CheckInTourRow, "itemName">;
   /** Bookings where some units checked in AND some were marked no-show — worth a look. */
   partialBookings: number;
+  /** True when the range reaches into tours that have not happened yet. */
+  hasUpcoming: boolean;
 };
 
 /**
@@ -127,6 +131,7 @@ export async function checkInReport(
   const byBooking = foldByBooking(await linesInRange(locationId, from, to));
   const tours = new Map<string, CheckInTourRow>();
   let partialBookings = 0;
+  const now = Date.now();
 
   for (const { row, lines } of byBooking.values()) {
     const t = tours.get(row.itemName) ?? {
@@ -136,13 +141,20 @@ export async function checkInReport(
       checkedIn: 0,
       noShow: 0,
       notMarked: 0,
+      upcoming: 0,
     };
     const { qty, ci, ns } = sumUnits(lines);
+    const unmarked = Math.max(0, qty - ci - ns);
     t.bookings += 1;
     t.vehicles += qty;
     t.checkedIn += ci;
     t.noShow += ns;
-    t.notMarked += Math.max(0, qty - ci - ns);
+    // A tour that has not run yet cannot have been "missed" by the desk — nothing has happened to
+    // it. Counting those as never-marked made the report unreadable for any range containing today:
+    // it opened on a Tuesday morning showing 0 checked in and every booked vehicle as unmarked,
+    // which reads as "nobody was checked in" rather than "today has not happened".
+    if (row.startsAt.getTime() > now) t.upcoming += unmarked;
+    else t.notMarked += unmarked;
     tours.set(row.itemName, t);
     if (ci > 0 && ns > 0) partialBookings++;
   }
@@ -155,10 +167,11 @@ export async function checkInReport(
       checkedIn: a.checkedIn + t.checkedIn,
       noShow: a.noShow + t.noShow,
       notMarked: a.notMarked + t.notMarked,
+      upcoming: a.upcoming + t.upcoming,
     }),
-    { bookings: 0, vehicles: 0, checkedIn: 0, noShow: 0, notMarked: 0 },
+    { bookings: 0, vehicles: 0, checkedIn: 0, noShow: 0, notMarked: 0, upcoming: 0 },
   );
-  return { byTour, totals, partialBookings };
+  return { byTour, totals, partialBookings, hasUpcoming: totals.upcoming > 0 };
 }
 
 // --------------------------------------------------------- cash to collect
@@ -175,6 +188,9 @@ export type CashReport = {
   noShowDueCents: number;
   notMarkedBookings: number;
   notMarkedDueCents: number;
+  /** Owed on tours in the range that have not run yet — not missing money, just not due. */
+  upcomingBookings: number;
+  upcomingDueCents: number;
 };
 
 /**
@@ -226,7 +242,10 @@ export async function cashToCollect(
     noShowDueCents: 0,
     notMarkedBookings: 0,
     notMarkedDueCents: 0,
+    upcomingBookings: 0,
+    upcomingDueCents: 0,
   };
+  const now = Date.now();
 
   for (const [bookingId, { row, lines }] of byBooking.entries()) {
     const status: CheckInRollup = bookingRollup(lines);
@@ -237,8 +256,15 @@ export async function cashToCollect(
     if (dueOnArrival <= 0 && card <= 0) continue;
 
     if (status === "not_yet") {
-      out.notMarkedBookings += 1;
-      out.notMarkedDueCents += dueOnArrival;
+      // A tour that has not run yet is not an unmarked booking — nothing has happened to it. Lumping
+      // the two together made every range containing today look like a pile of unexplained money.
+      if (row.startsAt.getTime() > now) {
+        out.upcomingBookings += 1;
+        out.upcomingDueCents += dueOnArrival;
+      } else {
+        out.notMarkedBookings += 1;
+        out.notMarkedDueCents += dueOnArrival;
+      }
       continue;
     }
     if (status === "no_show") {

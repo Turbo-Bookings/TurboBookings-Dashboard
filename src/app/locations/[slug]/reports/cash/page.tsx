@@ -22,8 +22,10 @@ export default async function CashReportPage({ params, searchParams }: Props) {
   if (!loc) notFound();
   const tz = loc.timezone ?? "America/Chicago";
 
-  // Defaults to today: this is what you count the till against at close.
-  const range = resolveRange(sp, tz, "today");
+  // Defaults to the last 7 days, not today. Opening on today means opening on tours that have not
+  // run yet: nothing owed, nothing collected, $0 to hand over — which reads as broken rather than as
+  // "the day is not over". Use the Today preset at close, when it means something.
+  const range = resolveRange(sp, tz, "rolling7");
   const r = await cashToCollect(loc.id, range.from, range.to);
 
   return (
@@ -91,6 +93,13 @@ export default async function CashReportPage({ params, searchParams }: Props) {
         Shown rather than hidden, because a day that will not balance is usually a day somebody
         forgot to mark — and dropping these rows removes the explanation along with the discrepancy.
       */}
+      {r.upcomingDueCents > 0 && (
+        <p className="mt-3 text-sm text-zinc-500">
+          A further {usd(r.upcomingDueCents)} is owed on {r.upcomingBookings} booking
+          {r.upcomingBookings === 1 ? "" : "s"} whose tours have not run yet. Not missing — not due.
+        </p>
+      )}
+
       {r.notMarkedDueCents > 0 && (
         <p className="mt-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
           {usd(r.notMarkedDueCents)} sits on {r.notMarkedBookings} booking
