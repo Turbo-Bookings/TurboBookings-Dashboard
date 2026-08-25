@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { CalendarDays, CalendarRange, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { DateJump } from "@/components/ui/DateJump";
+import { TourVehicleSummary } from "@/components/TourVehicleSummary";
 import { RecentBookings } from "@/components/RecentBookings";
 import { SlotPopover } from "@/components/SlotPopover";
 import { ViewToggle } from "@/app/locations/[slug]/bookings/list/page";
@@ -12,6 +14,8 @@ import { getLocationBySlug } from "@/lib/data/locations";
 export const dynamic = "force-dynamic";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+type View = "day" | "week" | "next7";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -28,7 +32,10 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
   const dateKey =
     sp.date && DAY_RE.test(sp.date) ? sp.date : DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
   const day = DateTime.fromISO(dateKey, { zone: tz });
-  const view = sp.view === "week" ? "week" : "day";
+  // day | week (calendar Mon–Sun) | next7 (rolling, from the shown date). Luxon's startOf("week") is
+  // already Monday, so "week" is a calendar week without extra work; "next7" is the same grid seeded
+  // from the day itself rather than from the start of its week.
+  const view: View = sp.view === "week" ? "week" : sp.view === "next7" ? "next7" : "day";
   const bookedOnly = sp.booked === "1";
   const fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
 
@@ -38,7 +45,7 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
     const date = o.date ?? dateKey;
     if (date) q.set("date", date);
     const v = o.view ?? view;
-    if (v === "week") q.set("view", "week");
+    if (v !== "day") q.set("view", v);
     const b = o.booked ?? (bookedOnly ? "1" : "");
     if (b === "1") q.set("booked", "1");
     return `${base}?${q.toString()}`;
@@ -46,7 +53,9 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
   const filt = (arr: GridSlot[]) => (bookedOnly ? arr.filter((s) => s.booked > 0) : arr);
 
   // Date navigation steps by day or week.
-  const step = view === "week" ? { weeks: 1 } : { days: 1 };
+  // Stepping matches the span on screen: a week view moves a week, a rolling window moves its own
+  // length, a day moves a day.
+  const step = view === "day" ? { days: 1 } : { weeks: 1 };
   const prev = day.minus(step).toFormat("yyyy-LL-dd");
   const next = day.plus(step).toFormat("yyyy-LL-dd");
   const today = DateTime.now().setZone(tz).toFormat("yyyy-LL-dd");
@@ -60,7 +69,13 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
     <section>
       <PageHeader
         title="Bookings"
-        description={view === "week" ? `Week of ${day.startOf("week").toFormat("LLL d")}` : day.toFormat("cccc, LLL d")}
+        description={
+          view === "week"
+            ? `Week of ${day.startOf("week").toFormat("LLL d")}`
+            : view === "next7"
+              ? `${day.toFormat("LLL d")} – ${day.plus({ days: 6 }).toFormat("LLL d")}`
+              : day.toFormat("cccc, LLL d")
+        }
         actions={
           <div className="flex items-center gap-2">
             <Link href={mk({ date: prev })} className={navCls} aria-label="Previous">
@@ -74,6 +89,7 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
             <Link href={mk({ date: next })} className={navCls} aria-label="Next">
               <ChevronRight className="h-4 w-4" />
             </Link>
+            <DateJump value={dateKey} hrefFor={(d) => mk({ date: d })} />
             <RecentBookings slug={slug} tz={tz} />
             <Link href={`${base}/new`} data-tour="bookings-new" className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
               <Plus className="h-4 w-4" /> New booking
@@ -92,6 +108,9 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
           <Link href={mk({ view: "week" })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${view === "week" ? segOn : segOff}`}>
             <CalendarRange className="h-4 w-4" /> Week
           </Link>
+          <Link href={mk({ view: "next7" })} className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium ${view === "next7" ? segOn : segOff}`}>
+            <CalendarRange className="h-4 w-4" /> 7 days
+          </Link>
         </div>
         {/* Booked only */}
         <Link
@@ -106,12 +125,41 @@ export default async function BookingsGridPage({ params, searchParams }: Props) 
         </Link>
       </div>
 
-      {view === "week" ? (
-        <WeekGrid slug={slug} loc={{ id: loc.id, tz }} day={day} fmtTime={fmtTime} filt={filt} />
+      {view !== "day" ? (
+        <WeekGrid slug={slug} loc={{ id: loc.id, tz }} day={day} fmtTime={fmtTime} filt={filt} rolling={view === "next7"} />
       ) : (
-        <DayGrid slug={slug} dateKey={dateKey} slots={filt(await gridForDate(loc.id, dateKey, tz))} fmtTime={fmtTime} tz={tz} />
+        <DayGridWithSummary slug={slug} dateKey={dateKey} locId={loc.id} tz={tz} fmtTime={fmtTime} filt={filt} />
       )}
     </section>
+  );
+}
+
+/**
+ * The day's slots, fetched once and used twice — the per-tour vehicle totals above the grid, and the
+ * grid itself. The summary counts every slot; the grid respects the "booked only" filter, so folding
+ * the totals from the FILTERED list would make them disagree with the day the moment that is on.
+ */
+async function DayGridWithSummary({
+  slug,
+  dateKey,
+  locId,
+  tz,
+  fmtTime,
+  filt,
+}: {
+  slug: string;
+  dateKey: string;
+  locId: string;
+  tz: string;
+  fmtTime: Intl.DateTimeFormat;
+  filt: (arr: GridSlot[]) => GridSlot[];
+}) {
+  const slots = await gridForDate(locId, dateKey, tz);
+  return (
+    <>
+      <TourVehicleSummary slots={slots} />
+      <DayGrid slug={slug} dateKey={dateKey} slots={filt(slots)} fmtTime={fmtTime} tz={tz} />
+    </>
   );
 }
 
@@ -164,15 +212,21 @@ async function WeekGrid({
   day,
   fmtTime,
   filt,
+  rolling,
 }: {
   slug: string;
   loc: { id: string; tz: string };
   day: DateTime;
   fmtTime: Intl.DateTimeFormat;
   filt: (arr: GridSlot[]) => GridSlot[];
+  /** Seven days from the shown date, rather than the calendar week containing it. */
+  rolling?: boolean;
 }) {
-  const weekStart = day.startOf("week");
-  const days = Array.from({ length: 7 }, (_, i) => weekStart.plus({ days: i }));
+  // One grid, two windows. A calendar week answers "how did last week go" and lines up with how
+  // people talk about a work week; a rolling seven answers "what is coming". Luxon's startOf("week")
+  // is Monday, which is the convention the venue uses.
+  const start = rolling ? day : day.startOf("week");
+  const days = Array.from({ length: 7 }, (_, i) => start.plus({ days: i }));
   const slotsByDay = await Promise.all(
     days.map((d) => gridForDate(loc.id, d.toFormat("yyyy-LL-dd"), loc.tz)),
   );

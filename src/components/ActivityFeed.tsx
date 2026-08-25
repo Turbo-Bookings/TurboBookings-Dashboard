@@ -1,8 +1,11 @@
-import { clerkClient } from "@clerk/nextjs/server";
+import { DateTime } from "luxon";
 import type { AuditLog } from "@/lib/db/schema";
+import { labelFor, resolveUserLabels } from "@/lib/users";
 
 type Props = {
   entries: AuditLog[];
+  /** The LOCATION's timezone. See formatTime below for why this is not optional in practice. */
+  tz: string;
 };
 
 // Maps Clerk action prefix → small badge color. Visual cue for which
@@ -20,19 +23,19 @@ function actionStyle(action: string): string {
   return ACTION_STYLES[prefix] ?? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200";
 }
 
-function formatTime(ts: Date): string {
-  // Compact relative-ish format: "May 22, 12:34 AM"
-  return ts.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+// Rendered in the LOCATION's timezone, not the server's.
+//
+// This used to call `toLocaleString` with no zone at all, which means the Node process's zone — UTC
+// on Vercel. So every timestamp on this page was an hour or five off, consistently, in a way that
+// looks like a plausible time rather than a wrong one. A wrong clock on an audit log is worse than
+// no clock: it is the column you reach for when reconstructing what happened and when.
+function formatTime(ts: Date, tz: string): string {
+  return DateTime.fromJSDate(ts).setZone(tz).toFormat("LLL d, h:mm a");
 }
 
 // Server component — resolves Clerk user labels at render time. One round
 // trip per unique userId in the feed, cached for the request.
-export async function ActivityFeed({ entries }: Props) {
+export async function ActivityFeed({ entries, tz }: Props) {
   if (entries.length === 0) {
     return (
       <div className="rounded-md border-2 border-dashed border-zinc-200 bg-zinc-50/50 p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/30">
@@ -42,34 +45,9 @@ export async function ActivityFeed({ entries }: Props) {
     );
   }
 
-  // Resolve Clerk user labels in parallel.
-  const uniqueUserIds = Array.from(
-    new Set(
-      entries
-        .map((e) => e.userId)
-        .filter((id): id is string => typeof id === "string"),
-    ),
-  );
-
-  const userLabels = new Map<string, string>();
-  if (uniqueUserIds.length > 0) {
-    const clerk = await clerkClient();
-    await Promise.all(
-      uniqueUserIds.map(async (id) => {
-        try {
-          const u = await clerk.users.getUser(id);
-          const label =
-            u.primaryEmailAddress?.emailAddress ??
-            u.username ??
-            u.firstName ??
-            id.slice(0, 8);
-          userLabels.set(id, label);
-        } catch {
-          userLabels.set(id, id.slice(0, 8));
-        }
-      }),
-    );
-  }
+  // Was inlined here, and so existed only here — every other surface that wanted to show who did
+  // something simply showed nothing. Now shared with the booking history and the reports.
+  const actors = await resolveUserLabels(entries.map((e) => e.userId));
 
   return (
     <ol className="space-y-2">
@@ -80,12 +58,10 @@ export async function ActivityFeed({ entries }: Props) {
         >
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
             <span className="font-mono text-zinc-400">
-              {formatTime(entry.createdAt)}
+              {formatTime(entry.createdAt, tz)}
             </span>
             <span className="font-medium text-zinc-700 dark:text-zinc-300">
-              {entry.userId
-                ? (userLabels.get(entry.userId) ?? entry.userId.slice(0, 8))
-                : "System"}
+              {labelFor(actors, entry.userId).name}
             </span>
             <span
               className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-medium ${actionStyle(entry.action)}`}

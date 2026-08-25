@@ -24,7 +24,7 @@ export default async function ActivityPage({ params }: Props) {
         </p>
       </div>
 
-      <ActivityFeed entries={entries} />
+      <ActivityFeed entries={entries} tz={loc.timezone ?? "America/Chicago"} />
     </div>
   );
 }

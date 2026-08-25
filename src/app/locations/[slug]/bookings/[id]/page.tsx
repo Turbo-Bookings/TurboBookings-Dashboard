@@ -14,6 +14,7 @@ import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 import { BookingNote } from "@/components/BookingNote";
+import { labelFor, resolveUserLabels } from "@/lib/users";
 import { CollectBalance } from "@/components/CollectBalance";
 import { getBalanceQuote } from "@/lib/actions/collectBalance";
 import { stripePublishableKey } from "@/lib/stripe/client";
@@ -37,6 +38,13 @@ export default async function BookingDetailPage({ params }: Props) {
   // What the desk would charge if the customer pays the rest by card. Null when there is nothing to
   // collect, or the caller cannot take payments — the component then renders nothing.
   const balanceQuote = canManage ? await getBalanceQuote(slug, id) : null;
+  // "Who changed this booking" is the entire reason audit rows carry a user id, and the history has
+  // been rendering the timestamp and the summary while dropping the one column that answers it.
+  // Resolved in one batch — fifty rows written by three people is three Clerk lookups.
+  const actors = await resolveUserLabels([
+    ...activity.map((a) => a.userId),
+    ...reschedules.map((r) => r.performedByUserId),
+  ]);
   const rescheduleSlots = tourData && tourData.ok ? tourData.slots : [];
   const tz = loc.timezone ?? "America/Chicago";
   const when = slot
@@ -238,8 +246,15 @@ export default async function BookingDetailPage({ params }: Props) {
           <ul className="mt-2 space-y-1 text-xs text-zinc-500">
             {reschedules.map((r) => (
               <li key={r.id}>
-                Moved {r.reason ? `(${r.reason})` : ""}{" "}
-                {r.feeChargedCents > 0 ? `· fee ${usd(r.feeChargedCents)}` : ""}
+                <span className="tabular-nums">
+                  {DateTime.fromJSDate(r.createdAt).setZone(tz).toFormat("LLL d, h:mm a")}
+                </span>{" "}
+                — Moved by{" "}
+                <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                  {labelFor(actors, r.performedByUserId).name}
+                </span>
+                {r.reason ? ` · ${r.reason}` : ""}
+                {r.feeChargedCents > 0 ? ` · fee ${usd(r.feeChargedCents)}` : ""}
               </li>
             ))}
           </ul>
@@ -253,7 +268,13 @@ export default async function BookingDetailPage({ params }: Props) {
           <ul className="mt-2 space-y-1 text-xs text-zinc-500">
             {activity.map((a) => (
               <li key={a.id}>
-                {DateTime.fromJSDate(a.createdAt).setZone(tz).toFormat("LLL d, h:mm a")} — {a.summary}
+                <span className="tabular-nums">
+                  {DateTime.fromJSDate(a.createdAt).setZone(tz).toFormat("LLL d, h:mm a")}
+                </span>{" "}
+                <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                  {labelFor(actors, a.userId).name}
+                </span>{" "}
+                — {a.summary}
               </li>
             ))}
           </ul>
