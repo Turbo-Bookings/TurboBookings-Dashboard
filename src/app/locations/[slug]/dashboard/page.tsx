@@ -11,7 +11,7 @@ import {
   Landmark,
   Plus,
   Ticket,
-  Users,
+  Truck,
   Wallet,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -98,16 +98,55 @@ export default async function DashboardPage({
         }
       />
 
-      <Group title="Today" hint="What is running at the venue today, and what came in today.">
-        <StatTile label="Tours today" value={String(toursToday.bookings)} sub={`${toursToday.pax} vehicles`} tone="blue" icon={CalendarDays} />
-        <StatTile label="Booked today" value={String(takenToday.count)} sub={`${takenToday.onlineCount} online · ${takenToday.directCount} direct`} tone="violet" icon={Ticket} />
+      {/*
+        Today first, and operational first. This page used to open on a 30-day revenue framing, which
+        answers a question nobody standing at a venue is asking at 9am. What is running today and how
+        many vehicles go out is the thing the whole day is planned around — and it is the half that
+        front-line staff can see, so it leads.
+      */}
+      <Group title="Today at the venue" hint="What is running today, and how many vehicles go out.">
+        <StatTile label="Bookings today" value={String(toursToday.bookings)} tone="blue" icon={CalendarDays} />
+        <StatTile label="Vehicles out" value={String(toursToday.pax)} sub="across every tour" tone="violet" icon={Truck} />
         {showMoney && (
-          <>
-            <StatTile label="To collect today" value={usd(toursToday.balanceDueCents)} sub="at the venue" tone="orange" icon={Landmark} />
-            <StatTile label="Collected today" value={usd(cashToday.netCents)} sub="online, net of refunds" tone="amber" icon={Wallet} />
-          </>
+          <StatTile label="To collect today" value={usd(toursToday.balanceDueCents)} sub="at the venue" tone="orange" icon={Landmark} />
         )}
       </Group>
+
+      {/* The breakdown the desk actually plans against — how many of each kind of machine. */}
+      {toursToday.byTour.length > 0 && (
+        <div className="mt-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">By tour, today</h2>
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            {toursToday.byTour.map((t) => (
+              <li key={t.name} className="flex items-center justify-between gap-4 py-2 text-sm">
+                <span className="truncate">{t.name}</span>
+                <span className="shrink-0 tabular-nums text-zinc-500">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-200">{t.pax}</span>{" "}
+                  vehicle{t.pax === 1 ? "" : "s"}
+                  <span className="text-zinc-400">
+                    {" · "}
+                    {t.bookings} booking{t.bookings === 1 ? "" : "s"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/*
+        Sales, on the BOOKING date — how today's selling went, whenever those guests actually ride.
+        Deliberately separate from the band above: mixing "what is running" with "what we sold" in one
+        row is what made the old dashboard misleading, and the two rarely move together.
+      */}
+      {showMoney && (
+        <Group title="Sales today" hint="Bookings MADE today, whatever date they ride.">
+          <StatTile label="New bookings" value={String(takenToday.count)} sub={`${takenToday.onlineCount} online · ${takenToday.directCount} direct`} tone="violet" icon={Ticket} />
+          <StatTile label="Vehicles booked" value={String(takenToday.pax)} tone="blue" icon={Truck} />
+          <StatTile label="Revenue generated" value={usd(takenToday.salesCents)} sub="net of discounts, fees & tax" tone="emerald" icon={DollarSign} />
+          <StatTile label="Collected online" value={usd(cashToday.netCents)} sub="net of refunds" tone="amber" icon={Wallet} />
+        </Group>
+      )}
 
       <Group title="Next 7 days" hint="Tours coming up, and what those guests still owe on arrival.">
         <StatTile label="Tours" value={String(tours7.bookings)} sub={`${tours7.pax} vehicles`} tone="blue" icon={CalendarClock} />
@@ -120,7 +159,7 @@ export default async function DashboardPage({
         <>
       <Group title="Last 30 days" hint="Sales activity and money received. Bookings are counted when they were MADE.">
         <StatTile label="Bookings taken" value={String(taken30.count)} sub={`${taken30.onlineCount} online · ${taken30.directCount} direct`} tone="violet" icon={Ticket} />
-        <StatTile label="Pax booked" value={String(taken30.pax)} tone="blue" icon={Users} />
+        <StatTile label="Vehicles booked" value={String(taken30.pax)} tone="blue" icon={Truck} />
         <StatTile label="Tour sales" value={usd(taken30.salesCents)} sub="net of discounts, fees & tax" tone="emerald" icon={DollarSign} />
         <StatTile label="Collected online" value={usd(cash30.netCents)} sub="net of refunds" tone="amber" icon={Wallet} />
       </Group>

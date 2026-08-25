@@ -39,7 +39,7 @@ export async function GET(
   });
 
   const header = [
-    "Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Pax",
+    "Booking", "Status", "Source", "When", "Tour", "Customer", "Email", "Vehicles",
     "Sales", "Discount",
     ...(showFees ? ["Fee"] : []),
     "Tax (online)", "Total", "Paid (online)", "Balance (venue)", "Refunded",

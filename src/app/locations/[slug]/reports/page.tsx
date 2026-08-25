@@ -2,7 +2,7 @@ import Link from "next/link";
 import { usd } from "@/lib/ui/money";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
-import { Download, Ticket, Users, DollarSign, Wallet, Landmark, Receipt, Percent, RotateCcw } from "lucide-react";
+import { Download, Ticket, Truck, DollarSign, Wallet, Landmark, Receipt, Percent, RotateCcw } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatTile } from "@/components/ui/StatTile";
 import { bookingsReport } from "@/lib/data/bookings";
@@ -89,7 +89,7 @@ export default async function ReportsPage({ params, searchParams }: Props) {
           tone="blue"
           icon={Ticket}
         />
-        <StatTile label="Pax" value={String(r.pax)} tone="violet" icon={Users} />
+        <StatTile label="Vehicles" value={String(r.pax)} tone="violet" icon={Truck} />
         <StatTile label="Tour sales" value={usd(r.salesCents)} sub="net of discounts" tone="emerald" icon={DollarSign} />
         <StatTile
           label="Collected online"
@@ -132,7 +132,7 @@ export default async function ReportsPage({ params, searchParams }: Props) {
               <tr className="border-b border-zinc-200 text-left text-xs uppercase text-zinc-500 dark:border-zinc-800">
                 <th className="py-2 pl-1">Tour</th>
                 <th className="py-2 text-right">Bookings</th>
-                <th className="py-2 text-right">Pax</th>
+                <th className="py-2 text-right">Vehicles</th>
                 <th className="py-2 text-right">Sales</th>
                 <th className="py-2 pr-1 text-right">Collected</th>
               </tr>

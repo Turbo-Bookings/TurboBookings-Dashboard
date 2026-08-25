@@ -31,7 +31,7 @@ export async function GET(
     minute: "2-digit",
   });
 
-  const header = ["Time", "Tour", "Booking", "Customer", "Pax", "Status", "Due"];
+  const header = ["Time", "Tour", "Booking", "Customer", "Vehicles", "Status", "Due"];
   const lines = [header.map(cell).join(",")];
   for (const r of rows) {
     lines.push(
