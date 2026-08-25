@@ -133,7 +133,9 @@ export function Manifest({
             {dayLabel} · {visibleSlots.length} slot{visibleSlots.length === 1 ? "" : "s"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps, for the same reason PageHeader's actions row does — this is the screen most likely
+            to be used on a phone at the desk. */}
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <Link href={`${manifestBase}?date=${prevKey}`} className={linkCls} aria-label="Previous day">
             <ChevronLeft className="h-4 w-4" />
           </Link>
