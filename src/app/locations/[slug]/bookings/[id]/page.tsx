@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { usd } from "@/lib/ui/money";
+import { customerBreakdown } from "@/lib/booking/breakdown";
 import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
@@ -135,7 +136,14 @@ export default async function BookingDetailPage({ params }: Props) {
         <div className="mt-2 space-y-3">
           {lines.map((l) => (
             <div key={l.id}>
-              <p className="mb-1 text-xs text-zinc-400">{usd(l.unitPriceCents)} each</p>
+              {/* Quantity was missing entirely — a two-ATV booking read "$150.00 each · Double Rider
+                  ATV" with nothing saying there were two of them. The modal has always shown it. */}
+              <p className="mb-1 text-xs text-zinc-400">
+                <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                  {l.quantity} × {l.ctName}
+                </span>{" "}
+                @ {usd(l.unitPriceCents)} each
+              </p>
               <LineCheckIn
                 slug={slug}
                 lineId={l.id}
@@ -153,17 +161,18 @@ export default async function BookingDetailPage({ params }: Props) {
       <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Pricing</h3>
         <dl className="mt-2 space-y-1 text-sm">
-          {/* The CUSTOMER's breakdown, matching their confirmation and the modal. Our processing fee
-              is never split out for anyone — see the note in BookingModal.tsx. */}
-          <Row label="Subtotal" value={usd(b.subtotalCents)} />
-          {b.discountCents > 0 && <Row label="Discount" value={`-${usd(b.discountCents)}`} />}
-          {b.taxCents + b.platformFeeCents > 0 && (
-            <Row label="Taxes & fees" value={usd(b.taxCents + b.platformFeeCents)} />
-          )}
-          <Row label="Total" value={usd(b.totalCents)} strong />
-          <Row label="Paid online" value={usd(b.depositPaidCents)} />
-          {b.balanceDueCents > 0 && <Row label="Balance at venue" value={usd(b.balanceDueCents)} muted />}
-          {b.refundedCents > 0 && <Row label="Refunded" value={usd(b.refundedCents)} muted />}
+          {/* The CUSTOMER's breakdown, matching their confirmation and the modal. Rows come from
+              `customerBreakdown` so the two surfaces cannot drift and the lines always reconcile
+              against the total — our processing fee is never split out for anyone. */}
+          {customerBreakdown(b).map((r) => (
+            <Row
+              key={r.label}
+              label={r.label}
+              value={`${r.negative ? "-" : ""}${usd(r.cents)}`}
+              strong={r.strong}
+              muted={r.muted}
+            />
+          ))}
         </dl>
       </div>
 

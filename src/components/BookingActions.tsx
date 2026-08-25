@@ -42,13 +42,26 @@ export function BookingActions({
   const [error, setError] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [holdDollars, setHoldDollars] = useState("100");
-  // Pre-filled with what the policy says. Staff can type over it; anything different is an override
-  // and then a reason becomes mandatory, because an override leaves no policy trail to explain itself.
-  const [amountDollars, setAmountDollars] = useState((refundCents / 100).toFixed(2));
+  // What the policy says, capped by what can PHYSICALLY be refunded.
+  //
+  // These come apart on every FareHarbor-era booking: the policy says 100% of a $40 deposit, but
+  // that deposit was taken by FareHarbor, so there is no Stripe payment of ours to reverse and
+  // `refundableCents` is 0. The page then read "nothing left to refund" directly above a red button
+  // offering to refund $40.00 — two contradictory statements, and the button was the one that acted.
+  //
+  // Capping here rather than only warning: you cannot return money you never received, so an amount
+  // above the refundable ceiling is not a decision anyone should be able to make.
+  const policyCents = Math.min(refundCents, refundableCents);
+  // Pre-filled with the policy figure. Staff can type over it; anything different is an override and
+  // then a reason becomes mandatory, because an override leaves no policy trail to explain itself.
+  const [amountDollars, setAmountDollars] = useState((policyCents / 100).toFixed(2));
   const caps = useCaps();
 
-  const amountCents = Math.max(0, Math.round(Number(amountDollars) * 100));
-  const isOverride = amountCents !== refundCents;
+  const amountCents = Math.min(
+    refundableCents,
+    Math.max(0, Math.round(Number(amountDollars) * 100)),
+  );
+  const isOverride = amountCents !== policyCents;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -161,10 +174,10 @@ export function BookingActions({
               </div>
               <button
                 type="button"
-                onClick={() => setAmountDollars((refundCents / 100).toFixed(2))}
+                onClick={() => setAmountDollars((policyCents / 100).toFixed(2))}
                 className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
               >
-                Policy ({usd(refundCents)})
+                Policy ({usd(policyCents)})
               </button>
               <button
                 type="button"

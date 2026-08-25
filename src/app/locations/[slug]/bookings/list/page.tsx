@@ -39,7 +39,14 @@ export default async function BookingsListPage({ params, searchParams }: Props) 
     <section>
       <PageHeader
         title="Bookings"
-        description={`${rows.length} booking${rows.length === 1 ? "" : "s"}`}
+        // `listBookings` caps at 500, so on a busy location this number is the CAP, not the count —
+        // it read "500 bookings" at Houston, which has more. Say which it is rather than state a
+        // total that is quietly wrong.
+        description={
+          rows.length >= 500
+            ? "Showing the 500 most recent · filter to narrow"
+            : `${rows.length} booking${rows.length === 1 ? "" : "s"}`
+        }
         actions={
           <div className="flex items-center gap-2">
             <RecentBookings slug={slug} tz={tz} />

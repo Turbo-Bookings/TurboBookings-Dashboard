@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import { usd } from "@/lib/ui/money";
+import { customerBreakdown } from "@/lib/booking/breakdown";
 import { BookingNote } from "@/components/BookingNote";
 import { CollectBalance } from "@/components/CollectBalance";
 import { createPortal } from "react-dom";
@@ -245,9 +246,8 @@ function Body({
       <Section title="Pricing">
         <dl className="space-y-1 text-sm">
           {/*
-            The CUSTOMER's breakdown, exactly as they saw it at checkout — subtotal, discount, one
-            combined "Taxes & fees" line, total. Nobody sees our processing fee split out, admins
-            included.
+            The CUSTOMER's breakdown, exactly as they saw it at checkout. Nobody sees our processing
+            fee split out, admins included.
 
             It used to itemize "Processing fee" for `manage_platform` holders. Two reasons that had
             to go. It put our margin on a screen an operator stands over at a busy desk, where role
@@ -255,18 +255,22 @@ function Body({
             email in the customer's hand, so staff read two different breakdowns of one booking while
             answering a question about it.
 
-            Our own fee accounting is unaffected and still exact — it lives on the admin-only
+            Rows come from `customerBreakdown` so this and the booking page cannot drift, and so the
+            lines always sum to the total — see the note there about the 465 bookings where they did
+            not.
+
+            Our own fee accounting is unaffected and still exact: it lives on the admin-only
             uncollected-fees report and in Stripe.
           */}
-          <Row label="Subtotal" value={usd(b.subtotalCents)} />
-          {b.discountCents > 0 && <Row label="Discount" value={`−${usd(b.discountCents)}`} />}
-          {b.platformFeeCents + b.taxCents > 0 && (
-            <Row label="Taxes & fees" value={usd(b.platformFeeCents + b.taxCents)} />
-          )}
-          <Row label="Total" value={usd(b.totalCents)} strong />
-          <Row label="Paid" value={usd(b.depositPaidCents)} />
-          {b.balanceDueCents > 0 && <Row label="Balance at venue" value={usd(b.balanceDueCents)} muted />}
-          {b.refundedCents > 0 && <Row label="Refunded" value={usd(b.refundedCents)} muted />}
+          {customerBreakdown(b).map((r) => (
+            <Row
+              key={r.label}
+              label={r.label}
+              value={`${r.negative ? "−" : ""}${usd(r.cents)}`}
+              strong={r.strong}
+              muted={r.muted}
+            />
+          ))}
         </dl>
         {b.status === "active" && caps.manage_bookings && (
           <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">

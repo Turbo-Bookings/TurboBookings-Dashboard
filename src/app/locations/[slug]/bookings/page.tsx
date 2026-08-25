@@ -239,7 +239,11 @@ async function WeekGrid({
   );
 
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+    <>
+      {/* Same totals as the day view, folded across the whole span. Absent here, a week was the one
+          view where you could see everything and count nothing. */}
+      <TourVehicleSummary slots={slotsByDay.flat()} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
       {days.map((d, i) => {
         const dk = d.toFormat("yyyy-LL-dd");
         const slots = filt(slotsByDay[i]);
@@ -262,6 +266,7 @@ async function WeekGrid({
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
