@@ -118,53 +118,29 @@
 > and the venue-fee columns that already exist. Write new migrations by hand with `IF NOT EXISTS`
 > and apply them directly until someone reconciles the journal.
 >
-> #### 🗓 SCHEDULED — the one Link question still open
+> #### ✅ DECIDED 2026-08-24 — Link stays at checkout
 >
-> **Keep Link.** That half is settled by the backfill above: wallets are attached and reusable at a
-> rate that makes removing them indefensible.
+> **Keep Link. This is settled; do not reopen it off the old numbers.**
 >
-> The remaining question is narrower: **does an off-session charge on a Link or Cash App method
-> actually succeed?** Being attached is necessary, not sufficient, and Stripe's behaviour here cannot
-> be reasoned out — only observed. Four outstanding fees became retryable the moment the backfill ran
-> ($34.80 across dtown #0395/#0379, htown #0323, miami #0154); each retry is a real attempt and the
-> outcome is audited either way. If those do not settle it, wait for volume and re-run the report.
+> It was nearly removed on the finding that Link left a reusable payment method 1 time in 60 against
+> 113 of 113 for plain card. That measured a bug of OURS — an `if (pm?.card)` gate discarded Link
+> methods Stripe had already attached — compounded by a second bug that left two thirds of payments
+> with no recorded method type, so even the Link *share* came from a biased third of the data.
 >
-> If wallet top-ups turn out to FAIL, that still does not mean removing Link — it means the fee is
-> recoverable only at the desk for those customers, which is already how it works and is what the
-> check-in notice now tells the operator.
+> Both fixed, and the backfill recovered the truth from Stripe for all 383 affected payments:
 >
-> Run the evidence, then read it:
->
-> ```bash
-> vercel env pull .env.production.local --environment=production
-> npx tsx scripts/payment-method-report.ts
+> ```
+> card 42.0%   link 32.9%   cashapp 22.5%   klarna 2.6%
+> attached to a customer, i.e. chargeable later:  337 of 383  (88%)
 > ```
 >
-> **The measurement clock starts when the fix reaches production, not when it was written.** As of
-> 2026-08-24 the fix (`f906022` here, `7d1c485` in `bookingsystem`) is on `develop` only. Pass
-> `--since=` the date it actually merged to `main`; earlier payments measure the old behaviour and
-> will drag the averages down. A run on 2026-08-24 gave `(not recorded) 61.4%`, which is exactly the
-> pre-fix signature — if a later run still shows a large "not recorded" share, the fix is not live and
-> there is nothing to decide yet.
+> Card is 161 of those 383, so at least 176 of the reusable methods are wallets. Removing Link would
+> have cost a third of checkouts to work around a defect we had already fixed.
 >
-> Three columns, in order of weight:
->
-> 1. **top-up outcomes** — the only one that answers the real question: does an off-session charge on
->    a Link method *succeed*? Stripe's behaviour varies and cannot be reasoned out. `none yet` means
->    wait longer, not proceed.
-> 2. **kept a reusable method** — Link's rate against card's. If they are close, the bug WAS the
->    problem and Link needs nothing.
-> 3. **share of checkouts** — what removing it would cost. ~20% at last look.
->
-> Also outstanding at the time of writing: **$91.20 across 8 bookings**, all taken through our own
-> system (FareHarbor imports are auto-written-off now and excluded) — $34.80 of it retryable, $56.40
-> from customers with no method on file at all. If that total is still small after a few weeks, the
-> honest answer may be that this is not worth engineering further — the fee already rides in the
-> balance the customer settles at the desk, so the operator collects it in cash.
->
-> Not built, deliberately: a signed "pay the difference" email link. The primitives exist
-> (`bookingsystem/src/lib/email/cartToken.ts`), but it is a real build and the population needing it
-> should be small after the fix. Revisit only if the numbers above say otherwise.
+> **The question that motivated it is now moot anyway.** There are three routes to every fee: taken at
+> checkout, taken at the desk via *Collect balance* (`lib/booking/balanceCharge.ts`), or billed to the
+> operator's platform invoice. Whether an off-session top-up on a wallet succeeds no longer decides
+> anything — it only changes which of the three collects it.
 
 > #### ⚠ Known-open
 > - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should

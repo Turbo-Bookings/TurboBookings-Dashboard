@@ -88,15 +88,14 @@ cross-tour reschedule, uncollected fees. Full table in the ⭐ block of `docs/BO
 > and applied directly; `npm run db:generate` will try to re-create tables that already exist. Write
 > new migrations by hand with `IF NOT EXISTS` until someone reconciles it.
 
-### 🗓 One question still open — wallet fee top-ups
+### Platform fee — three routes, no chasing
 
-**Link stays.** The case for removing it rested on "Link saves a reusable method 1 time in 60", which
-measured a bug of ours, not Link. Fixed and backfilled 2026-08-24: the true mix is card 42% / link 33%
-/ cashapp 22% / klarna 3%, and **88% of methods are attached and chargeable**.
+Every booking fee now has a way home: taken at checkout, taken at the desk when the venue runs the
+card through *Collect balance*, or billed onto the operator's platform invoice. FareHarbor imports and
+Groupon/OTA are exempt by rule and never appear as work.
 
-Still unmeasured: whether an off-session CHARGE on a wallet method succeeds. Four retryable fees exist
-to test it with. Run `npx tsx scripts/payment-method-report.ts` and read the 🗓 block of
-`docs/BOOKING_SYSTEM_SPRINTS.md`.
+**Link stays at checkout** — decided 2026-08-24. See the ✅ block in `docs/BOOKING_SYSTEM_SPRINTS.md`
+before anyone proposes removing it again.
 
 ## Next phase — Stage 3, the real Phase 0
 
