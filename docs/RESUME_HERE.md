@@ -78,15 +78,34 @@ npm run arch:sync -- --write
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried
 three different status dates and disagreed about whether the booking system was live.
 
-## Where things stand (2026-08-24)
+## Where things stand (2026-08-25)
 
-Booking system **v1.3**. All three locations live; cockpit revenue feed connected. This session
-hardened the operator tooling — rep payments, customer edits, cancel/refund, shared resource pools,
-cross-tour reschedule, uncollected fees. Full table in the ⭐ block of `docs/BOOKING_SYSTEM_SPRINTS.md`.
+Booking system **v1.4**. All three locations live. A five-phase pass across roles, the dashboard,
+the bookings page and reports landed today — all of it on `main` and in production.
 
-> ⚠️ **The drizzle migration journal is out of sync with production.** `0033`–`0035` are hand-written
-> and applied directly; `npm run db:generate` will try to re-create tables that already exist. Write
-> new migrations by hand with `IF NOT EXISTS` until someone reconciles it.
+| Phase | What changed |
+| --- | --- |
+| 1 · Access | `view_revenue` (director+) and `collect_payment` (basic_user+). Bookings + dashboard open to `checkin`; reports behind `view_revenue`. **Four unguarded server actions and three unguarded CSV routes closed** — any signed-in user could read any location's customer list by passing a different slug. |
+| 2 · Dashboard | Today at the venue → Sales today → Next 7 → Last 7. The 30-day and outstanding bands are gone. "pax" is now "vehicles" everywhere, because that is what the number always was. |
+| 3 · Bookings | Per-tour vehicle totals, a date picker, a rolling-7 view, and history that names who acted. |
+| 4 · Reports | A registry — one entry plus one folder per report. Revenue, check-in, cash-to-collect, sales-by-user, tax, uncollected fees. |
+| 5 · Follow-ups | No-show call list and win-back report, an append-only follow-up log, and reschedule history that survives slot cleanup. |
+
+**Migrations 0037 and 0038** are hand-written and applied directly (the drizzle journal is still
+drifted — do not run `db:generate`). `payments.kind` distinguishes a desk card payment from the
+checkout deposit; `booking_followups` and the `booking_reschedules` snapshot columns are new.
+
+> ⚠️ **The reschedule write path now RESETS check-in state** after snapshotting it onto the
+> reschedule row. That is what stops a won-back customer arriving on their new date still flagged as
+> a no-show. The snapshot must land first, in the same transaction — reversing that order destroys
+> the only evidence a win-back happened.
+
+> ⚠️ **Win-backs are only identifiable from 2026-08-25.** The 133 historical reschedule rows were
+> backfilled with times and tour names but carry zero check-in counts, because nothing recorded them
+> before. The report says so on its face; do not read "0 won back" for August as a business fact.
+
+Run `npx tsx scripts/check-report-routes.ts` after touching the registry — a `csv: true` with no
+export route renders a download button that 404s, which shipped twice before it was caught.
 
 ### Platform fee — three routes, no chasing
 
