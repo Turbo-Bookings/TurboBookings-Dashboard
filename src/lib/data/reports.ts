@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import {
   auditLog,
   availabilities,
@@ -315,6 +315,10 @@ export async function salesByUser(
   const where = and(
     eq(bookings.locationId, locationId),
     eq(bookings.status, "active"),
+    // Imports are excluded, matching `bookingsTaken` — they were taken by the previous system, and
+    // they all share the cutover date, so including them dumps 600+ bookings into the "self-serve"
+    // row of whatever range covers migration and buries everything a person actually sold.
+    ne(bookings.source, "api"),
     gte(bookings.createdAt, from),
     lt(bookings.createdAt, to),
   );
@@ -324,7 +328,13 @@ export async function salesByUser(
       .select({
         userId: bookings.createdByUserId,
         bookings: sql<number>`count(*)::int`,
-        salesCents: sql<number>`coalesce(sum(${bookings.subtotalCents} - ${bookings.discountCents}), 0)::int`,
+        // `total − fee − tax`, the identity documented on `BookingsReport` and used by every other
+        // revenue query. `subtotal − discount` looks equivalent and is not: `subtotal_cents` holds
+        // the RACK-RATE line sum on a custom-priced booking, so a rep was credited with the price
+        // before their own override, and on FareHarbor imports the subtotal falls back to the total
+        // and overstates by the tax. Two reports disagreeing about the same range is worse than
+        // either being slightly off.
+        salesCents: sql<number>`coalesce(sum(${bookings.totalCents} - ${bookings.platformFeeCents} - ${bookings.taxCents}), 0)::int`,
       })
       .from(bookings)
       .where(where)

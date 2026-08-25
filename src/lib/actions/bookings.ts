@@ -1128,6 +1128,10 @@ export async function removeVehicles(
   const row = await lineWithBooking(lineId, location.id);
   if (!row) return { ok: false, error: "Line not found" };
   const { line, booking } = row;
+  // `addVehicles` and `addLine` both refuse on a non-active booking; this did not. Without it,
+  // vehicles could be removed from a CANCELLED booking, silently mutating the money on something
+  // already refunded and closed.
+  if (booking.status !== "active") return { ok: false, error: "This booking isn't active." };
   const floor = line.checkedInUnits + line.noShowUnits;
   const newQty = line.quantity - qty;
   if (newQty < floor) return { ok: false, error: "Can't remove checked-in / no-show vehicles" };
