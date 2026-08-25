@@ -20,7 +20,6 @@ import {
   bookingsReport,
   bookingsTaken,
   collectedOnlineCash,
-  outstandingBalance,
 } from "@/lib/data/bookings";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
@@ -44,6 +43,7 @@ export default async function DashboardPage({
   const todayStart = now.startOf("day").toUTC().toJSDate();
   const todayEnd = now.plus({ days: 1 }).startOf("day").toUTC().toJSDate();
   const next7End = now.plus({ days: 7 }).startOf("day").toUTC().toJSDate();
+  const last7Start = now.minus({ days: 7 }).startOf("day").toUTC().toJSDate();
   // Three different questions, three different time bases. Keeping them apart
   // (and labelled) is the point of this layout: mixing "what is running" with
   // "what did we sell" and "what came in" in one unlabelled row is what made the
@@ -51,25 +51,16 @@ export default async function DashboardPage({
   //   toursX  — by TOUR date:    what is running / what to collect at the venue
   //   takenX  — by BOOKING date: sales activity
   //   cashX   — by PAYMENT date: money actually received
-  const [
-    toursToday, tours7, tours30,
-    takenToday, taken30,
-    cashToday, cash30,
-    outstanding,
-  ] = await Promise.all([
+  const [toursToday, tours7, tours30, last7, takenToday, cashToday] = await Promise.all([
     bookingsReport(loc.id, todayStart, todayEnd),
     bookingsReport(loc.id, todayEnd, next7End),
+    // Still 30 days, for "Top tours" only — a week is too short a window to rank tours against each
+    // other without a single busy Saturday deciding the order.
     bookingsReport(loc.id, from, to),
+    bookingsReport(loc.id, last7Start, todayStart),
     bookingsTaken(loc.id, todayStart, todayEnd),
-    bookingsTaken(loc.id, from, to),
     collectedOnlineCash(loc.id, todayStart, todayEnd),
-    collectedOnlineCash(loc.id, from, to),
-    // Everything still owed on tours that have not run yet — including the
-    // migrated FareHarbor bookings, whose balances are still collected here.
-    outstandingBalance(loc.id, todayStart),
   ]);
-  // Platform processing fees are Turbo-internal revenue — only admins see them.
-  const showFees = await can("manage_platform", slug);
   // Aggregate money — the day's revenue, what the venue is holding, 30-day sales. Front-line staff
   // reach this page for the operational half (what is running today) and must not see any of it.
   // A booking's OWN balance stays visible to them elsewhere: they collect it.
@@ -155,41 +146,24 @@ export default async function DashboardPage({
         )}
       </Group>
 
-      {showMoney && (
-        <>
-      <Group title="Last 30 days" hint="Sales activity and money received. Bookings are counted when they were MADE.">
-        <StatTile label="Bookings taken" value={String(taken30.count)} sub={`${taken30.onlineCount} online · ${taken30.directCount} direct`} tone="violet" icon={Ticket} />
-        <StatTile label="Vehicles booked" value={String(taken30.pax)} tone="blue" icon={Truck} />
-        <StatTile label="Tour sales" value={usd(taken30.salesCents)} sub="net of discounts, fees & tax" tone="emerald" icon={DollarSign} />
-        <StatTile label="Collected online" value={usd(cash30.netCents)} sub="net of refunds" tone="amber" icon={Wallet} />
-      </Group>
+      {/*
+        Tours that have already RUN, in the seven days before today — today has its own band above,
+        so including it would double-count the thing the venue is currently working through.
 
-      <Group title="Outstanding" hint="Everything still owed on tours that have not run yet — the real number to chase.">
-        <StatTile
-          label="Still to collect"
-          value={usd(outstanding.balanceCents)}
-          sub={`across ${outstanding.bookings} upcoming booking${outstanding.bookings === 1 ? "" : "s"}`}
-          tone="orange"
-          icon={Landmark}
-        />
-        {outstanding.importedBookings > 0 && (
-          <StatTile
-            label="…of which migrated"
-            value={usd(outstanding.importedBalanceCents)}
-            sub={`${outstanding.importedBookings} FareHarbor booking${outstanding.importedBookings === 1 ? "" : "s"}`}
-            tone="zinc"
-            icon={ClipboardList}
-          />
-        )}
-        <StatTile
-          label={showFees ? "Tax + platform fees (30d)" : "Tax collected (30d)"}
-          value={usd(tours30.taxCents + (showFees ? tours30.feesCents : 0))}
-          sub={showFees ? "tax + your 6%" : "pass-through tax"}
-          tone="zinc"
-          icon={Wallet}
-        />
-      </Group>
-        </>
+        Revenue is split by where the money came from rather than shown as one number, because those
+        two halves behave differently: the online portion is settled and reconcilable in Stripe, and
+        the venue portion is what guests owed on arrival. We have no record of cash actually changing
+        hands — the desk can now take a card through the app, but cash is still a handshake — so it
+        is labelled "due at the venue", not "collected". Calling it collected would state as fact
+        something no system here has ever observed.
+      */}
+      {showMoney && (
+        <Group title="Last 7 days" hint="Tours that ran in the week before today.">
+          <StatTile label="Bookings" value={String(last7.bookings)} tone="blue" icon={CalendarClock} />
+          <StatTile label="Vehicles out" value={String(last7.pax)} tone="violet" icon={Truck} />
+          <StatTile label="Revenue generated" value={usd(last7.salesCents)} sub="deposits + venue balances" tone="emerald" icon={DollarSign} />
+          <StatTile label="Deposits online" value={usd(last7.collectedCents)} sub={`${usd(last7.balanceDueCents)} due at the venue`} tone="amber" icon={Wallet} />
+        </Group>
       )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
