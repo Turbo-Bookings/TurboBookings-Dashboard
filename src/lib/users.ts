@@ -19,6 +19,17 @@ export type UserLabel = { name: string; email: string | null };
 /** Written by a cron, a webhook, or the importer rather than a person. */
 export const SYSTEM_LABEL: UserLabel = { name: "System", email: null };
 
+/**
+ * A label for an id Clerk would not resolve.
+ *
+ * Keeps enough of the id to correlate two rows as the same person, while making clear it is not a
+ * name. `user_3Hs4mgF4…` sitting in a "Person" column looks like a badly-formatted name; "Unknown
+ * (3Hs4mgF4)" looks like what it is.
+ */
+function unresolved(id: string): UserLabel {
+  return { name: `Unknown (${id.replace(/^user_/, "").slice(0, 8)})`, email: null };
+}
+
 async function fetchLabels(ids: string[]): Promise<Map<string, UserLabel>> {
   const out = new Map<string, UserLabel>();
   if (ids.length === 0) return out;
@@ -28,7 +39,7 @@ async function fetchLabels(ids: string[]): Promise<Map<string, UserLabel>> {
   } catch {
     // Clerk unreachable. A history list is worth showing with weaker labels; it is not worth
     // failing the whole page over.
-    for (const id of ids) out.set(id, { name: id.slice(0, 8), email: null });
+    for (const id of ids) out.set(id, unresolved(id));
     return out;
   }
   await Promise.all(
@@ -44,7 +55,10 @@ async function fetchLabels(ids: string[]): Promise<Map<string, UserLabel>> {
           email,
         });
       } catch {
-        out.set(id, { name: id.slice(0, 8), email: null });
+        // Clerk could not return this account — removed, or created on a different instance. Say so
+        // rather than printing eight characters of an opaque id, which reads as a person's name in a
+        // column of people's names.
+        out.set(id, unresolved(id));
       }
     }),
   );
@@ -68,5 +82,5 @@ export function labelFor(
   id: string | null | undefined,
 ): UserLabel {
   if (!id) return SYSTEM_LABEL;
-  return map.get(id) ?? { name: id.slice(0, 8), email: null };
+  return map.get(id) ?? unresolved(id);
 }
