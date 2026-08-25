@@ -90,7 +90,11 @@ export function BookingModal({
         <button
           onClick={onClose}
           disabled={paymentBusy}
-          className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800"
+          // z-40 is load-bearing. The body below gained `position: relative` to host the
+          // payment shield, and a positioned sibling LATER in the DOM paints over an
+          // absolutely-positioned one with no z-index — so this button was still visible,
+          // still hoverable, and completely unclickable. The modal could not be closed.
+          className="absolute right-3 top-3 z-40 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-zinc-800"
           aria-label={paymentBusy ? "Can't close — a payment is going through" : "Close"}
           title={paymentBusy ? "A payment is going through. This will unlock when it finishes." : "Close"}
         >

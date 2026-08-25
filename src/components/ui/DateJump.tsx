@@ -16,16 +16,25 @@ import { CalendarSearch } from "lucide-react";
  * used on four other forms in this app, so it also looks like the rest of the product.
  *
  * The arrows stay. Stepping one day is still the common move; this is for the uncommon one.
+ *
+ * ⚠️ The URL is built HERE from a base path and plain params, rather than taking an `hrefFor`
+ * callback from the caller. A Server Component cannot hand a function to a Client Component — props
+ * cross that boundary by serialization — and doing it took the whole bookings page down with
+ * "Functions cannot be passed directly to Client Components". Everything below must stay
+ * serializable: strings, numbers, plain objects.
  */
 export function DateJump({
   value,
-  hrefFor,
+  basePath,
+  params,
   label = "Jump to date",
 }: {
   /** Currently shown day, `YYYY-MM-DD`. */
   value: string;
-  /** Build the URL for a chosen day — the caller owns the other query params. */
-  hrefFor: (dateKey: string) => string;
+  /** Path to navigate to, e.g. `/locations/htown/bookings`. */
+  basePath: string;
+  /** Query params to preserve alongside the new date (view, filters). */
+  params?: Record<string, string>;
   label?: string;
 }) {
   const router = useRouter();
@@ -45,7 +54,8 @@ export function DateJump({
           const next = e.target.value;
           // Cleared, or a partially-typed date. Do nothing rather than navigate somewhere arbitrary.
           if (!/^\d{4}-\d{2}-\d{2}$/.test(next)) return;
-          router.push(hrefFor(next));
+          const q = new URLSearchParams({ ...(params ?? {}), date: next });
+          router.push(`${basePath}?${q.toString()}`);
         }}
         className="bg-transparent text-sm outline-none"
       />
