@@ -77,6 +77,13 @@
 > "charge the saved card" only ever works for customers who paid by plain card, and roughly 90% of
 > the backlog was never chaseable.
 >
+> > ⚠️ **Superseded the same day — do not act on the paragraph above.** "1 in 60" measured OUR BUG,
+> > not Link. `setup_future_usage: "off_session"` attaches a Link PaymentMethod to the Stripe
+> > Customer exactly as it does a card; the `if (pm?.card)` gate then threw it away. And a second bug
+> > meant two thirds of payments recorded no method type at all, so even the Link *share* came from
+> > the one third we could see — not a random third. **Both bugs are fixed; the measurement has to be
+> > taken again.** See the scheduled task below.
+>
 > **Fixed:**
 > - `chargeCardOnFile` omitted Stripe's `customer` parameter. Because checkout uses
 >   `setup_future_usage`, every saved card IS attached to a Customer — so it failed for every real
@@ -96,6 +103,44 @@
 > and the venue-fee columns that already exist. Write new migrations by hand with `IF NOT EXISTS`
 > and apply them directly until someone reconciles the journal.
 >
+> #### 🗓 SCHEDULED — decide on Link, on or after **2026-09-14**
+>
+> **Do not decide before then, and do not decide off the old numbers.** Removing Link would disrupt
+> a fifth of checkouts; the case for it currently rests on a figure that measured a bug we have since
+> fixed.
+>
+> Run the evidence, then read it:
+>
+> ```bash
+> vercel env pull .env.production.local --environment=production
+> npx tsx scripts/payment-method-report.ts
+> ```
+>
+> **The measurement clock starts when the fix reaches production, not when it was written.** As of
+> 2026-08-24 the fix (`f906022` here, `7d1c485` in `bookingsystem`) is on `develop` only. Pass
+> `--since=` the date it actually merged to `main`; earlier payments measure the old behaviour and
+> will drag the averages down. A run on 2026-08-24 gave `(not recorded) 61.4%`, which is exactly the
+> pre-fix signature — if a later run still shows a large "not recorded" share, the fix is not live and
+> there is nothing to decide yet.
+>
+> Three columns, in order of weight:
+>
+> 1. **top-up outcomes** — the only one that answers the real question: does an off-session charge on
+>    a Link method *succeed*? Stripe's behaviour varies and cannot be reasoned out. `none yet` means
+>    wait longer, not proceed.
+> 2. **kept a reusable method** — Link's rate against card's. If they are close, the bug WAS the
+>    problem and Link needs nothing.
+> 3. **share of checkouts** — what removing it would cost. ~20% at last look.
+>
+> Also outstanding at the time of writing: **$91.20 across 8 bookings**, all taken through our own
+> system (FareHarbor imports are auto-written-off now and excluded). If that total is still small
+> after a few weeks, the honest answer may be that this is not worth engineering further — the fee
+> already rides in the balance the customer settles at the desk, so the operator collects it in cash.
+>
+> Not built, deliberately: a signed "pay the difference" email link. The primitives exist
+> (`bookingsystem/src/lib/email/cartToken.ts`), but it is a real build and the population needing it
+> should be small after the fix. Revisit only if the numbers above say otherwise.
+
 > #### ⚠ Known-open
 > - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should
 >   self-heal on backoff. Check: `succeeded_at IS NULL AND attempt_count < 6 AND last_error NOT LIKE 'retired:%'`.

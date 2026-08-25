@@ -88,6 +88,16 @@ cross-tour reschedule, uncollected fees. Full table in the ⭐ block of `docs/BO
 > and applied directly; `npm run db:generate` will try to re-create tables that already exist. Write
 > new migrations by hand with `IF NOT EXISTS` until someone reconciles it.
 
+### 🗓 Dated task waiting — Link, on or after 2026-09-14
+
+Whether to keep Link at checkout. **Deliberately parked, not forgotten:** the case for removing it
+rested on "Link saves a reusable method 1 time in 60", which turned out to measure a bug of ours
+rather than Link. That bug is fixed, and the question needs measuring again on fresh data.
+
+Run `npx tsx scripts/payment-method-report.ts` and follow the reading instructions in the 🗓 block of
+`docs/BOOKING_SYSTEM_SPRINTS.md`. Pass `--since=` the date the fix merged to `main` — the clock starts
+at production, not at the commit.
+
 ## Next phase — Stage 3, the real Phase 0
 
 Intelligence DB on Neon, `touchpoints`, identity resolution, and resolving the click ids we now collect
