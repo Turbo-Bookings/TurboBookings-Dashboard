@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   availabilities,
   bookingFollowups,
@@ -475,27 +475,42 @@ export async function noShowReport(
 
   const ids = [...byBooking.keys()];
   if (ids.length > 0) {
-    const latest = await db.execute(sql`
-      SELECT DISTINCT ON (f.booking_id)
-             f.booking_id, f.status, f.note, f.created_at,
-             (SELECT count(*) FROM booking_followups c WHERE c.booking_id = f.booking_id) AS n
-        FROM booking_followups f
-       WHERE f.booking_id = ANY(${ids})
-       ORDER BY f.booking_id, f.created_at DESC
-    `);
-    for (const raw of latest as unknown as {
-      booking_id: string;
-      status: FollowupStatus;
-      note: string | null;
-      created_at: string | Date;
-      n: string | number;
-    }[]) {
-      const row = byBooking.get(raw.booking_id);
+    // DISTINCT ON through the query builder, not a raw `sql` template.
+    //
+    // The raw version read `WHERE f.booking_id = ANY(${ids})`, and drizzle expands a JS array in a
+    // template into a comma-separated parameter LIST — so it became `ANY(($1, $2, …))`, which is a
+    // row constructor rather than an array, and Postgres rejected the whole query. The page 500'd on
+    // any range that had a no-show in it. `inArray` builds the array literal correctly.
+    const latest = await db
+      .selectDistinctOn([bookingFollowups.bookingId], {
+        bookingId: bookingFollowups.bookingId,
+        status: bookingFollowups.status,
+        note: bookingFollowups.note,
+        createdAt: bookingFollowups.createdAt,
+      })
+      .from(bookingFollowups)
+      .where(inArray(bookingFollowups.bookingId, ids))
+      // DISTINCT ON keeps the first row per booking, so the ordering IS the selection: booking first,
+      // newest second.
+      .orderBy(bookingFollowups.bookingId, desc(bookingFollowups.createdAt));
+
+    const counts = await db
+      .select({
+        bookingId: bookingFollowups.bookingId,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(bookingFollowups)
+      .where(inArray(bookingFollowups.bookingId, ids))
+      .groupBy(bookingFollowups.bookingId);
+    const countBy = new Map(counts.map((c) => [c.bookingId, c.n]));
+
+    for (const l of latest) {
+      const row = byBooking.get(l.bookingId);
       if (!row) continue;
-      row.latestStatus = raw.status;
-      row.latestNote = raw.note;
-      row.latestAt = new Date(raw.created_at);
-      row.followUpCount = Number(raw.n);
+      row.latestStatus = l.status as FollowupStatus;
+      row.latestNote = l.note;
+      row.latestAt = l.createdAt;
+      row.followUpCount = countBy.get(l.bookingId) ?? 1;
     }
   }
 
