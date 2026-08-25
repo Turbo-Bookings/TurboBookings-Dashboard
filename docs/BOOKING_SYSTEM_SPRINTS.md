@@ -77,12 +77,27 @@
 > "charge the saved card" only ever works for customers who paid by plain card, and roughly 90% of
 > the backlog was never chaseable.
 >
-> > ⚠️ **Superseded the same day — do not act on the paragraph above.** "1 in 60" measured OUR BUG,
-> > not Link. `setup_future_usage: "off_session"` attaches a Link PaymentMethod to the Stripe
-> > Customer exactly as it does a card; the `if (pm?.card)` gate then threw it away. And a second bug
-> > meant two thirds of payments recorded no method type at all, so even the Link *share* came from
-> > the one third we could see — not a random third. **Both bugs are fixed; the measurement has to be
-> > taken again.** See the scheduled task below.
+> > ⚠️ **Superseded the same day, and now DISPROVEN — do not act on the paragraph above.** "1 in 60"
+> > measured OUR BUG, not Link. `setup_future_usage: "off_session"` attaches a Link PaymentMethod to
+> > the Stripe Customer exactly as it does a card; the `if (pm?.card)` gate then threw it away. A
+> > second bug meant two thirds of payments recorded no method type at all, so even the Link *share*
+> > came from the one third we could see — not a random third.
+> >
+> > Both are fixed, and `scripts/backfill-payment-methods.ts` recovered the truth from Stripe for the
+> > 383 affected payments:
+> >
+> > ```
+> > card 42.0%   link 32.9%   cashapp 22.5%   klarna 2.6%
+> > attached to a customer, i.e. chargeable later:  337 of 383  (88%)
+> > ```
+> >
+> > Card is only 161 of those 383, so **at least 176 of the reusable methods are Link or Cash App**.
+> > Stripe had been attaching them the whole time. The backfill created **193 wallet methods on file
+> > that did not exist before**, and flipped half the outstanding fees from unchaseable to retryable.
+> >
+> > Removing Link would have cost a third of checkouts to fix a defect of ours. **The coverage half of
+> > the question is closed: keep Link.** What is still unmeasured is whether an off-session CHARGE on
+> > a wallet method succeeds — see below.
 >
 > **Fixed:**
 > - `chargeCardOnFile` omitted Stripe's `customer` parameter. Because checkout uses
@@ -103,11 +118,20 @@
 > and the venue-fee columns that already exist. Write new migrations by hand with `IF NOT EXISTS`
 > and apply them directly until someone reconciles the journal.
 >
-> #### 🗓 SCHEDULED — decide on Link, on or after **2026-09-14**
+> #### 🗓 SCHEDULED — the one Link question still open
 >
-> **Do not decide before then, and do not decide off the old numbers.** Removing Link would disrupt
-> a fifth of checkouts; the case for it currently rests on a figure that measured a bug we have since
-> fixed.
+> **Keep Link.** That half is settled by the backfill above: wallets are attached and reusable at a
+> rate that makes removing them indefensible.
+>
+> The remaining question is narrower: **does an off-session charge on a Link or Cash App method
+> actually succeed?** Being attached is necessary, not sufficient, and Stripe's behaviour here cannot
+> be reasoned out — only observed. Four outstanding fees became retryable the moment the backfill ran
+> ($34.80 across dtown #0395/#0379, htown #0323, miami #0154); each retry is a real attempt and the
+> outcome is audited either way. If those do not settle it, wait for volume and re-run the report.
+>
+> If wallet top-ups turn out to FAIL, that still does not mean removing Link — it means the fee is
+> recoverable only at the desk for those customers, which is already how it works and is what the
+> check-in notice now tells the operator.
 >
 > Run the evidence, then read it:
 >
@@ -133,9 +157,10 @@
 > 3. **share of checkouts** — what removing it would cost. ~20% at last look.
 >
 > Also outstanding at the time of writing: **$91.20 across 8 bookings**, all taken through our own
-> system (FareHarbor imports are auto-written-off now and excluded). If that total is still small
-> after a few weeks, the honest answer may be that this is not worth engineering further — the fee
-> already rides in the balance the customer settles at the desk, so the operator collects it in cash.
+> system (FareHarbor imports are auto-written-off now and excluded) — $34.80 of it retryable, $56.40
+> from customers with no method on file at all. If that total is still small after a few weeks, the
+> honest answer may be that this is not worth engineering further — the fee already rides in the
+> balance the customer settles at the desk, so the operator collects it in cash.
 >
 > Not built, deliberately: a signed "pay the difference" email link. The primitives exist
 > (`bookingsystem/src/lib/email/cartToken.ts`), but it is a real build and the population needing it

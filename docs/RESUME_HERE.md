@@ -88,15 +88,15 @@ cross-tour reschedule, uncollected fees. Full table in the ⭐ block of `docs/BO
 > and applied directly; `npm run db:generate` will try to re-create tables that already exist. Write
 > new migrations by hand with `IF NOT EXISTS` until someone reconciles it.
 
-### 🗓 Dated task waiting — Link, on or after 2026-09-14
+### 🗓 One question still open — wallet fee top-ups
 
-Whether to keep Link at checkout. **Deliberately parked, not forgotten:** the case for removing it
-rested on "Link saves a reusable method 1 time in 60", which turned out to measure a bug of ours
-rather than Link. That bug is fixed, and the question needs measuring again on fresh data.
+**Link stays.** The case for removing it rested on "Link saves a reusable method 1 time in 60", which
+measured a bug of ours, not Link. Fixed and backfilled 2026-08-24: the true mix is card 42% / link 33%
+/ cashapp 22% / klarna 3%, and **88% of methods are attached and chargeable**.
 
-Run `npx tsx scripts/payment-method-report.ts` and follow the reading instructions in the 🗓 block of
-`docs/BOOKING_SYSTEM_SPRINTS.md`. Pass `--since=` the date the fix merged to `main` — the clock starts
-at production, not at the commit.
+Still unmeasured: whether an off-session CHARGE on a wallet method succeeds. Four retryable fees exist
+to test it with. Run `npx tsx scripts/payment-method-report.ts` and read the 🗓 block of
+`docs/BOOKING_SYSTEM_SPRINTS.md`.
 
 ## Next phase — Stage 3, the real Phase 0
 
