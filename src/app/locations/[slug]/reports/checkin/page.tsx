@@ -94,6 +94,7 @@ export default async function CheckInReportPage({ params, searchParams }: Props)
                 <th className="px-3 py-2 text-right font-medium">Checked in</th>
                 <th className="px-3 py-2 text-right font-medium">No-show</th>
                 <th className="px-3 py-2 text-right font-medium">Never marked</th>
+                <th className="px-3 py-2 text-right font-medium">Not run yet</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
