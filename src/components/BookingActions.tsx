@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { usd } from "@/lib/ui/money";
 import {
   cancelBooking,
   captureHold,
@@ -10,9 +11,6 @@ import {
 } from "@/lib/actions/bookings";
 import { useCaps } from "@/components/CapabilitiesProvider";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 type Hold = { id: string; status: string; amountCents: number };
 

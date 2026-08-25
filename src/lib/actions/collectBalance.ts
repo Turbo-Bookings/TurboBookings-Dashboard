@@ -82,7 +82,7 @@ export async function getBalanceQuote(
   slug: string,
   bookingId: string,
 ): Promise<BalanceQuoteView | { error: string }> {
-  if (await denyIfCannot("manage_bookings", slug)) return { error: "Not permitted" };
+  if (await denyIfCannot("collect_payment", slug)) return { error: "Not permitted" };
   const r = await loadQuote(slug, bookingId);
   if (!r.ok) return { error: r.error };
   const { booking: b, quote } = r;
@@ -116,7 +116,7 @@ export async function createBalanceIntent(
 ): Promise<
   { ok: true; clientSecret: string; stripeAccount: string; chargeCents: number } | { ok: false; error: string }
 > {
-  const deny = await denyIfCannot("manage_bookings", slug);
+  const deny = await denyIfCannot("collect_payment", slug);
   if (deny) return { ok: false, error: deny };
   if (!stripeConfigured()) return { ok: false, error: "Payments are not configured." };
 
@@ -188,7 +188,7 @@ export async function recordBalancePayment(
   bookingId: string,
   paymentIntentId: string,
 ): Promise<{ ok: boolean; error?: string }> {
-  const deny = await denyIfCannot("manage_bookings", slug);
+  const deny = await denyIfCannot("collect_payment", slug);
   if (deny) return { ok: false, error: deny };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };

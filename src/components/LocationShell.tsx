@@ -44,7 +44,9 @@ const NAV: NavItem[] = [
     key: "dashboard",
     label: "Dashboard",
     icon: LayoutDashboard,
-    cap: "manage_bookings",
+    // The dashboard's operational half — what is running today — is for everyone who works the
+    // venue. Its money half is gated inside the page on `view_revenue`.
+    cap: "checkin",
     href: (b) => `${b}/dashboard`,
     match: (p, b) => p === `${b}/dashboard`,
   },
@@ -52,7 +54,8 @@ const NAV: NavItem[] = [
     key: "bookings",
     label: "Bookings",
     icon: Ticket,
-    cap: "manage_bookings",
+    // Readable by front-line staff; creating and editing stay director+ inside.
+    cap: "checkin",
     href: (b) => `${b}/bookings`,
     match: (p, b) => p.startsWith(`${b}/bookings`),
   },
@@ -68,7 +71,9 @@ const NAV: NavItem[] = [
     key: "reports",
     label: "Reports",
     icon: BarChart3,
-    cap: "manage_bookings",
+    // Every report is an aggregate, so the nav entry must not appear for someone the section would
+    // then 404 on.
+    cap: "view_revenue",
     href: (b) => `${b}/reports`,
     match: (p, b) => p.startsWith(`${b}/reports`),
   },

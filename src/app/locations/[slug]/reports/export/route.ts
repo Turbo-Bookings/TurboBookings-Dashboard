@@ -1,21 +1,20 @@
 import { DateTime } from "luxon";
 import { listBookingsForCsv } from "@/lib/data/bookings";
-import { getLocationBySlug } from "@/lib/data/locations";
+import { cell, DAY_RE, guardExport } from "@/lib/csv";
 import { can } from "@/lib/auth/roles";
-
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function cell(s: string | number): string {
-  return `"${String(s).replace(/"/g, '""')}"`;
-}
 
 export async function GET(
   request: Request,
   ctx: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await ctx.params;
-  const loc = await getLocationBySlug(slug);
-  if (!loc) return new Response("Not found", { status: 404 });
+  // A full revenue export. Same bar as the reports section it is downloaded from.
+  //
+  // Route handlers do NOT run the subtree layout, so the gate one directory up never applied here —
+  // any signed-in user with any role at this location could fetch this by typing the URL.
+  const guard = await guardExport(slug, "view_revenue");
+  if (!guard.ok) return guard.response;
+  const loc = guard.location;
   const tz = loc.timezone ?? "America/Chicago";
 
   const url = new URL(request.url);

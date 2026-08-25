@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
+import { usd } from "@/lib/ui/money";
 import { useRouter } from "next/navigation";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
@@ -18,9 +19,6 @@ const input =
   "mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
 const label = "block text-sm font-medium";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 const STATUS_TONE: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",

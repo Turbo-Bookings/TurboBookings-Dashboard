@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { usd } from "@/lib/ui/money";
 import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
@@ -19,9 +20,6 @@ import { stripePublishableKey } from "@/lib/stripe/client";
 
 export const dynamic = "force-dynamic";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 type Props = { params: Promise<{ slug: string; id: string }> };
 

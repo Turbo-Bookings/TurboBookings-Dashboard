@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { usd } from "@/lib/ui/money";
 import { sourceLabel } from "@/lib/bookingSource";
 import { notFound } from "next/navigation";
 import { CalendarRange, List, Plus } from "lucide-react";
@@ -11,9 +12,6 @@ import { bookingTone } from "@/lib/ui/status";
 
 export const dynamic = "force-dynamic";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 type Props = {
   params: Promise<{ slug: string }>;

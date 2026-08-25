@@ -1,15 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usd } from "@/lib/ui/money";
 import { Clock } from "lucide-react";
 import { listRecentBookings, type RecentBookingHit } from "@/lib/actions/bookings";
 import { BookingModal } from "@/components/BookingModal";
 import { Badge } from "@/components/ui/Badge";
 import { bookingTone } from "@/lib/ui/status";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 // Quick-view of the most-recently-created bookings, opened from a header button.
 // Clicking a row opens the full BookingModal (same pattern as search).

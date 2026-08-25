@@ -4,37 +4,23 @@ import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { getDb, locations } from "@/lib/db";
+import {
+  CAP_MIN,
+  GLOBAL_ROLES,
+  LOCATION_ROLES,
+  NO_CAPS,
+  RANK,
+  ROLES,
+  capabilitiesForRank,
+  type Capabilities,
+  type Capability,
+  type Role,
+} from "@/lib/auth/capabilities";
 
-// 5 fixed roles (ranked ladder — a role has every capability at or below it):
-//   master      — Turbo owner; GLOBAL, cross-location, sees everything incl. fee
-//   admin       — Turbo team;  GLOBAL, full access to every location incl. fee/marketing
-//   operator    — location client; PER-LOCATION; their product but not fee/marketing
-//   director    — manager/staff; PER-LOCATION; manifest + bookings + refunds + reports
-//   basic_user  — front-line staff; PER-LOCATION; manifest + check-in
-//
-// master/admin come from Clerk publicMetadata.role (global). operator/director/
-// basic_user come from publicMetadata.locationRoles[locationId] (per-location).
-// A user with no valid role AT A LOCATION has no access there (fail CLOSED).
-export const ROLES = [
-  "master",
-  "admin",
-  "operator",
-  "director",
-  "basic_user",
-] as const;
-export type Role = (typeof ROLES)[number];
-
-const RANK: Record<Role, number> = {
-  basic_user: 0,
-  director: 1,
-  operator: 2,
-  admin: 3,
-  master: 4,
-};
-
-// Which roles are valid as a GLOBAL assignment vs a PER-LOCATION assignment.
-const GLOBAL_ROLES = new Set<Role>(["master", "admin"]);
-const LOCATION_ROLES = new Set<Role>(["operator", "director", "basic_user"]);
+// The ladder itself is plain data in ./capabilities so the client-side provider can share it.
+// Re-exported here because most of the app imports these from this module.
+export { ROLES, CAP_MIN, NO_CAPS };
+export type { Role, Capability, Capabilities };
 
 type PublicMeta = {
   role?: unknown;
@@ -101,24 +87,6 @@ export async function hasRoleForLocation(slug: string): Promise<boolean> {
   return (await getRoleForLocation(slug)) !== null;
 }
 
-// Capability → minimum role. Gate mutations on these, not on raw role checks.
-export type Capability =
-  | "checkin" // basic_user+
-  | "manage_bookings" // director+ (create/reschedule)
-  | "refund" // director+ (cancel/refund/holds)
-  | "manage_config" // operator+ (catalog, Stripe, taxes, branding, emails, reviews)
-  | "manage_team" // operator+ (invite/manage this location's staff)
-  | "manage_platform"; // admin+ (processing fee, marketing tracking, secrets, setup)
-
-const CAP_MIN: Record<Capability, Role> = {
-  checkin: "basic_user",
-  manage_bookings: "director",
-  refund: "director",
-  manage_config: "operator",
-  manage_team: "operator",
-  manage_platform: "admin",
-};
-
 // Does the user meet `min` AT this location?
 async function rankAtLeast(min: Role, slug: string): Promise<boolean> {
   const r = await getRoleForLocation(slug);
@@ -153,31 +121,12 @@ export async function requirePageCapability(
   if (!(await can(cap, slug))) notFound();
 }
 
-export type Capabilities = Record<Capability, boolean>;
-
-const NO_CAPS: Capabilities = {
-  checkin: false,
-  manage_bookings: false,
-  refund: false,
-  manage_config: false,
-  manage_team: false,
-  manage_platform: false,
-};
-
 // All capabilities for the current user AT a location, in one shot. Role-less
 // at this location → nothing (fail closed).
 export async function getCapabilities(slug: string): Promise<Capabilities> {
   const role = await getRoleForLocation(slug);
   if (role === null) return NO_CAPS;
-  const rank = RANK[role];
-  return {
-    checkin: rank >= RANK[CAP_MIN.checkin],
-    manage_bookings: rank >= RANK[CAP_MIN.manage_bookings],
-    refund: rank >= RANK[CAP_MIN.refund],
-    manage_config: rank >= RANK[CAP_MIN.manage_config],
-    manage_team: rank >= RANK[CAP_MIN.manage_team],
-    manage_platform: rank >= RANK[CAP_MIN.manage_platform],
-  };
+  return capabilitiesForRank(RANK[role]);
 }
 
 // ---- Cross-location (global) helpers ----

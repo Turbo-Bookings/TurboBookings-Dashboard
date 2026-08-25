@@ -5,6 +5,7 @@ import { getSlot } from "@/lib/data/availability";
 import { listItemsForSelect } from "@/lib/data/items";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { stripeConfigured, stripePublishableKey } from "@/lib/stripe/client";
+import { requirePageCapability } from "@/lib/auth/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,10 @@ type Props = {
 
 export default async function NewBookingPage({ params, searchParams }: Props) {
   const { slug } = await params;
+  // The bookings subtree now opens at `checkin` so front-line staff can look bookings up. CREATING
+  // one is still director+, so this page states it rather than relying on the layout it used to
+  // inherit the restriction from.
+  await requirePageCapability("manage_bookings", slug);
   const sp = await searchParams;
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();

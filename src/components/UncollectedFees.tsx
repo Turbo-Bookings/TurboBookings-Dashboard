@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { usd } from "@/lib/ui/money";
 import {
   billFeeToOperatorAction,
   retryFeeCharge,
@@ -8,8 +9,6 @@ import {
 } from "@/lib/actions/uncollectedFees";
 import type { UncollectedFee } from "@/lib/booking/platformFee";
 
-const usd = (c: number) =>
-  (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 /**
  * Platform fee owed but not collected.

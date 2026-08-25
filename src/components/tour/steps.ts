@@ -9,6 +9,9 @@ export type TourStep = {
   // Capability required to SEE this step. null = everyone. Steps the user
   // can't access are filtered out, so the same list yields the full / operator
   // / manager / check-in tours automatically.
+  // Steps are filtered by capability before rendering, so a step the viewer cannot reach is skipped
+  // rather than walking them into a 404. Keep these in step with the NAV caps in LocationShell:
+  // if a nav item opens up, its tour step must too, or new staff never learn the page exists.
   cap: Capability | null;
   // Human-facing card.
   title: string;
@@ -24,13 +27,13 @@ export type TourStep = {
 // Ordered master list. Friendly, concise copy.
 export const TOUR_STEPS: TourStep[] = [
   { id: "welcome", cap: null, centered: true, title: "Welcome to TurboBookings 👋", body: "Here's a quick tour of your dashboard. Use the arrows to move along — or close it anytime and reopen it later from the Help button." },
-  { id: "nav-dashboard", cap: "manage_bookings", target: "nav-dashboard", title: "Dashboard", body: "Your numbers at a glance — bookings, revenue, and today's activity." },
-  { id: "dashboard-quick-actions", cap: "manage_bookings", route: "/dashboard", target: "dashboard-quick-actions", title: "Quick actions", body: "Jump straight to the manifest, a new booking, or reports from here." },
-  { id: "nav-bookings", cap: "manage_bookings", target: "nav-bookings", title: "Bookings", body: "Every booking on a calendar — browse by day or week." },
+  { id: "nav-dashboard", cap: "checkin", target: "nav-dashboard", title: "Dashboard", body: "Today at a glance — what is running and how many vehicles are going out." },
+  { id: "dashboard-quick-actions", cap: "checkin", route: "/dashboard", target: "dashboard-quick-actions", title: "Quick actions", body: "Jump straight to the manifest, a new booking, or reports from here." },
+  { id: "nav-bookings", cap: "checkin", target: "nav-bookings", title: "Bookings", body: "Every booking on a calendar — browse by day or week." },
   { id: "bookings-new", cap: "manage_bookings", route: "/bookings", target: "bookings-new", title: "Take a booking", body: "Click here to book a guest over the phone or in person." },
   { id: "nav-manifest", cap: "checkin", target: "nav-manifest", title: "Manifest", body: "Your daily run sheet — everyone booked for the day, ready to check in." },
   { id: "manifest-checkin", cap: "checkin", route: "/manifest", target: "manifest-checkin", title: "Check guests in", body: "Tap to mark riders as checked in or a no-show as they arrive." },
-  { id: "nav-reports", cap: "manage_bookings", target: "nav-reports", title: "Reports", body: "Pull sales and tax reports for any date range, and export to CSV." },
+  { id: "nav-reports", cap: "view_revenue", target: "nav-reports", title: "Reports", body: "Pull sales and tax reports for any date range, and export to CSV." },
   { id: "nav-catalog", cap: "manage_config", target: "nav-catalog", title: "Tour Catalog", body: "Where you build your tours — pricing, schedule, capacity, and more." },
   { id: "catalog-new-tour", cap: "manage_config", route: "/catalog/tours", target: "catalog-new-tour", title: "Add a tour", body: "Create a tour here, then set its pricing and schedule." },
   { id: "nav-settings", cap: "manage_config", target: "nav-settings", title: "Settings", body: "Everything else — Stripe payouts, taxes, branding, emails, and reviews." },

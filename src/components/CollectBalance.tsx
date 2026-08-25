@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { usd } from "@/lib/ui/money";
 import { useRouter } from "next/navigation";
 import { CreditCard } from "lucide-react";
 import { loadStripe, type Stripe } from "@stripe/stripe-js";
@@ -8,8 +9,6 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { createBalanceIntent, recordBalancePayment } from "@/lib/actions/collectBalance";
 import type { BalanceQuoteView } from "@/lib/booking/balanceCharge";
 
-const usd = (c: number) =>
-  (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
 /**
  * Take the balance on a card, at the desk.

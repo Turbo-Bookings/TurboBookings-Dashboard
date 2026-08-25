@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, useTransition } from "react";
+import { usd } from "@/lib/ui/money";
 import { BookingNote } from "@/components/BookingNote";
 import { CollectBalance } from "@/components/CollectBalance";
 import { createPortal } from "react-dom";
@@ -28,9 +29,6 @@ import { bookingTone, checkInLabel, checkInTone } from "@/lib/ui/status";
 
 type Data = Awaited<ReturnType<typeof getBookingModalData>>;
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 function rollup(lines: { quantity: number; checkedInUnits: number; noShowUnits: number }[]): string {
   let q = 0, c = 0, n = 0;
   for (const l of lines) { q += l.quantity; c += l.checkedInUnits; n += l.noShowUnits; }

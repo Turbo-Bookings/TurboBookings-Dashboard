@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { usd } from "@/lib/ui/money";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import { Download, Ticket, Users, DollarSign, Wallet, Landmark, Receipt, Percent, RotateCcw } from "lucide-react";
@@ -11,9 +12,6 @@ import { can } from "@/lib/auth/roles";
 export const dynamic = "force-dynamic";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 type Props = {
   params: Promise<{ slug: string }>;

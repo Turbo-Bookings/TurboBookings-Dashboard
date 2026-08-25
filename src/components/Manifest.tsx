@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { usd } from "@/lib/ui/money";
 import Link from "next/link";
 import {
   ChevronDown,
@@ -70,9 +71,6 @@ type Cols = { phone: boolean; due: boolean; notes: boolean };
 // check-in — which is the only screen it was ever written for.
 const DEFAULT_COLS: Cols = { phone: true, due: true, notes: true };
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 export function Manifest({
   slug,

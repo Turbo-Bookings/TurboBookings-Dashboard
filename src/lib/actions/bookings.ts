@@ -1388,6 +1388,12 @@ export async function moveSlotBookings(
 
 // Bundle everything the booking modal needs (called client-side on open).
 export async function getBookingModalData(slug: string, bookingId: string) {
+  // ⚠️ A `"use server"` function is a POST endpoint, and the CALLER supplies the slug. Scoping the
+  // query to the location resolved from that slug is not access control — it only decides whose data
+  // gets returned. Without a capability check any signed-in user could read any location's bookings
+  // by passing a different slug, which is a cross-tenant leak between operator clients who have no
+  // relationship with each other.
+  if (await denyIfCannot("checkin", slug)) return null;
   const location = await getLocationBySlug(slug);
   if (!location) return null;
   const detail = await getBookingDetail(bookingId, location.id);
@@ -1458,6 +1464,8 @@ export type BookingSearchHit = {
   status: string;
 };
 export async function searchBookings(slug: string, q: string): Promise<BookingSearchHit[]> {
+  // Searches customer name, email and PHONE — see the note on getBookingModalData.
+  if (await denyIfCannot("checkin", slug)) return [];
   const term = q.trim();
   if (term.length < 2) return [];
   const location = await getLocationBySlug(slug);
@@ -1516,6 +1524,7 @@ export type RecentBookingHit = {
   status: string;
 };
 export async function listRecentBookings(slug: string): Promise<RecentBookingHit[]> {
+  if (await denyIfCannot("checkin", slug)) return [];
   const location = await getLocationBySlug(slug);
   if (!location) return [];
   const db = getDb();

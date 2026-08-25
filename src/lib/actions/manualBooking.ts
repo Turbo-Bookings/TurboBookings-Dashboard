@@ -158,6 +158,11 @@ export async function getTourBookingData(
   slug: string,
   itemId: string,
 ): Promise<TourBookingData> {
+  // Gated at `checkin` rather than `manage_bookings`: this returns catalog data (open slots, tier
+  // prices, custom fields) that the public booking site shows anyway, and `getBookingModalData` calls
+  // it for every booking a front-line user opens. The paths that USE it to write — the new-booking
+  // form and reschedule — carry their own `manage_bookings` gates.
+  if (await denyIfCannot("checkin", slug)) return { ok: false, error: "Not permitted" };
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const [slots, pricing, fields] = await Promise.all([

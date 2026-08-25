@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { usd } from "@/lib/ui/money";
 import { notFound } from "next/navigation";
 import { DateTime } from "luxon";
 import {
@@ -27,9 +28,6 @@ import { BookingAlertsToggle } from "@/components/BookingAlertsToggle";
 
 export const dynamic = "force-dynamic";
 
-function usd(c: number): string {
-  return (c / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
 
 export default async function DashboardPage({
   params,
@@ -72,36 +70,54 @@ export default async function DashboardPage({
   ]);
   // Platform processing fees are Turbo-internal revenue — only admins see them.
   const showFees = await can("manage_platform", slug);
+  // Aggregate money — the day's revenue, what the venue is holding, 30-day sales. Front-line staff
+  // reach this page for the operational half (what is running today) and must not see any of it.
+  // A booking's OWN balance stays visible to them elsewhere: they collect it.
+  const showMoney = await can("view_revenue", slug);
   // Same bar as receiving alerts (director+), so the toggle is never shown to
   // someone the server would refuse to subscribe.
   const showAlerts = await can("manage_bookings", slug);
   const b = `/locations/${slug}`;
 
+  // Each link is filtered by what the viewer can actually reach — a quick action that 404s is worse
+  // than no quick action, and both of these now 404 for front-line staff.
   const quickLinks = [
-    { label: "Open Manifest", href: `${b}/manifest`, icon: ClipboardList },
-    { label: "New booking", href: `${b}/bookings/new`, icon: Plus },
-    { label: "View Reports", href: `${b}/reports`, icon: ArrowRight },
-  ];
+    { label: "Open Manifest", href: `${b}/manifest`, icon: ClipboardList, show: true },
+    { label: "New booking", href: `${b}/bookings/new`, icon: Plus, show: await can("manage_bookings", slug) },
+    { label: "View Reports", href: `${b}/reports`, icon: ArrowRight, show: showMoney },
+  ].filter((q) => q.show);
 
   return (
     <section>
       <PageHeader
         title="Dashboard"
-        description={`${loc.brandDisplayName ?? loc.slug} · revenue over the last 30 days`}
+        description={
+          showMoney
+            ? `${loc.brandDisplayName ?? loc.slug} · revenue over the last 30 days`
+            : (loc.brandDisplayName ?? loc.slug)
+        }
       />
 
       <Group title="Today" hint="What is running at the venue today, and what came in today.">
-        <StatTile label="Tours today" value={String(toursToday.bookings)} sub={`${toursToday.pax} pax`} tone="blue" icon={CalendarDays} />
-        <StatTile label="To collect today" value={usd(toursToday.balanceDueCents)} sub="cash, at the venue" tone="orange" icon={Landmark} />
+        <StatTile label="Tours today" value={String(toursToday.bookings)} sub={`${toursToday.pax} vehicles`} tone="blue" icon={CalendarDays} />
         <StatTile label="Booked today" value={String(takenToday.count)} sub={`${takenToday.onlineCount} online · ${takenToday.directCount} direct`} tone="violet" icon={Ticket} />
-        <StatTile label="Collected today" value={usd(cashToday.netCents)} sub="online, net of refunds" tone="amber" icon={Wallet} />
+        {showMoney && (
+          <>
+            <StatTile label="To collect today" value={usd(toursToday.balanceDueCents)} sub="at the venue" tone="orange" icon={Landmark} />
+            <StatTile label="Collected today" value={usd(cashToday.netCents)} sub="online, net of refunds" tone="amber" icon={Wallet} />
+          </>
+        )}
       </Group>
 
       <Group title="Next 7 days" hint="Tours coming up, and what those guests still owe on arrival.">
-        <StatTile label="Tours" value={String(tours7.bookings)} sub={`${tours7.pax} pax`} tone="blue" icon={CalendarClock} />
-        <StatTile label="To collect" value={usd(tours7.balanceDueCents)} sub="cash, at the venue" tone="orange" icon={Landmark} />
+        <StatTile label="Tours" value={String(tours7.bookings)} sub={`${tours7.pax} vehicles`} tone="blue" icon={CalendarClock} />
+        {showMoney && (
+          <StatTile label="To collect" value={usd(tours7.balanceDueCents)} sub="at the venue" tone="orange" icon={Landmark} />
+        )}
       </Group>
 
+      {showMoney && (
+        <>
       <Group title="Last 30 days" hint="Sales activity and money received. Bookings are counted when they were MADE.">
         <StatTile label="Bookings taken" value={String(taken30.count)} sub={`${taken30.onlineCount} online · ${taken30.directCount} direct`} tone="violet" icon={Ticket} />
         <StatTile label="Pax booked" value={String(taken30.pax)} tone="blue" icon={Users} />
@@ -134,6 +150,8 @@ export default async function DashboardPage({
           icon={Wallet}
         />
       </Group>
+        </>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-zinc-200 bg-white p-4 lg:col-span-2 dark:border-zinc-800 dark:bg-zinc-900">
@@ -146,8 +164,13 @@ export default async function DashboardPage({
                 <li key={t.name} className="flex items-center justify-between py-2 text-sm">
                   <span className="truncate">{t.name}</span>
                   <span className="text-zinc-500">
-                    {t.pax} pax ·{" "}
-                    <span className="font-medium text-zinc-700 dark:text-zinc-200">{usd(t.salesCents)}</span>
+                    {t.pax} vehicles
+                    {showMoney && (
+                      <>
+                        {" · "}
+                        <span className="font-medium text-zinc-700 dark:text-zinc-200">{usd(t.salesCents)}</span>
+                      </>
+                    )}
                   </span>
                 </li>
               ))}
