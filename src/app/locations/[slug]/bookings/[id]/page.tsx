@@ -16,6 +16,8 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 import { BookingNote } from "@/components/BookingNote";
 import { labelFor, resolveUserLabels } from "@/lib/users";
+import { FollowUpLog } from "@/components/FollowUpLog";
+import { listFollowUps } from "@/lib/actions/followups";
 import { CollectBalance } from "@/components/CollectBalance";
 import { getBalanceQuote } from "@/lib/actions/collectBalance";
 import { stripePublishableKey } from "@/lib/stripe/client";
@@ -42,6 +44,9 @@ export default async function BookingDetailPage({ params }: Props) {
   // "Who changed this booking" is the entire reason audit rows carry a user id, and the history has
   // been rendering the timestamp and the summary while dropping the one column that answers it.
   // Resolved in one batch — fifty rows written by three people is three Clerk lookups.
+  // The outreach trail. Same records the no-shows report writes, so a call logged from either place
+  // shows up in both — a rep working the list and a manager opening the booking see one history.
+  const followUps = await listFollowUps(slug, id);
   const actors = await resolveUserLabels([
     ...activity.map((a) => a.userId),
     ...reschedules.map((r) => r.performedByUserId),
@@ -245,6 +250,23 @@ export default async function BookingDetailPage({ params }: Props) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Follow-up outreach — shown whenever there is a trail, or when this booking no-showed and
+          somebody may need to start one. */}
+      {(followUps.length > 0 || canManage) && (
+        <div className="mt-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Follow-ups
+          </h3>
+          <FollowUpLog
+            slug={slug}
+            bookingId={id}
+            entries={followUps}
+            tz={tz}
+            canAdd={canManage}
+          />
         </div>
       )}
 

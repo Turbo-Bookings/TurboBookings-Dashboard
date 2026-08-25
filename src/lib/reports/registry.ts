@@ -1,8 +1,10 @@
 import {
   BarChart3,
+  CalendarSync,
   ClipboardCheck,
   Landmark,
   Percent,
+  PhoneOff,
   Receipt,
   UserRoundCheck,
   type LucideIcon,
@@ -36,7 +38,7 @@ export type ReportDef = {
    * because "sales this week" means three different numbers depending on whether you count when a
    * booking was made, when the tour runs, or when the money arrived.
    */
-  basis: "tour_date" | "booking_date" | "payment_date";
+  basis: "tour_date" | "booking_date" | "payment_date" | "action_date";
   /** Whether the page offers a CSV download. */
   csv: boolean;
 };
@@ -45,6 +47,7 @@ const BASIS_LABEL: Record<ReportDef["basis"], string> = {
   tour_date: "By tour date",
   booking_date: "By date booked",
   payment_date: "By payment date",
+  action_date: "By date actioned",
 };
 
 export function basisLabel(basis: ReportDef["basis"]): string {
@@ -69,6 +72,28 @@ export const REPORTS: ReportDef[] = [
     // No money on this one, and the desk is who needs it — the only report front-line staff see.
     cap: "checkin",
     basis: "tour_date",
+    csv: true,
+  },
+  {
+    key: "no-shows",
+    title: "No-shows",
+    blurb: "Who did not turn up, their number, and where the call-back stands.",
+    icon: PhoneOff,
+    // Not money, but it carries customer contact details and drives outreach — a sales act, so the
+    // same bar as managing a booking rather than the desk's.
+    cap: "manage_bookings",
+    basis: "tour_date",
+    csv: true,
+  },
+  {
+    key: "reschedules",
+    title: "Reschedules & win-backs",
+    blurb: "Every move, with the no-shows we got back into a slot first.",
+    icon: CalendarSync,
+    cap: "manage_bookings",
+    // Ranged on when the MOVE happened — "what did the team win back last week" is a question about
+    // the team's week, not about either tour date.
+    basis: "action_date",
     csv: true,
   },
   {

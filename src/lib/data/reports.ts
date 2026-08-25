@@ -2,12 +2,16 @@ import "server-only";
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import {
   availabilities,
+  bookingFollowups,
   bookingLines,
+  bookingReschedules,
   bookings,
+  customers,
   getDb,
   items,
   payments,
 } from "@/lib/db";
+import type { FollowupStatus } from "@/lib/booking/followupStatus";
 import { bookingRollup, type CheckInRollup } from "@/lib/data/bookings";
 
 /**
@@ -358,4 +362,235 @@ export async function checkInRowsForCsv(
     });
   }
   return out.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+
+// ------------------------------------------------------------------ no-shows
+
+export type NoShowRow = {
+  bookingId: string;
+  displayNumber: string;
+  customerName: string;
+  phone: string | null;
+  email: string | null;
+  itemName: string;
+  /** The slot they were booked on and missed — date AND time, which is the point. */
+  startsAt: Date;
+  vehicles: number;
+  noShowUnits: number;
+  checkedInUnits: number;
+  /**
+   * Some units arrived and some were marked no-show. Oscar's "arrived but marked no-show" case: it
+   * is as likely to be our record that is wrong as the customer, and it should be looked at before
+   * anyone is called about a ride they took.
+   */
+  disputed: boolean;
+  balanceDueCents: number;
+  latestStatus: FollowupStatus | null;
+  latestNote: string | null;
+  latestAt: Date | null;
+  followUpCount: number;
+};
+
+/**
+ * Every no-show in the range, with contact details and where the outreach stands.
+ *
+ * Built for calling people back, so it carries a name and a phone number and the original tour time —
+ * a rep on the phone needs to say "you were booked on the 9pm Glow Tour on Saturday", not "booking
+ * 0412".
+ *
+ * Latest follow-up per booking comes from SQL `DISTINCT ON` rather than sorting in JS. Not for speed:
+ * "latest per group" is the exact shape people hand-roll wrongly, and getting it wrong here shows a
+ * rep a stale outcome and gets a customer called twice.
+ */
+export async function noShowReport(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<NoShowRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      displayNumber: bookings.displayNumber,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+      phone: customers.phoneE164,
+      email: customers.emailLower,
+      itemName: items.name,
+      startsAt: availabilities.startsAt,
+      balanceDueCents: bookings.balanceDueCents,
+      quantity: bookingLines.quantity,
+      checkedInUnits: bookingLines.checkedInUnits,
+      noShowUnits: bookingLines.noShowUnits,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(availabilities.id, bookings.availabilityId))
+    .innerJoin(items, eq(items.id, bookings.itemId))
+    .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
+    .leftJoin(customers, eq(customers.id, bookings.customerId))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        eq(bookings.status, "active"),
+        gte(availabilities.startsAt, from),
+        lt(availabilities.startsAt, to),
+        // At least one unit marked no-show. A booking that PARTLY no-showed belongs here too — that
+        // is the discrepancy worth chasing, not an edge case to filter away.
+        sql`${bookingLines.noShowUnits} > 0`,
+      ),
+    );
+
+  const byBooking = new Map<string, NoShowRow>();
+  for (const r of rows) {
+    const hit = byBooking.get(r.bookingId);
+    if (hit) {
+      hit.vehicles += r.quantity;
+      hit.noShowUnits += r.noShowUnits;
+      hit.checkedInUnits += r.checkedInUnits;
+    } else {
+      byBooking.set(r.bookingId, {
+        bookingId: r.bookingId,
+        displayNumber: r.displayNumber,
+        customerName: [r.firstName, r.lastName].filter(Boolean).join(" ") || "—",
+        phone: r.phone,
+        email: r.email,
+        itemName: r.itemName,
+        startsAt: r.startsAt,
+        vehicles: r.quantity,
+        noShowUnits: r.noShowUnits,
+        checkedInUnits: r.checkedInUnits,
+        disputed: false,
+        balanceDueCents: r.balanceDueCents ?? 0,
+        latestStatus: null,
+        latestNote: null,
+        latestAt: null,
+        followUpCount: 0,
+      });
+    }
+  }
+  for (const row of byBooking.values()) {
+    row.disputed = row.checkedInUnits > 0 && row.noShowUnits > 0;
+  }
+
+  const ids = [...byBooking.keys()];
+  if (ids.length > 0) {
+    const latest = await db.execute(sql`
+      SELECT DISTINCT ON (f.booking_id)
+             f.booking_id, f.status, f.note, f.created_at,
+             (SELECT count(*) FROM booking_followups c WHERE c.booking_id = f.booking_id) AS n
+        FROM booking_followups f
+       WHERE f.booking_id = ANY(${ids})
+       ORDER BY f.booking_id, f.created_at DESC
+    `);
+    for (const raw of latest as unknown as {
+      booking_id: string;
+      status: FollowupStatus;
+      note: string | null;
+      created_at: string | Date;
+      n: string | number;
+    }[]) {
+      const row = byBooking.get(raw.booking_id);
+      if (!row) continue;
+      row.latestStatus = raw.status;
+      row.latestNote = raw.note;
+      row.latestAt = new Date(raw.created_at);
+      row.followUpCount = Number(raw.n);
+    }
+  }
+
+  // Oldest tour first: the longest-cold lead is the one most worth calling before it goes further.
+  return [...byBooking.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+// ------------------------------------------------------------ win-backs
+
+export type RescheduleRow = {
+  id: string;
+  bookingId: string;
+  displayNumber: string;
+  customerName: string;
+  phone: string | null;
+  fromStartsAt: Date | null;
+  fromItemName: string | null;
+  toStartsAt: Date | null;
+  toItemName: string | null;
+  /** The booking had been marked no-show before this move — a win-back. */
+  wasNoShow: boolean;
+  /** It had partly checked in as well, so the original no-show was already in question. */
+  wasDisputed: boolean;
+  feeChargedCents: number;
+  reason: string | null;
+  performedByUserId: string | null;
+  createdAt: Date;
+};
+
+/**
+ * Every move in the range, with the win-backs first.
+ *
+ * Reads the snapshot columns and joins NOTHING to `availabilities` — which is the whole point. The
+ * pointers are nullable now and old slots do get cleaned off the schedule; a report that joined
+ * through them would quietly thin out over exactly the period a win-back trend needs.
+ *
+ * Ranged on when the MOVE happened, not on either tour date. "What did the team win back last week"
+ * is a question about the team's week.
+ */
+export async function rescheduleReport(
+  locationId: string,
+  from: Date,
+  to: Date,
+): Promise<RescheduleRow[]> {
+  const rows = await getDb()
+    .select({
+      id: bookingReschedules.id,
+      bookingId: bookingReschedules.bookingId,
+      displayNumber: bookings.displayNumber,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+      phone: customers.phoneE164,
+      fromStartsAt: bookingReschedules.fromStartsAt,
+      fromItemName: bookingReschedules.fromItemName,
+      toStartsAt: bookingReschedules.toStartsAt,
+      toItemName: bookingReschedules.toItemName,
+      fromCheckedInUnits: bookingReschedules.fromCheckedInUnits,
+      fromNoShowUnits: bookingReschedules.fromNoShowUnits,
+      feeChargedCents: bookingReschedules.feeChargedCents,
+      reason: bookingReschedules.reason,
+      performedByUserId: bookingReschedules.performedByUserId,
+      createdAt: bookingReschedules.createdAt,
+    })
+    .from(bookingReschedules)
+    .innerJoin(bookings, eq(bookings.id, bookingReschedules.bookingId))
+    .leftJoin(customers, eq(customers.id, bookings.customerId))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        gte(bookingReschedules.createdAt, from),
+        lt(bookingReschedules.createdAt, to),
+      ),
+    );
+
+  return rows
+    .map((r) => ({
+      id: r.id,
+      bookingId: r.bookingId,
+      displayNumber: r.displayNumber,
+      customerName: [r.firstName, r.lastName].filter(Boolean).join(" ") || "—",
+      phone: r.phone,
+      fromStartsAt: r.fromStartsAt,
+      fromItemName: r.fromItemName,
+      toStartsAt: r.toStartsAt,
+      toItemName: r.toItemName,
+      wasNoShow: r.fromNoShowUnits > 0,
+      wasDisputed: r.fromNoShowUnits > 0 && r.fromCheckedInUnits > 0,
+      feeChargedCents: r.feeChargedCents,
+      reason: r.reason,
+      performedByUserId: r.performedByUserId,
+      createdAt: r.createdAt,
+    }))
+    // Win-backs lead — they are what the report is for; everything else is context.
+    .sort((a, b) => {
+      if (a.wasNoShow !== b.wasNoShow) return a.wasNoShow ? -1 : 1;
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
 }

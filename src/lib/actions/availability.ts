@@ -1,10 +1,10 @@
 "use server";
 import { denyIfCannot } from "@/lib/auth/roles";
 
-import { eq, or } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/audit";
-import { availabilities, bookingReschedules, bookings, getDb } from "@/lib/db";
+import { availabilities, bookings, getDb } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getSlot } from "@/lib/data/availability";
 import { withTxn } from "@/lib/db/txn";
@@ -108,19 +108,15 @@ export async function deleteSlot(
   if (booked[0])
     return { ok: false, error: "This slot has a booking and can't be deleted." };
 
-  // booking_reschedules.from/to_availability_id are ON DELETE RESTRICT, so a slot
-  // that was ever a reschedule source/target (e.g. the origin of a group move)
-  // can't be deleted until its history rows are cleared. The slot is going away,
-  // so those pointers are moot — drop them, then delete the slot atomically.
+  // The reschedule pointers are ON DELETE SET NULL now, so the history survives this.
+  //
+  // It used to DELETE every `booking_reschedules` row referencing the slot first, because the FKs
+  // were RESTRICT and the delete would otherwise fail. That was a reasonable workaround for the
+  // constraint and a quiet data-loss bug: every slot cleaned off the schedule took its share of the
+  // reschedule history with it, worst for the oldest records — which is exactly what a win-back
+  // trend needs. Migration 0038 snapshots the times, tour names and check-in state onto the row
+  // itself, so a null pointer costs nothing and the rows can simply stay.
   await withTxn(async (tx) => {
-    await tx
-      .delete(bookingReschedules)
-      .where(
-        or(
-          eq(bookingReschedules.fromAvailabilityId, slotId),
-          eq(bookingReschedules.toAvailabilityId, slotId),
-        ),
-      );
     await tx.delete(availabilities).where(eq(availabilities.id, slotId));
   });
 

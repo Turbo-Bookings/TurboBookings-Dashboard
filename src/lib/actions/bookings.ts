@@ -808,6 +808,34 @@ export async function rescheduleBooking(
         })
         .where(eq(bookings.id, bookingId));
       repricedSubtotal = subtotalWithFee;
+
+      // Snapshot where this booking is coming FROM, and what state it was in, before either is lost.
+      //
+      // The times and tour names are stored rather than referenced: the FKs are SET NULL now, so a
+      // slot cleaned off the schedule next month must not take this row's meaning with it.
+      //
+      // The check-in counts are the win-back signal. A booking that no-showed and was then moved to a
+      // new date is the outcome the whole follow-up effort exists to produce, and once the counts are
+      // reset below there is nothing left to say it ever happened.
+      const fromLines = await tx
+        .select({
+          quantity: bookingLines.quantity,
+          checkedInUnits: bookingLines.checkedInUnits,
+          noShowUnits: bookingLines.noShowUnits,
+        })
+        .from(bookingLines)
+        .where(eq(bookingLines.bookingId, bookingId));
+      const fromSlot = (
+        await tx
+          .select({ startsAt: availabilities.startsAt })
+          .from(availabilities)
+          .where(eq(availabilities.id, b.availabilityId))
+          .limit(1)
+      )[0];
+      const fromItem = (
+        await tx.select({ name: items.name }).from(items).where(eq(items.id, b.itemId)).limit(1)
+      )[0];
+
       await tx.insert(bookingReschedules).values({
         bookingId,
         fromAvailabilityId: b.availabilityId,
@@ -815,7 +843,30 @@ export async function rescheduleBooking(
         feeChargedCents: fee,
         performedByUserId: performedBy,
         reason: reason || null,
+        fromStartsAt: fromSlot?.startsAt ?? null,
+        toStartsAt: slot.startsAt,
+        fromItemName: fromItem?.name ?? null,
+        toItemName: targetItem.name,
+        fromQuantity: fromLines.reduce((n, l) => n + l.quantity, 0),
+        fromCheckedInUnits: fromLines.reduce((n, l) => n + l.checkedInUnits, 0),
+        fromNoShowUnits: fromLines.reduce((n, l) => n + l.noShowUnits, 0),
       });
+
+      // Clear check-in for the NEW date. They have not missed that one — they have not been given
+      // the chance to. Without this a customer won back from a no-show arrives on their new date
+      // already flagged as a no-show, and the desk has to know to override it.
+      //
+      // Safe only because the counts landed on the reschedule row first, in this same transaction.
+      await tx
+        .update(bookingLines)
+        .set({
+          checkedInUnits: 0,
+          noShowUnits: 0,
+          checkInStatus: "not_yet",
+          checkedInAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(bookingLines.bookingId, bookingId));
     });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Reschedule failed" };
@@ -1336,11 +1387,36 @@ export async function moveSlotBookings(
       }
       if (groupSize > remaining) throw new Error("Not enough capacity at the target time");
 
+      // Where they are coming from, once — every booking in a group move shares the origin slot.
+      const fromSlot = (
+        await tx
+          .select({ startsAt: availabilities.startsAt, itemId: availabilities.itemId })
+          .from(availabilities)
+          .where(eq(availabilities.id, fromAvailabilityId))
+          .limit(1)
+      )[0];
+      const fromItemName = fromSlot
+        ? ((await tx.select({ name: items.name }).from(items).where(eq(items.id, fromSlot.itemId)).limit(1))[0]?.name ?? null)
+        : null;
+
       for (const g of group) {
         await tx
           .update(bookings)
           .set({ availabilityId: toAvailabilityId, updatedAt: new Date() })
           .where(eq(bookings.id, g.id));
+
+        // Same snapshot-then-reset as a single reschedule — see the note there. A group move is a
+        // slot being eliminated, so these guests are being told a new time; arriving on it
+        // pre-marked as no-shows from the cancelled one would be the operator's error, not theirs.
+        const fromLines = await tx
+          .select({
+            quantity: bookingLines.quantity,
+            checkedInUnits: bookingLines.checkedInUnits,
+            noShowUnits: bookingLines.noShowUnits,
+          })
+          .from(bookingLines)
+          .where(eq(bookingLines.bookingId, g.id));
+
         await tx.insert(bookingReschedules).values({
           bookingId: g.id,
           fromAvailabilityId: g.availabilityId,
@@ -1348,7 +1424,26 @@ export async function moveSlotBookings(
           feeChargedCents: 0,
           performedByUserId: performedBy,
           reason: "Slot eliminated — group move",
+          fromStartsAt: fromSlot?.startsAt ?? null,
+          toStartsAt: target.startsAt,
+          fromItemName,
+          toItemName: item.name,
+          fromQuantity: fromLines.reduce((n, l) => n + l.quantity, 0),
+          fromCheckedInUnits: fromLines.reduce((n, l) => n + l.checkedInUnits, 0),
+          fromNoShowUnits: fromLines.reduce((n, l) => n + l.noShowUnits, 0),
         });
+
+        await tx
+          .update(bookingLines)
+          .set({
+            checkedInUnits: 0,
+            noShowUnits: 0,
+            checkInStatus: "not_yet",
+            checkedInAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(bookingLines.bookingId, g.id));
+
         moved.push(g.id);
       }
     });

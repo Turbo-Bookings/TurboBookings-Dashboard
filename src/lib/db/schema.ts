@@ -1379,15 +1379,31 @@ export const bookingReschedules = pgTable(
     bookingId: uuid("booking_id")
       .notNull()
       .references(() => bookings.id, { onDelete: "cascade" }),
-    fromAvailabilityId: uuid("from_availability_id")
-      .notNull()
-      .references(() => availabilities.id, { onDelete: "restrict" }),
-    toAvailabilityId: uuid("to_availability_id")
-      .notNull()
-      .references(() => availabilities.id, { onDelete: "restrict" }),
+    // SET NULL, not RESTRICT. Under RESTRICT, `actions/availability.ts` had to DELETE every row
+    // pointing at a slot before it could drop the slot — so routine schedule cleanup silently erased
+    // reschedule history, worst for the oldest records, which is exactly what a win-back trend needs.
+    // The snapshot columns below hold the facts, so losing a pointer costs nothing.
+    fromAvailabilityId: uuid("from_availability_id").references(() => availabilities.id, {
+      onDelete: "set null",
+    }),
+    toAvailabilityId: uuid("to_availability_id").references(() => availabilities.id, {
+      onDelete: "set null",
+    }),
     feeChargedCents: integer("fee_charged_cents").notNull().default(0),
     performedByUserId: text("performed_by_user_id"), // Clerk user_id
     reason: text("reason"),
+    // Snapshot of the move, taken at the time of the move.
+    fromStartsAt: timestamp("from_starts_at", { withTimezone: true }),
+    toStartsAt: timestamp("to_starts_at", { withTimezone: true }),
+    fromItemName: text("from_item_name"),
+    toItemName: text("to_item_name"),
+    // Check-in state BEFORE the move. Raw counts rather than a `was_no_show` flag, because the case
+    // worth investigating is "partial" — some units arrived AND some were marked no-show — which a
+    // boolean cannot express. Fed to the same `bookingRollup` the live screens use, so the two can
+    // never disagree about what a booking's status was.
+    fromQuantity: integer("from_quantity").notNull().default(0),
+    fromCheckedInUnits: integer("from_checked_in_units").notNull().default(0),
+    fromNoShowUnits: integer("from_no_show_units").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -1397,6 +1413,50 @@ export const bookingReschedules = pgTable(
 
 export type BookingReschedule = typeof bookingReschedules.$inferSelect;
 export type NewBookingReschedule = typeof bookingReschedules.$inferInsert;
+
+/**
+ * Follow-up outreach on a booking — one row per attempt, APPEND-ONLY.
+ *
+ * There is deliberately no `updatedAt` and no update path in the app. "No answer after two attempts"
+ * is a fact about two rows; a single overwritable status column cannot express it, because the second
+ * call would erase the first. A correction is a new entry — which is also the only way to see who is
+ * actually working the list.
+ */
+export const followupStatusEnum = pgEnum("followup_status", [
+  "left_voicemail",
+  "no_answer",
+  "reached",
+  "rescheduled",
+  "deposit_forfeited",
+  "disputed",
+  "other",
+]);
+
+export const bookingFollowups = pgTable(
+  "booking_followups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    // Denormalized from the booking so the per-location, per-range report filters without joining
+    // through bookings. A booking never changes location.
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    status: followupStatusEnum("status").notNull(),
+    note: text("note"),
+    userId: text("user_id"), // Clerk user_id of whoever made the attempt
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bookingIdx: index("booking_followups_booking_idx").on(t.bookingId, t.createdAt),
+    locationIdx: index("booking_followups_location_created_idx").on(t.locationId, t.createdAt),
+  }),
+);
+
+export type BookingFollowup = typeof bookingFollowups.$inferSelect;
+export type NewBookingFollowup = typeof bookingFollowups.$inferInsert;
 
 // ---------- Payments + holds ----------
 
