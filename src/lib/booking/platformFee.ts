@@ -183,6 +183,7 @@ export async function syncPlatformFee(
       capturedAt: new Date(),
       paymentMethodType: "card",
       last4: pm?.last4 ?? null,
+      kind: "fee_topup",
     });
   }
 

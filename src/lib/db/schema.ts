@@ -1443,6 +1443,13 @@ export const payments = pgTable(
       .notNull()
       .default(0),
     paymentMethodType: text("payment_method_type"), // card, us_bank_account, etc.
+    // What the payment was FOR. `payments` recorded how much and by what method but never why, so a
+    // card taken at the desk was indistinguishable from the deposit charged at checkout — and telling
+    // those apart is the entire cash-to-collect report.
+    //   deposit       — taken at checkout or by a rep when the booking was made
+    //   venue_balance — the remaining balance, charged at the desk
+    //   fee_topup     — our 6% catching up after the booking grew
+    kind: text("kind").notNull().default("deposit"),
     last4: text("last4"),
     failureReason: text("failure_reason"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

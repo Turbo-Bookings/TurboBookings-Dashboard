@@ -273,6 +273,7 @@ export async function recordBalancePayment(
       capturedAt: new Date(),
       paymentMethodType: pm?.type ?? "card",
       last4: pm?.card?.last4 ?? null,
+      kind: "venue_balance",
     });
 
     // Keep the method for any later adjustment, the same as checkout does. Wallets included — gating
