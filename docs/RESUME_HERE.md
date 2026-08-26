@@ -78,43 +78,58 @@ npm run arch:sync -- --write
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried
 three different status dates and disagreed about whether the booking system was live.
 
-## Where things stand (2026-08-25)
+## Where things stand (2026-08-26)
 
-Booking system **v1.4**. All three locations live. A five-phase pass across roles, the dashboard,
-the bookings page and reports landed today — all of it on `main` and in production.
+Booking system **v1.5**. All three locations live. Everything below is on `main` and in production.
+
+### v1.5 — since the five-phase pass
+
+| Change | Where |
+|---|---|
+| **Per-tour "Only N left!" threshold** — the booking site printed the count on EVERY slot ("65 left" under an empty Houston slot). Now silent above the threshold. | migration **0039**, both repos |
+| **Dallas Glow: 60 → 45 min, Fri/Sat/Sun only.** 7 existing bookings honoured at their hour and closed to new sales; manifest flags them. | `scripts/retime-glow-slots.ts` |
+| **`syncPlatformFee` stopped overwriting booking totals** — it recomputed `total` from `subtotal`, erasing FareHarbor tax and custom-price overrides. Had already fired on 16 bookings. | `src/lib/booking/platformFee.ts` |
+| **Six more cross-tenant server actions guarded**, incl. `getTeamForLocation` (every staff email at any location). `openSlotsForItem` moved out of the actions layer. | `src/lib/actions/*` |
+| **`assignRole` privilege gap** — an operator could demote a peer operator out of their own permissions. | `src/lib/actions/team.ts` |
+| **Sales-by-user now uses the same revenue identity** as every other report, and excludes imports. | `src/lib/data/reports.ts` |
+| Check-in / cash / no-show reports default to the last 7 days, and "never marked" no longer counts tours that have not run. | `src/app/locations/[slug]/reports/*` |
+
+### v1.4 — roles, dashboard, bookings, reports
 
 | Phase | What changed |
 | --- | --- |
-| 1 · Access | `view_revenue` (director+) and `collect_payment` (basic_user+). Bookings + dashboard open to `checkin`; reports behind `view_revenue`. **Four unguarded server actions and three unguarded CSV routes closed** — any signed-in user could read any location's customer list by passing a different slug. |
-| 2 · Dashboard | Today at the venue → Sales today → Next 7 → Last 7. The 30-day and outstanding bands are gone. "pax" is now "vehicles" everywhere, because that is what the number always was. |
-| 3 · Bookings | Per-tour vehicle totals, a date picker, a rolling-7 view, and history that names who acted. |
-| 4 · Reports | A registry — one entry plus one folder per report. Revenue, check-in, cash-to-collect, sales-by-user, tax, uncollected fees. |
-| 5 · Follow-ups | No-show call list and win-back report, an append-only follow-up log, and reschedule history that survives slot cleanup. |
+| 1 · Access | `view_revenue` (director+) and `collect_payment` (basic_user+). Bookings + dashboard open to `checkin`; reports behind `view_revenue`. **Four unguarded server actions and three unguarded CSV routes closed.** |
+| 2 · Dashboard | Today at the venue → Sales today → Next 7 → Last 7. "pax" is now "vehicles", because that is what the number always was. |
+| 3 · Bookings | Per-tour vehicle totals, a date picker, a rolling-7 view, history that names who acted. |
+| 4 · Reports | A registry — one entry plus one folder per report. Eight reports. |
+| 5 · Follow-ups | No-show call list, win-back report, append-only follow-up log, reschedule history that survives slot cleanup. |
 
-**Migrations 0037 and 0038** are hand-written and applied directly (the drizzle journal is still
-drifted — do not run `db:generate`). `payments.kind` distinguishes a desk card payment from the
-checkout deposit; `booking_followups` and the `booking_reschedules` snapshot columns are new.
+**Migrations 0037–0039 are hand-written and applied directly.** The drizzle journal is still drifted —
+**do not run `db:generate`**.
 
-> ⚠️ **The reschedule write path now RESETS check-in state** after snapshotting it onto the
-> reschedule row. That is what stops a won-back customer arriving on their new date still flagged as
-> a no-show. The snapshot must land first, in the same transaction — reversing that order destroys
-> the only evidence a win-back happened.
+> ⚠️ **Changing a schedule's duration does NOT retime existing slots.** `materializeScheduleRow`
+> matches rows by `startsAt` alone and inserts with `onConflictDoNothing`; nothing in the codebase ever
+> updates `endsAt`. Dallas Glow's change looked applied and every slot was still 60 minutes. Any future
+> duration change needs an explicit retime — `scripts/retime-glow-slots.ts` is the pattern, and it
+> never touches booked slots, slots with live holds, or the past.
 
-> ⚠️ **Win-backs are only identifiable from 2026-08-25.** The 133 historical reschedule rows were
-> backfilled with times and tour names but carry zero check-in counts, because nothing recorded them
-> before. The report says so on its face; do not read "0 won back" for August as a business fact.
+> ⚠️ **Booked slots survive a schedule change but stay SELLABLE.** Pruning removes empty slots on
+> dropped days automatically; booked ones are kept by design, and no read path checks whether a slot
+> still matches its schedule. They must be closed explicitly or the tour quietly keeps running on days
+> the operator dropped.
 
-Run `npx tsx scripts/check-report-routes.ts` after touching the registry — a `csv: true` with no
-export route renders a download button that 404s, which shipped twice before it was caught.
+> ⚠️ **`bookingsystem/src/lib/db/schema.ts` is a hand-maintained COPY** and its item queries use bare
+> `select()`, so a column missing there is **silently dropped** — no error, just a feature that does
+> nothing. Mirror any new `items`/`locations` column in the same pass.
 
-### Platform fee — three routes, no chasing
+> ⚠️ **The reschedule write path RESETS check-in state** after snapshotting it onto the reschedule
+> row. That is what stops a won-back customer arriving pre-flagged as a no-show. The snapshot must land
+> first, in the same transaction.
 
-Every booking fee now has a way home: taken at checkout, taken at the desk when the venue runs the
-card through *Collect balance*, or billed onto the operator's platform invoice. FareHarbor imports and
-Groupon/OTA are exempt by rule and never appear as work.
+> ⚠️ **Win-backs are only identifiable from 2026-08-25.** The 133 historical reschedule rows carry zero
+> check-in counts; "0 won back" for August is a gap in the record, not a business fact.
 
-**Link stays at checkout** — decided 2026-08-24. See the ✅ block in `docs/BOOKING_SYSTEM_SPRINTS.md`
-before anyone proposes removing it again.
+Run `npx tsx scripts/check-report-routes.ts` after touching the report registry.
 
 ### 🗓 Parked — cross-location roll-up
 

@@ -5,6 +5,54 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ STATE AS OF 2026-08-26 — booking system **v1.5**
+>
+> **v1.5 — scarcity display + the Dallas Glow retime** (live on `main`)
+>
+> | Area | Change |
+> |---|---|
+> | **Per-tour "Only N left!"** | The booking widget printed the remaining count on EVERY slot — Houston advertised "65 left" under empty times, which is the opposite of urgency on the one control we want guests to act on. New `items.low_stock_threshold` (migration **0039**, default **5**, `0` = never). Above it: nothing. Editable per tour under Capacity, with the tour's real ceiling shown as help text. Display only — it can never make a slot bookable |
+> | **Cap now explains itself** | Hiding the count left a dead `+` button with no stated limit. The sub-line under the steppers is now cap-triggered: *"15 is all we have left at this time"* |
+> | **Dallas Glow → 45 min, Fri/Sat/Sun** | Same pricing, hourly starts. 920 unbooked future slots retimed, 7 booked slots kept at 60 minutes and closed to new sales, `default_duration_minutes → 45` |
+> | **Manifest honours the old length** | A slot whose length differs from its tour's current duration shows an amber *"Originally booked for 1 hour"* badge, so the desk knows before the guest says it |
+>
+> #### The trap that made this look done when it wasn't
+> **Changing a schedule's duration does NOT retime the slots it already made.** `materializeScheduleRow`
+> matches existing rows by `startsAt` alone and inserts `onConflictDoNothing`; **nothing in either repo
+> ever updates `availabilities.ends_at`.** Glow's start times didn't change, so every one of 927 future
+> slots matched and kept `endsAt = start + 60`. The setting read 45 and the tours would have run an
+> hour, for the full 540-day horizon. Any future duration change needs an explicit retime —
+> **`scripts/retime-glow-slots.ts` is the pattern**: dry-run by default, and it never touches booked
+> slots, slots with a live seat hold, or the past.
+>
+> **Second half of the same trap: booked slots survive a schedule change but stay SELLABLE.** Empty
+> slots on dropped days are pruned automatically; booked ones are kept by design, and no read path
+> checks whether a slot still matches its schedule. An orphaned Monday stays quietly bookable until
+> it is closed explicitly.
+>
+> ⚠️ **`bookingsystem/src/lib/db/schema.ts` is a hand-maintained COPY** and its item queries use a bare
+> `select()`. A column missing there is **silently dropped** — no type error, no runtime error, just a
+> feature that does nothing. Mirror any new `items` / `locations` column in the same pass.
+>
+> ---
+> ### ▶ STATE AS OF 2026-08-25 — booking system **v1.4**; roles, dashboard, reports
+>
+> | Phase | Change |
+> |---|---|
+> | **1 · Access** | New capabilities `view_revenue` (director+) and `collect_payment` (basic_user+). Bookings + dashboard opened to `checkin`; reports behind `view_revenue`. **Four unguarded server actions and three unguarded CSV routes closed**, plus six more found by audit — incl. `getTeamForLocation`, which returned every staff email at any location to any signed-in user. `assignRole` could be used by an operator to demote a peer out of their own permissions |
+> | **2 · Dashboard** | Today at the venue → Sales today → Next 7 days → Last 7 days. "pax" renamed to "vehicles", which is what the number always counted |
+> | **3 · Bookings** | Per-tour vehicle totals, date picker, rolling-7 view, history that names who acted |
+> | **4 · Reports** | A registry — one entry + one folder per report; `npx tsx scripts/check-report-routes.ts` verifies it. Eight reports |
+> | **5 · Follow-ups** | No-show call list, win-back report, append-only `booking_followups` log, and reschedule history that survives slot cleanup (`booking_reschedules` snapshot columns, FKs RESTRICT → SET NULL) |
+> | **Money** | `syncPlatformFee` was **recomputing** a booking's total from its subtotal, erasing FareHarbor tax residue and custom-price overrides — it had already fired on 16 bookings. It now adjusts by the fee delta only. Operators no longer see our processing margin in a customer's breakdown |
+>
+> Migrations **0037–0039** are hand-written and applied directly. The drizzle journal still ends at
+> `0032` — **never run `db:generate`.**
+>
+> ⚠️ **Win-backs are only identifiable from 2026-08-25.** The 133 backfilled reschedule rows carry zero
+> check-in counts; "0 won back" for August is a gap in the record, not a business fact.
+>
+> ---
 > ### ▶ STATE AS OF 2026-08-24 — booking system v1.3; operator tooling hardened
 >
 > **What shipped 2026-08-24** (all live on `main`, all in `turbobookings-dashboard` unless noted):
@@ -849,14 +897,31 @@ blackout dates; calendar view; nightly materialize cron.
 ---
 
 ## Immediate next action — START HERE NEXT SESSION
-**Sprint D is complete** (D-1 generation + D-2 overrides/blackouts/calendar), all
-committed on `develop`. The dashboard now fully manages the catalog + availability.
-Remaining + next:
-1. Click-test the Calendar (`/locations/dtown/catalog/schedule/calendar`, Clerk
-   sign-in): month grid counts; click a day → toggle a slot off / set capacity /
-   delete; black out a day → its slots clear and stay gone after a schedule
-   re-save; un-blackout → slots return. Set `CRON_SECRET` in Vercel for the
-   `materialize-availability` cron.
-2. **Next major step: the customer-facing booking flow** in the `bookingsystem`
-   repo (Sprints G–I): availability display → cart/hold → checkout → Stripe.
-   It's now unblocked — real, timezone-correct `availabilities` exist to sell.
+
+**Sprints A–J are done and all three locations are live on the system.** This section used to point at
+Sprint D (June); the build has been feature-complete for two months and the sprint list below is now
+history, not a plan. The state blocks at the TOP of this file are the live pick-up point.
+
+### Open work, in priority order
+
+1. **FareHarbor imports cannot be rescheduled** — being fixed. Some bookings kept arriving through
+   FareHarbor after cutover, and the desk cannot move them.
+2. **One final FareHarbor import, all three locations.** `npm run import:fh -- --file=<path>
+   --slug=<dtown|htown|miami>` — dry run by default, `--commit` to write. One CSV per location because
+   `--slug` scopes the run; filenames are arbitrary. **Re-importing an overlapping export is safe** —
+   the planner loads existing `external_ref`s and reports already-imported rows instead of duplicating
+   them. **Never let imported bookings reach the cockpit** (see the FareHarbor lock above).
+3. **Four tours whose low-stock ceiling is at or below the default 5** need their threshold tuned or
+   the message fires on empty slots: dtown Night Glow, htown Buggy, both miami UTV tours.
+4. **Miami's 4 UTVs are all marked out of service** — either wrong, or those tours are unsellable.
+
+### Parked, decided but not built
+
+- **Cross-location roll-up.** Design settled: aggregate over each location's OWN local day, scope with
+  `accessibleLocationIds()`. Deferred by the owner in favour of higher-value booking features.
+
+### Will not be corrected
+
+~11 bookings whose totals were damaged by the old `syncPlatformFee` overwrite. The originals cannot be
+reconstructed; the bug is fixed and the reconciliation checker is clean going forward.
+
