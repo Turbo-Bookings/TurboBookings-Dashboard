@@ -197,6 +197,41 @@
 > Roughly eleven bookings, $8–40 each. Bookings taken through our own system were unaffected — for
 > those, `subtotal + tax + fee` IS the total, so recomputing it changed nothing.
 
+> #### ✅ SHIPPED 2026-08-26 — per-tour "Only N left!" threshold
+>
+> The booking widget printed the remaining count under EVERY slot and used a hardcoded `<= 5` only to
+> pick the styling — so Houston's 1-Hour ATV Tour advertised **"65 left"** beneath every empty time.
+> That is not scarcity; it tells a guest there is no rush, on the one control we want them to act on.
+>
+> `items.low_stock_threshold` (migration **0039**, hand-applied, default **5**). At or below it the
+> slot says `Only N left!`; above it, nothing at all; `0` disables it. Editable per tour in the tour
+> catalog under Capacity.
+>
+> **Per tour, not per location**, because the trigger has to move with the tour's size. Live ceilings:
+>
+> | Tour | Ceiling |
+> | --- | --- |
+> | htown 1-Hour ATV / Night Glow | 65 (shared ATV pool) |
+> | miami ATV tours | 35 |
+> | dtown D-Town ATV | 22 |
+> | dtown Night Glow | **5** (10 kits, 5 out of service) |
+> | htown Four Seater Buggy | **1** |
+> | miami UTV tours | **0** (all 4 UTVs out of service — deliberate, no bookings) |
+>
+> ⚠️ **Four tours have a ceiling at or below the default of 5**, so they say "Only N left!" on every
+> slot including empty ones — dtown Night Glow, htown Buggy, and both miami UTV tours. Accurate, but
+> not urgency. The tour form quotes each tour's real ceiling and warns about this; they want tuning
+> down (or `0`).
+>
+> ⚠️ **`bookingsystem/src/lib/db/schema.ts` is a hand-maintained COPY** and `getBookableItem` uses a
+> bare `select()`, so a column missing there is **silently dropped** — no type error, no runtime
+> error, just a feature that quietly does nothing. Any future `items`/`locations` column needs
+> mirroring there in the same pass.
+>
+> The stepper sub-line could not simply be deleted: it was the only thing explaining why the `+`
+> button stops at `remaining`. It is now silent while there is room and shows the real figure at the
+> cap — *"15 is all we have left at this time."*
+
 > #### ⚠ Known-open
 > - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should
 >   self-heal on backoff. Check: `succeeded_at IS NULL AND attempt_count < 6 AND last_error NOT LIKE 'retired:%'`.
