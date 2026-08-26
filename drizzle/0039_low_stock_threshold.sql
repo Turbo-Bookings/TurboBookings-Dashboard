@@ -1,0 +1,25 @@
+-- When to tell a customer a time slot is running out.
+--
+-- The booking widget showed the remaining count on EVERY slot and used a hardcoded `<= 5` only to
+-- decide the styling. So Houston's 1-Hour ATV Tour advertised "65 left" under every empty time —
+-- which is not scarcity, it is a note telling the guest there is no rush, printed on the one control
+-- we want them to act on.
+--
+-- Below or at this number the slot says "Only N left!". Above it, nothing at all. `0` means never.
+--
+-- DEFAULT 5 on purpose: that is the threshold already hardcoded in the widget, so every existing tour
+-- keeps its current urgency behaviour while the "65 left" noise disappears, with nothing to configure
+-- first.
+--
+-- ⚠️ This is DISPLAY ONLY. It must never be confused with capacity — it cannot make a slot bookable
+-- or unbookable, and the quantity stepper's ceiling is still the real remaining count.
+--
+-- Per tour rather than per location because the trigger has to move with the tour's size: Houston's
+-- ATV tours draw on a shared pool of ~65, while Dallas's Glow Tour is capped at 10 glow ATVs. A single
+-- threshold of 15 would fire on every Dallas Glow slot including an entirely empty one — the same
+-- false urgency, inverted.
+--
+-- Hand-written with IF NOT EXISTS and applied directly, like 0033-0038. The drizzle journal ends at
+-- 0032, so `db:generate` would try to re-create everything since.
+ALTER TABLE "items"
+  ADD COLUMN IF NOT EXISTS "low_stock_threshold" integer NOT NULL DEFAULT 5;

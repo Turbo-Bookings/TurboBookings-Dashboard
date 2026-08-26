@@ -1,5 +1,6 @@
 import "server-only";
-import { asc, eq, inArray } from "drizzle-orm";
+import { resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   customerTypes,
   getDb,
@@ -114,6 +115,53 @@ export async function getResourceSummariesByItem(
       list.push({ name: r.name, maxConcurrentUses: r.maxConcurrentUses });
   }
   return out;
+}
+
+/**
+ * The most vehicles this tour could ever have free — its ceiling with nothing booked.
+ *
+ * Only used to warn an operator that a low-stock threshold at or above this fires on every slot,
+ * including empty ones. That is the Dallas Glow case: capped at 10 glow ATVs, so a threshold of 15
+ * would always be true.
+ *
+ * Reuses `resourceRemaining` with `consumed: 0` rather than reimplementing the min-across-pools rule,
+ * so the ceiling can never disagree with the live number the customer sees. Returns null when the
+ * tour has no resource requirements yet — a brand-new tour has no meaningful ceiling to quote.
+ */
+export async function getItemCapacityCeiling(
+  itemId: string,
+  locationId: string,
+): Promise<number | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      resourceId: resources.id,
+      maxConcurrentUses: resources.maxConcurrentUses,
+      outOfServiceCount: resources.outOfServiceCount,
+      quantityConsumed: resourceRequirements.quantityConsumed,
+    })
+    .from(resourceRequirements)
+    .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
+    .innerJoin(items, eq(resourceRequirements.itemId, items.id))
+    .where(and(eq(resourceRequirements.itemId, itemId), eq(items.locationId, locationId)));
+
+  if (rows.length === 0) return null;
+
+  // Collapse to one pool per resource, taking the largest per-unit consumption — the same
+  // conservative rule `resourceRemaining` applies.
+  const byResource = new Map<string, ResourcePool>();
+  for (const r of rows) {
+    const hit = byResource.get(r.resourceId);
+    if (hit) hit.maxQuantityConsumed = Math.max(hit.maxQuantityConsumed, r.quantityConsumed);
+    else
+      byResource.set(r.resourceId, {
+        maxConcurrentUses: r.maxConcurrentUses,
+        outOfServiceCount: r.outOfServiceCount,
+        maxQuantityConsumed: r.quantityConsumed,
+        consumed: 0,
+      });
+  }
+  return resourceRemaining([...byResource.values()]);
 }
 
 export async function getItemById(

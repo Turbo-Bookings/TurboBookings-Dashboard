@@ -19,6 +19,12 @@ type Props = {
   cancelHref: string;
   initialValues?: ItemFormState["values"];
   submitLabel: string;
+  /**
+   * The most vehicles this tour can ever have free, computed server-side from its resource pools (or
+   * its schedule capacity for fixed tours). Used only to warn that a threshold at or above it fires
+   * on every slot. Null when it cannot be determined — a new tour with no resources yet.
+   */
+  capacityCeiling?: number | null;
 };
 
 const EMPTY: ItemFormState["values"] = {
@@ -34,6 +40,7 @@ const EMPTY: ItemFormState["values"] = {
   cancellationNotesMd: "",
   defaultDurationMinutes: "60",
   capacityMode: "resource_based",
+  lowStockThreshold: "5",
   bookableOnline: true,
   listingVisible: true,
 };
@@ -56,6 +63,7 @@ export function ItemForm({
   cancelHref,
   initialValues,
   submitLabel,
+  capacityCeiling = null,
 }: Props) {
   const [state, formAction] = useActionState<ItemFormState | null, FormData>(
     action,
@@ -139,6 +147,49 @@ export function ItemForm({
             {errors.capacityMode}
           </p>
         )}
+
+        {/*
+          Sits in the Capacity block because it is about how full a slot is — but it is DISPLAY only.
+          It cannot make a slot bookable or unbookable, and the customer's quantity stepper is still
+          capped by the real remaining count whatever this says.
+        */}
+        <div className="mt-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
+          <label
+            htmlFor="lowStockThreshold"
+            className="block text-sm font-medium text-zinc-700 dark:text-zinc-300"
+          >
+            Say &ldquo;Only N left!&rdquo; when remaining drops to
+          </label>
+          <input
+            id="lowStockThreshold"
+            name="lowStockThreshold"
+            type="number"
+            min={0}
+            max={10000}
+            defaultValue={values.lowStockThreshold}
+            className="mt-1 w-28 rounded-md border border-zinc-300 px-3 py-2 text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-900"
+          />
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Above this number the booking site shows nothing at all — just the time. Set{" "}
+            <span className="font-medium">0</span> to never show it.
+            {capacityCeiling != null && (
+              <>
+                {" "}
+                This tour tops out around{" "}
+                <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                  {capacityCeiling}
+                </span>{" "}
+                {capacityCeiling === 1 ? "vehicle" : "vehicles"} — a number at or above that shows the
+                message on every slot, including empty ones.
+              </>
+            )}
+          </p>
+          {errors.lowStockThreshold && (
+            <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+              {errors.lowStockThreshold}
+            </p>
+          )}
+        </div>
       </div>
 
       <MarkdownField

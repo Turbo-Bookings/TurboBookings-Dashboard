@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ItemForm } from "@/components/ItemForm";
 import { ItemPhotoManager } from "@/components/ItemPhotoManager";
 import { updateItem } from "@/lib/actions/items";
-import { getItemById } from "@/lib/data/items";
+import { getItemById, getItemCapacityCeiling } from "@/lib/data/items";
 import { getLocationBySlug } from "@/lib/data/locations";
 
 type Props = {
@@ -18,6 +18,8 @@ export default async function EditTourPage({ params }: Props) {
   const item = await getItemById(id, loc.id);
   if (!item) notFound();
 
+  // Only used to warn that a threshold at or above the tour's ceiling fires on every slot.
+  const capacityCeiling = await getItemCapacityCeiling(id, loc.id);
   const action = updateItem.bind(null, slug, id);
 
   return (
@@ -67,9 +69,11 @@ export default async function EditTourPage({ params }: Props) {
           cancellationNotesMd: item.cancellationNotesMd ?? "",
           defaultDurationMinutes: item.defaultDurationMinutes.toString(),
           capacityMode: item.capacityMode,
+          lowStockThreshold: String(item.lowStockThreshold),
           bookableOnline: item.bookableOnline,
           listingVisible: item.listingVisible,
         }}
+        capacityCeiling={capacityCeiling}
         submitLabel="Save"
       />
 

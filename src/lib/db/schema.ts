@@ -818,6 +818,16 @@ export const items = pgTable(
       .notNull()
       .default("resource_based"),
     // Online bookability toggle; operator can hide an item from public flow.
+    // At or below this many remaining, the CUSTOMER booking site says "Only N left!". Above it, it
+    // says nothing. `0` disables the message entirely.
+    //
+    // ⚠️ DISPLAY ONLY. It cannot make a slot bookable or unbookable, and the quantity stepper's
+    // ceiling is still the real remaining count — see BookingWidget in the bookingsystem repo.
+    //
+    // Per tour because the trigger has to move with the tour's size: Houston's ATV tours share a pool
+    // of ~65, while Dallas's Glow Tour is capped at 10. One location-wide number would fire on every
+    // empty Dallas Glow slot.
+    lowStockThreshold: integer("low_stock_threshold").notNull().default(5),
     bookableOnline: boolean("bookable_online").notNull().default(true),
     listingVisible: boolean("listing_visible").notNull().default(true),
     // Optional per-item override of location.cancellation_policy_id (V1.5).

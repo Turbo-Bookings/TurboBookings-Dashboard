@@ -17,7 +17,13 @@ import { assertCan, denyIfCannot } from "@/lib/auth/roles";
 
 type ItemFieldErrors = Partial<
   Record<
-    "name" | "defaultDurationMinutes" | "descriptionMd" | "capacityMode" | "minAge" | "form",
+    | "name"
+    | "defaultDurationMinutes"
+    | "descriptionMd"
+    | "capacityMode"
+    | "lowStockThreshold"
+    | "minAge"
+    | "form",
     string
   >
 >;
@@ -41,6 +47,7 @@ export type ItemFormState = {
     cancellationNotesMd: string;
     defaultDurationMinutes: string;
     capacityMode: string;
+    lowStockThreshold: string;
     bookableOnline: boolean;
     listingVisible: boolean;
   };
@@ -107,9 +114,23 @@ function parseItemForm(formData: FormData): ItemFormState["values"] {
       formData.get("defaultDurationMinutes") ?? "",
     ).trim(),
     capacityMode: String(formData.get("capacityMode") ?? "resource_based"),
+    lowStockThreshold: String(formData.get("lowStockThreshold") ?? "").trim(),
     bookableOnline: formData.get("bookableOnline") === "on",
     listingVisible: formData.get("listingVisible") === "on",
   };
+}
+
+/**
+ * The "Only N left!" trigger. Blank means 0 — never show it.
+ *
+ * Returns undefined on invalid input so the caller can flag it. Note 0 is a MEANINGFUL value here,
+ * not an empty one, so this cannot use the falsy shortcut `parseMinAge` gets away with.
+ */
+function parseLowStock(raw: string): number | undefined {
+  if (raw === "") return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 10000) return undefined;
+  return n;
 }
 
 // Optional whole-number age (blank → null). Returns undefined on invalid input
@@ -143,6 +164,9 @@ function validateItem(values: ItemFormState["values"]): ItemFieldErrors {
 
   if (parseMinAge(values.minAge) === undefined)
     errors.minAge = "Whole number 0–120 (or blank)";
+
+  if (parseLowStock(values.lowStockThreshold) === undefined)
+    errors.lowStockThreshold = "Whole number 0 or more (0 = never show)";
 
   return errors;
 }
@@ -190,6 +214,7 @@ export async function createItem(
       cancellationNotesMd: values.cancellationNotesMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
+      lowStockThreshold: parseLowStock(values.lowStockThreshold) ?? 0,
       bookableOnline: values.bookableOnline,
       listingVisible: values.listingVisible,
       sortOrder,
@@ -247,6 +272,7 @@ export async function updateItem(
       cancellationNotesMd: values.cancellationNotesMd || null,
       defaultDurationMinutes: Number(values.defaultDurationMinutes),
       capacityMode: values.capacityMode as CapacityMode,
+      lowStockThreshold: parseLowStock(values.lowStockThreshold) ?? 0,
       bookableOnline: values.bookableOnline,
       listingVisible: values.listingVisible,
       updatedAt: new Date(),
