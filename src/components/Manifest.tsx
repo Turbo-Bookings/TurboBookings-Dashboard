@@ -48,6 +48,8 @@ type Slot = {
   capacityMode: "resource_based" | "fixed";
   startsAt: Date;
   endsAt: Date;
+  /** The tour's CURRENT length. When it differs from this slot's own, the slot predates a change. */
+  itemDurationMinutes: number;
   baseCapacity: number | null;
   booked: number;
   bookings: Booking[];
@@ -71,6 +73,20 @@ type Cols = { phone: boolean; due: boolean; notes: boolean };
 // check-in — which is the only screen it was ever written for.
 const DEFAULT_COLS: Cols = { phone: true, due: true, notes: true };
 
+
+/**
+ * "1 hour", "45 min", "1 hr 30 min".
+ *
+ * Only ever shown to explain a slot that no longer matches its tour, so it has to read like something
+ * a person would say to a guest at the desk, not like a number of minutes.
+ */
+function durationLabel(mins: number): string {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  const hours = h === 1 ? "1 hour" : `${h} hours`;
+  return m === 0 ? hours : `${h} hr ${m} min`;
+}
 
 export function Manifest({
   slug,
@@ -232,6 +248,27 @@ export function Manifest({
                     <span className="text-sm text-zinc-500">
                       {fmtTime.format(s.startsAt)} – {fmtTime.format(s.endsAt)}
                     </span>
+                    {/*
+                      This slot is a different length from the tour as it runs today, so everyone in
+                      it booked something we no longer sell — Dallas's Glow Tour went from an hour to
+                      45 minutes, and these guests keep the hour they paid for.
+
+                      Read from the slot's own start/end rather than a flag, because `endsAt` is
+                      materialized once and never rewritten: the booking's real length is already
+                      recorded on the row. That also means this keeps working for any future change,
+                      with no column to remember to set.
+                    */}
+                    {(() => {
+                      const slotMins = Math.round(
+                        (new Date(s.endsAt).getTime() - new Date(s.startsAt).getTime()) / 60000,
+                      );
+                      if (slotMins === s.itemDurationMinutes) return null;
+                      return (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                          Originally booked for {durationLabel(slotMins)}
+                        </span>
+                      );
+                    })()}
                   </div>
                   {caps.manage_bookings && (
                     <Link

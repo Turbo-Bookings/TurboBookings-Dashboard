@@ -70,6 +70,14 @@ export type ManifestSlot = {
   capacityMode: "resource_based" | "fixed";
   startsAt: Date;
   endsAt: Date;
+  /**
+   * The tour's CURRENT scheduled length, in minutes.
+   *
+   * A slot's own `endsAt` is materialized once and never rewritten, so when a tour's duration changes
+   * the already-booked slots keep the length their guests actually booked. Comparing the two is how
+   * the manifest knows to say "originally booked for 1 hour" on a slot that predates the change.
+   */
+  itemDurationMinutes: number;
   baseCapacity: number | null;
   booked: number;
   bookings: ManifestBooking[];
@@ -91,6 +99,7 @@ export async function manifestForDate(
     .select({
       a: availabilities,
       itemName: items.name,
+      itemDurationMinutes: items.defaultDurationMinutes,
       capacityMode: items.capacityMode,
       schedCap: availabilitySchedules.capacityPerSlot,
     })
@@ -182,6 +191,7 @@ export async function manifestForDate(
       capacityMode: s.capacityMode,
       startsAt: s.a.startsAt,
       endsAt: s.a.endsAt,
+      itemDurationMinutes: s.itemDurationMinutes,
       baseCapacity:
         s.capacityMode === "fixed" ? s.a.capacityOverride ?? s.schedCap : null,
       booked: bs.reduce((n, b) => n + b.partySize, 0),
