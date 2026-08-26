@@ -25,6 +25,10 @@
  * charge.
  *
  * **Anything in the past.** History records what actually ran.
+ *
+ * Every future slot that is not exactly the current duration is then closed to NEW bookings. The
+ * slot stays so its existing guests can check in, but nobody else can buy a length the tour no
+ * longer offers.
  */
 import { neon } from "@neondatabase/serverless";
 import { readFileSync } from "node:fs";
@@ -119,19 +123,30 @@ async function main() {
   )) as unknown[];
   console.log(`\n  retimed: ${retimed.length}`);
 
-  // Bookings survived onto days the tour no longer runs. The slot has to stay so the guest can check
-  // in — but every read path joins `availabilities` directly with no filter on schedule membership,
-  // so without this the orphan would remain quietly sellable to a new customer.
+  // Only 45-minute slots are sellable from here. Two independent reasons a future slot must be
+  // closed, and a slot can hit either:
+  //
+  //   1. It is not the tour's current length. Those are the ones that could not be retimed because
+  //      they already have a booking — we honour the guests who bought an hour, but we do not keep
+  //      SELLING an hour on a tour that no longer offers one.
+  //   2. It falls on a day the tour no longer runs. Booked slots are never pruned, and every read
+  //      path joins `availabilities` with no filter on schedule membership, so an orphaned Monday
+  //      would otherwise stay quietly bookable.
+  //
+  // The slots themselves stay — the guests who already booked still need to check in.
   const closed = (await sql.query(
     `UPDATE availabilities av
         SET online_booking_status = 'off', updated_at = now()
       WHERE av.item_id = $1 AND av.starts_at > now()
         AND av.online_booking_status <> 'off'
-        AND extract(dow FROM (av.starts_at AT TIME ZONE 'America/Chicago')) NOT IN (0, 5, 6)
+        AND (
+          extract(epoch FROM (av.ends_at - av.starts_at))/60 <> $2
+          OR extract(dow FROM (av.starts_at AT TIME ZONE 'America/Chicago')) NOT IN (0, 5, 6)
+        )
       RETURNING av.id`,
-    [item.id],
+    [item.id, NEW_MINUTES],
   )) as unknown[];
-  console.log(`  closed to new bookings (off-schedule days): ${closed.length}`);
+  console.log(`  closed to new bookings (not ${NEW_MINUTES} min, or off-schedule day): ${closed.length}`);
 
   // Keep the tour's own duration in step, so the catalog reads 45 min and the manifest can tell an
   // old slot from a current one.
