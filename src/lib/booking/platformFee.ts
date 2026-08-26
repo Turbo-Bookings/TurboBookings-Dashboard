@@ -64,6 +64,12 @@ export async function syncPlatformFee(
   bookingId: string,
   newSubtotalCents: number,
   context: string,
+  /**
+   * The booking's subtotal BEFORE the caller's change. Only consulted for imported bookings, where
+   * the fee is owed on the increase rather than on the whole sale — see below. Omitting it on an
+   * import means "nothing new was sold", which is the safe default.
+   */
+  previousSubtotalCents?: number,
 ): Promise<FeeSyncResult> {
   const db = getDb();
   const b = (
@@ -72,8 +78,27 @@ export async function syncPlatformFee(
   if (!b) return { feeCents: 0, deltaCents: 0, charged: false, uncollectedReason: "Booking not found" };
 
   const bps = location.platformFeeBps ?? 0;
-  const target = Math.round(Math.max(0, newSubtotalCents) * (bps / 10000));
   const current = b.platformFeeCents ?? 0;
+
+  // A FareHarbor import is someone else's sale. We took no fee on it, `platform_fee_cents` is 0 to
+  // say so, and the guest already paid FareHarbor in full.
+  //
+  // Charging 6% of the WHOLE subtotal here was therefore wrong twice over: the fee had never been
+  // quoted to that guest, and `newTotal = total + delta` below put it straight onto their balance —
+  // so simply moving an imported booking to another time made them owe an extra 6% at the desk. The
+  // automatic write-off further down hid it from our side of the books while leaving it on theirs,
+  // because a write-off only stamps a date; it never reverses the total.
+  //
+  // What IS ours is anything sold on top of the import — a vehicle added at the counter, a move to a
+  // pricier tour. So the base for an import is the INCREASE, and a plain reschedule (no increase)
+  // correctly comes to nothing.
+  const imported = !!b.externalRef?.startsWith("fh:");
+  const target = imported
+    ? current +
+      Math.round(
+        Math.max(0, newSubtotalCents - (previousSubtotalCents ?? newSubtotalCents)) * (bps / 10000),
+      )
+    : Math.round(Math.max(0, newSubtotalCents) * (bps / 10000));
 
   // The ratchet. Equal or lower target → nothing to do, and we keep what was charged.
   if (target <= current) {

@@ -797,14 +797,30 @@ export async function rescheduleBooking(
       // `platform_fee_cents` is deliberately NOT recomputed here — syncPlatformFee() does that after
       // the transaction commits, because it charges a card and must not run inside one.
       const subtotalWithFee = newSubtotal + fee;
+
+      // Move the total BY the change. Do NOT rebuild it from subtotal + tax + fee.
+      //
+      // Same defect that was fixed in syncPlatformFee, still living here. A total is not always the
+      // sum of the columns beside it:
+      //
+      //   * A FareHarbor import carries its GROSS total with the old system's tax folded inside it,
+      //     while `tax_cents` is 0. Rebuilding threw that residue away — 234 of the 320 future
+      //     imported bookings, $4,312.16 in total, would have had it silently deleted from what the
+      //     guest owes the moment the desk moved them to another time.
+      //   * `subtotal_cents_override` is a custom price an operator typed. Rebuilding from
+      //     `subtotalCents` put the rack rate back.
+      //
+      // The reschedule changes exactly two things: the tour price (only on a cross-tour move) and
+      // the reschedule fee. Apply those and leave everything else in the total untouched.
+      const totalDelta = (newSubtotal - (b.subtotalCents ?? 0)) + fee;
+      const newTotal = (b.totalCents ?? 0) + totalDelta;
       await tx
         .update(bookings)
         .set({
           availabilityId: toAvailabilityId,
           ...(crossTour ? { itemId: targetItem.id, subtotalCents: newSubtotal } : {}),
-          totalCents: subtotalWithFee + (b.taxCents ?? 0) + (b.platformFeeCents ?? 0),
-          balanceDueCents:
-            subtotalWithFee + (b.taxCents ?? 0) + (b.platformFeeCents ?? 0) - (b.depositPaidCents ?? 0),
+          totalCents: newTotal,
+          balanceDueCents: newTotal - (b.depositPaidCents ?? 0),
           updatedAt: new Date(),
         })
         .where(eq(bookings.id, bookingId));
@@ -875,7 +891,15 @@ export async function rescheduleBooking(
 
   // Outside the transaction on purpose — this charges a card, and taking money inside a transaction
   // that might roll back is how you end up billing for something that never happened.
-  const feeSync = await syncPlatformFee(location, bookingId, repricedSubtotal, "reschedule");
+  const feeSync = await syncPlatformFee(
+    location,
+    bookingId,
+    repricedSubtotal,
+    "reschedule",
+    // What the booking was worth before this move. Only an INCREASE is ours to take a fee on when
+    // the booking came from FareHarbor; a same-tour move with no fee comes to zero.
+    b.subtotalCents ?? 0,
+  );
 
   await recordAudit({
     slug,
@@ -981,7 +1005,7 @@ export async function addVehicles(
   }
   // Adding a vehicle raises the booking's value, so our 6% rises with it. Charged to the saved card
   // outside the transaction — see syncPlatformFee. This is the check-in "they want one more ATV" case.
-  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added");
+  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "vehicle added", booking.subtotalCents);
   // `addedCents` is recorded so the sales-by-user report can value what the desk upsold. The audit
   // row is the only place this lives: an addition changes the booking's subtotal but leaves nothing
   // saying who caused it or what it was worth.
@@ -1108,7 +1132,7 @@ export async function addLine(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Could not add rider" };
   }
-  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added");
+  const fee = await syncPlatformFee(location, booking.id, booking.subtotalCents + addedDelta, "rider added", booking.subtotalCents);
   await recordAudit({ slug, action: "catalog.booking.add_line", summary: `Added ${qty} rider(s)`, payload: { bookingId: booking.id, customerTypeId, qty, addedCents: addedDelta } });
   revalidate(slug, booking.id);
   return { ok: true, notice: feeNotice(fee) };
