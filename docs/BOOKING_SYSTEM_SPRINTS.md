@@ -142,6 +142,61 @@
 > operator's platform invoice. Whether an off-session top-up on a wallet succeeds no longer decides
 > anything — it only changes which of the three collects it.
 
+> #### 🗓 PARKED — cross-location roll-up
+>
+> Every number in the dashboard is scoped to ONE location, so "how did the weekend go across the
+> business" means opening three dashboards and adding up by hand. The root page lists locations with
+> no figures at all. At the 5–8 locations planned this stops being something anyone does, which means
+> the number stops being looked at.
+>
+> **Not a priority yet** — parked deliberately, not forgotten. Higher-value booking-system features
+> come first.
+>
+> Design work already done, so a future session does not repeat it:
+>
+> - **Scoping is free.** `accessibleLocationIds()` already returns `"all"` for master/admin and a list
+>   otherwise. Richard is an operator at BOTH dtown and htown, so he would get a genuine two-location
+>   roll-up of his own business and Miami could never appear in it. No new permission model.
+> - **✅ DECIDED — a cross-location "today" is each location's OWN local day**, stitched together.
+>   dtown/htown are `America/Chicago`, miami is `America/New_York`, so there is no single instant that
+>   is "today" everywhere. Per-location local days mean the roll-up always equals the sum of its parts
+>   and drilling in reconciles — at the cost of spanning 25 real hours, which is the right trade. The
+>   alternative (one absolute window) makes the owner's number disagree with the operator's own
+>   dashboard for any late Glow Tour.
+> - **The report registry was built for this** — `ReportDef` can carry a location-scoped vs
+>   cross-location flag rather than assuming a slug.
+> - **Cost is the aggregation, not the UI.** Reports currently aggregate in JS after fetching rows,
+>   one location at a time. Across N locations that is N× the queries: fine for a day at three
+>   locations, needs real SQL aggregates for a 30-day range at eight.
+>
+> Natural order if picked up: overview page first (it replaces opening three dashboards and is the
+> plumbing the rest reuses), then revenue, then check-in/no-shows, then cash.
+
+> #### 🔴 CANNOT BE FIXED — booking totals damaged by the syncPlatformFee overwrite
+>
+> `syncPlatformFee` used to recompute `total = subtotal + tax + fee` instead of adjusting by the fee
+> delta, which erased anything else living in the total. Fixed 2026-08-25 (`platformFee.ts`), but it
+> had already fired on bookings that had a vehicle or rider added at the desk.
+>
+> **These will not be corrected.** The originals are not recoverable from our data — FareHarbor's tax
+> is not itemised in the import, and the custom prices are gone — and nobody at the locations knows
+> the details of individual charges. Reconstructing them would be inventing numbers.
+>
+> **Do not re-investigate them as discrepancies.** Find them with:
+>
+> ```sql
+> SELECT l.slug, b.display_number, b.external_ref IS NOT NULL AS imported,
+>        b.subtotal_cents_override IS NOT NULL AS overridden
+>   FROM bookings b JOIN locations l ON l.id = b.location_id
+>  WHERE (b.external_ref IS NOT NULL OR b.subtotal_cents_override IS NOT NULL)
+>    AND EXISTS (SELECT 1 FROM audit_log a
+>                 WHERE a.action IN ('catalog.booking.add_vehicles','catalog.booking.add_line')
+>                   AND a.payload->>'bookingId' = b.id::text);
+> ```
+>
+> Roughly eleven bookings, $8–40 each. Bookings taken through our own system were unaffected — for
+> those, `subtotal + tax + fee` IS the total, so recomputing it changed nothing.
+
 > #### ⚠ Known-open
 > - **7 events still retrying** — `401`/`403` from the rollout window, `attempt_count ≤ 2`. They should
 >   self-heal on backoff. Check: `succeeded_at IS NULL AND attempt_count < 6 AND last_error NOT LIKE 'retired:%'`.

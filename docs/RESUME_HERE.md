@@ -116,6 +116,12 @@ Groupon/OTA are exempt by rule and never appear as work.
 **Link stays at checkout** — decided 2026-08-24. See the ✅ block in `docs/BOOKING_SYSTEM_SPRINTS.md`
 before anyone proposes removing it again.
 
+### 🗓 Parked — cross-location roll-up
+
+Every figure is scoped to one location; the root page shows no numbers. Parked deliberately in favour
+of booking-system features. The design decisions are already made — see the 🗓 block in
+`docs/BOOKING_SYSTEM_SPRINTS.md` before re-deriving any of it.
+
 ## Next phase — Stage 3, the real Phase 0
 
 Intelligence DB on Neon, `touchpoints`, identity resolution, and resolving the click ids we now collect
