@@ -114,7 +114,9 @@ export default async function BookingDetailPage({ params }: Props) {
         }))}
       />
 
-      {b.status === "active" && (
+      {/* `canManage` to match the modal. Without it this page offered a full calendar to staff whose
+          save `rescheduleBooking` then refused — the picker looked available and failed at the end. */}
+      {b.status === "active" && canManage && (
         <RescheduleControls
           slug={slug}
           bookingId={b.id}
