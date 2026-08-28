@@ -5,6 +5,42 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ STATE AS OF 2026-08-28 (later) — inventory feed live
+>
+> The cockpit now receives hourly physical-capacity snapshots. It previously steered spend with no idea
+> whether a market had anything left to sell.
+>
+> | Piece | Where |
+> |---|---|
+> | Structural fill per tour day-of-week × daypart | `src/lib/inventory/structural.ts` |
+> | Near-term sellable capacity, horizon derived per market | `src/lib/inventory/nearTerm.ts` |
+> | Lead time + booking-day → tour-day matrix | `src/lib/inventory/leadTime.ts` |
+> | Blocked tours (a pool with zero serviceable units) | `src/lib/inventory/fleet.ts` |
+> | Hourly emit | `src/app/api/cron/inventory-snapshot/route.ts`, `0 * * * *` |
+> | Receiver + store | `~/ads/SHARED/cockpit/inventory.py` (its own `inventory.db`) |
+>
+> **Reporting only.** The fact pack, `efficiency()` and the analyst prompt are deliberately not wired
+> yet — nothing reaches the model until the data has been correct on its own for a day.
+>
+> #### Three measurement bugs the verification gate caught, all of which had been stated as fact
+> 1. An inner join on bookings averaged only slots that HAD bookings → "Dallas Saturdays run 72% full".
+> 2. Correcting that gave 23%, which was worse: Dallas's schedule was materialised 2026-06-28 but its
+>    first own booking landed 2026-08-18, so seven weeks of unbookable slots were in the denominator.
+>    **Pre-launch slots are not weak demand.** Floored at go-live it reads ~70–74%, matching the operator.
+> 3. The near-term slot filter was `eq(status,'on')` when the default is `'auto'` — silently dropping
+>    almost all inventory. Dallas read as 3 slots on a Saturday that has 14.
+>
+> #### Facts worth not re-deriving
+> * All three markets went live **2026-08-18..21**, so `structural.confidence` is `none` until ~November.
+> * Median booking lead time: **0.2d htown, 0.3d miami, 1.2–1.7d dtown.** A slot 3 days out being empty
+>   is the base case, not weak demand.
+> * Dallas sends **15.9% of all bookings from Thursday to Saturday tours**. Serving-day bids
+>   (`set_ad_schedule`) must never be inferred from a tour-day shortage — see the feed doc.
+> * Miami's UTV pool is **4 units, 4 out of service**: two tours unsellable, 203 slots over 7 days.
+> * Dallas ran **24 ATVs against 22 serviceable** on Aug 22 — either the out-of-service count is stale
+>   or it genuinely oversold. Worth confirming; the near-term half divides by serviceable.
+>
+> ---
 > ### ▶ CORRECTION 2026-08-28 — there are TWO Replit projects
 >
 > `~/takeovers-platform` is **Miami only**: hardcoded Aircall number, business identity and pickup

@@ -73,6 +73,65 @@ separators, and the sender signs `JSON.stringify(envelope)` exactly as transmitt
 | `booking.created` | upsert a ledger row |
 | `booking.cancelled` | `status='cancelled'` on that pk; `revenue()` already filters those out |
 | `booking.checked_in`, `booking.no_show`, `booking.rescheduled`, `communication.requested` | logged, no revenue effect |
+| `inventory.snapshot` | replaces the market's row in `inventory.db` — see below |
+
+## `inventory.snapshot` — physical capacity (added 2026-08-28)
+
+Hourly, one per launched location, from `/api/cron/inventory-snapshot`. Answers the question the spend
+objective could never ask: **is there anything left to sell?** The cockpit's only prior notion of
+"headroom" was media-side (Meta ad frequency, Google impression share lost to budget), so it would
+happily recommend scaling a market whose Saturdays are already turning riders away.
+
+Producer: `src/lib/inventory/` + `src/lib/events/inventorySnapshotPayload.ts`.
+Consumer: `cockpit/inventory.py`, in its **own `inventory.db`** — `/data` holds the only copy of
+revenue truth and has no backup, so an hourly feed does not share that file.
+
+### ⚠️ It SUPERSEDES; it does not accumulate
+
+Two consecutive snapshots are not two facts — the later replaces the earlier. `event_id` dedup is
+therefore **not sufficient**: every snapshot carries a fresh id. Ordering is by `data.captured_at`, and
+an out-of-order write is rejected, with an escape hatch that accepts unconditionally once the stored
+snapshot is >6h old (otherwise one forward clock jump freezes the feed permanently).
+
+For the same reason the sender passes **`queue_on_failure: false`**. Queueing a failed snapshot is
+harmful twice: the retry backoff runs to ~13h, so a 09:00 failure can land at 22:00 and overwrite the
+21:00 snapshot; and the drain is a shared 50-per-minute budget, so a receiver outage would queue dead
+snapshots *ahead of* `booking.created` and delay revenue truth. Dropping is correct — the next tick
+replaces it within the hour and the gap shows up as staleness.
+
+### ⚠️ Nameplate vs serviceable
+
+`resources.out_of_service_count` is a **current** scalar with no history.
+
+* **Structural** (historical fill) divides by **nameplate**. Netting out today's out-of-service count
+  would retroactively rewrite every past Saturday the moment a machine goes into the shop.
+* **Near-term** divides by **serviceable** (`nameplate − out_of_service`), because those machines
+  genuinely cannot be sold today.
+
+Both numbers ship, plus `days_at_or_over_serviceable`, because the gap matters: Dallas's Aug 22 peaked
+at 24 ATVs — 88.9% of its 27 nameplate, so it misses a 90% threshold entirely, and **109% of the 22
+serviceable**, i.e. oversold.
+
+### ⚠️ Empty is the normal state
+
+Median booking lead time is **0.2 days** (Houston), 0.3 (Miami), 1.2–1.7 (Dallas). A slot three days
+out is empty because nobody has booked it *yet*. Read as weak demand it becomes an argument to scale
+into nothing. Every day beyond today carries `low_fill_is_not_a_demand_signal: true` so the caveat
+travels with the number. Only the positive near-term reading — today or tomorrow at capacity — is
+actionable.
+
+### ⚠️ Two different "days"
+
+`lead_time.booking_day_to_tour_day` exists to stop the most expensive available mistake. Google's
+`set_ad_schedule` bids on the day an ad is **served**; capacity is about the day a tour **runs**.
+Dallas sends 15.9% of all bookings from a Thursday to a Saturday tour, so "Saturday is full" must never
+become "bid down Thursday" — that cuts the best-converting day, and those riders book a competitor
+rather than a Monday slot.
+
+### Confidence
+
+All three markets went live 2026-08-18..21, so `structural.confidence` reads **`none`** until roughly
+November. That is honest, not broken. Do not read the cells while it does.
 
 ## Field mapping — and the two that matter
 

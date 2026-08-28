@@ -21,6 +21,7 @@ see the reality check below.
 > | `tour_key`, `customer_type`, flat `email_lower` | Emitted as `tour_id`, `customer_type_id`, nested `data.customer{…}` |
 > | Dead letters queryable from the dashboard | Not built. Query `succeeded_at IS NULL AND attempt_count >= 6` |
 > | `last_attribution_click_id` / `_type` spec'd but never sent | **Now real** (2026-08-28). Both bases ship on `booking.created`; the cockpit stores them as `ref` (last) and `ref_first` (first) |
+> | Six event types emitted | **Seven** (2026-08-28). `inventory.snapshot` — hourly physical-capacity snapshots, absent from §4 entirely. It SUPERSEDES rather than accumulates, so it is the first event type where `event_id` dedup is not sufficient; see `BOOKING_TO_COCKPIT_FEED.md` |
 >
 > **`booking.created` has TWO shapes.** `source_surface: "booking_system"` sends the full payload;
 > `"dashboard"` (operator/manual bookings) once sent only `{booking_id, source}`. Fixed 2026-08-21 —
