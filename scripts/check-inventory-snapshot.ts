@@ -37,6 +37,8 @@ for (const f of [".env.production.local", ".env.local"]) {
 
 async function main() {
   const { structuralUtilisation } = await import("@/lib/inventory/structural");
+  const { nearTermInventory } = await import("@/lib/inventory/nearTerm");
+  const { leadTimeAndMatrix, horizonDaysFor } = await import("@/lib/inventory/leadTime");
   const { fleetForLocation, blockedItems } = await import("@/lib/inventory/fleet");
   const { getDb, locations } = await import("@/lib/db");
   const { eq } = await import("drizzle-orm");
@@ -50,6 +52,19 @@ async function main() {
     console.log("fleet:", fleet.map(f => `${f.name} ${f.serviceableUnits}/${f.nameplateUnits}`).join("  "));
     const blocked = await blockedItems(loc.id, fleet, new Date());
     console.log("blocked:", blocked.length ? blocked.map(b => `${b.itemName} [${b.resourceName}] ${b.slotsAffectedNext7d} slots/7d`).join("; ") : "none");
+    const lt = await leadTimeAndMatrix(loc.id, tz);
+    const horizon = horizonDaysFor(lt.leadTime);
+    console.log(`lead time: median ${lt.leadTime.medianDays}d, p95 ${lt.leadTime.p95Days}d, ${lt.leadTime.within3dPct}% within 3d (n=${lt.leadTime.bookings}) -> horizon ${horizon}d`);
+    console.log("top booking-day -> tour-day flows:",
+      lt.bookingDayMatrix.slice(0,4).map(c => `${c.bookedDowName.slice(0,3)}->${c.tourDowName.slice(0,3)} ${c.shareOfAllPct}%`).join("  "));
+    const nt = await nearTermInventory(loc.id, tz, new Date(), horizon);
+    console.table(nt.days.map(d => ({
+      date: d.localDate, dow: d.dow, "+d": d.offsetDays, slots: d.slotsTotal,
+      gone: d.slotsDeparted, left: d.slotsRemaining, soldout: d.slotsSoldOut,
+      booked_u: d.unitsBooked, max_single: d.maxSellableUnitsSingleSlot,
+      upper_bound: d.sellableUnitsUpperBound, empty_ok: d.lowFillIsNotADemandSignal,
+    })));
+
     const s = await structuralUtilisation(loc.id, tz);
     console.log(`live from ${s.liveFromLocalDate ?? "(never)"} | window ${s.window.fromLocalDate} → ${s.window.toLocalDate} | ${s.weeksObserved}w observed | confidence=${s.confidence.toUpperCase()}`);
     const top = [...s.cells].sort((a,b)=>b.peakUnitsMax-a.peakUnitsMax).slice(0,6);
