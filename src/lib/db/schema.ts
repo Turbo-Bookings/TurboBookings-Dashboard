@@ -1237,6 +1237,18 @@ export const bookings = pgTable(
     // double-insert — this is the importer's only idempotency key.
     externalRef: text("external_ref"),
 
+    // What CLOSED this booking, as opposed to what discovered the customer.
+    //
+    // `customers.first_attribution_click_*` is set on INSERT only, so it holds the click that first
+    // brought a person to us — discovery, once per PERSON. Conversion happens once per PURCHASE: the
+    // same customer can be discovered through Meta and close a later booking through Google.
+    //
+    // Holding both is what stops a demand-creating platform being defunded on last-click ROAS, which
+    // then starves the platform that closes. Null means organic, direct, or a click we could not
+    // capture — never zero. Forward-only; nothing backfills. See migration 0040.
+    lastAttributionClickId: text("last_attribution_click_id"),
+    lastAttributionClickType: text("last_attribution_click_type"),
+
     // Stamped when an operator push alert has been sent for this booking, so a
     // retry or an overlapping cron tick can never notify twice. Nullable, and
     // the send query is ALSO bounded to bookings created in the last few

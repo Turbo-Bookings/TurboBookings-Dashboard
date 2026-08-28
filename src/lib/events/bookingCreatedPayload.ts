@@ -65,6 +65,14 @@ export async function buildBookingCreatedPayload(
     // still carries that attribution.
     first_attribution_click_id: cust?.firstAttributionClickId ?? null,
     first_attribution_click_type: cust?.firstAttributionClickType ?? null,
+    // The closing click, per booking rather than per customer. On THIS path it is null by definition:
+    // an operator typed this booking in, so no ad closed it. Sent anyway so both senders emit one
+    // shape — the receiver should never have to know which surface a booking came from to parse it.
+    //
+    // That distinction is itself a signal worth having downstream: a booking with a first-touch click
+    // and no closing click is one an ad found and a human closed.
+    last_attribution_click_id: b.lastAttributionClickId ?? null,
+    last_attribution_click_type: b.lastAttributionClickType ?? null,
     tour_id: b.itemId,
     tour_display_name: item?.name ?? null,
     scheduled_at: slot?.startsAt?.toISOString() ?? null,
