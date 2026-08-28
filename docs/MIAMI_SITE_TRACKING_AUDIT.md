@@ -85,6 +85,13 @@ with the marketing site — the cookie path carried it. The decorator is the
 FALLBACK for when those cookies are missing, blocked or cleared between visits.
 That is worth having and worth not losing silently, but it is not an outage.
 
+> ⚠️ **The roles reversed on 2026-08-28.** The decorator is now the PRIMARY path and the cookies are
+> the fallback: the booking app reads click ids off the URL first (`clickFromUrl`), because `_fbc` and
+> `_gcl_aw` only exist if the Meta pixel and gtag both loaded and survived ITP. Measured the day
+> before the change, only 44% of revenue carried a click id.
+>
+> So the same outage today WOULD be an outage. Re-read the severity above as historical.
+
 Both now key off `LINKER_DOMAIN`, so they follow wherever the CTAs actually
 point, and the function is renamed `decorateBookingUrl` so the name stops
 implying a FareHarbor-only scope.

@@ -5,6 +5,42 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ STATE AS OF 2026-08-28 — attribution on two bases, TikTok-ready
+>
+> Project **#25 is built** — `bookings.ref` was written from 2026-08-22 and read by nothing; it is now
+> read, on two bases, with TikTok in the data model before its ads launch.
+>
+> | Area | Change |
+> |---|---|
+> | **Two attribution bases** | `customers.first_attribution_click_*` = what DISCOVERED a person (once per person). New `bookings.last_attribution_click_*` (migration **0040**) = what CLOSED a booking (once per purchase). Judged on last click alone, a platform that CREATES demand looks weak, gets defunded, and the closer collapses weeks later with nothing feeding it |
+> | **First-party capture** | `tb_click_first` (never overwritten) + `tb_click_last` (always overwritten), written from the landing URL by proxy. `_fbc`/`_gcl_aw` demoted to legacy fallback — they only exist if the Meta pixel and gtag both loaded and survived ITP |
+> | **`ttclid`** | Captured, forwarded and mapped to `tiktok` across all repos. Attribution is forward-only, so TikTok go-live is a switch, not a deploy |
+> | **`tb_aid` finally issued** | Specified in `VERCEL_PREP §3`, read side built for months, and **0 of 1,440 customers had one** because no site ever issued it. All three marketing sites now do, on the registrable domain |
+> | **Dallas brought to parity** | Had no `ad-tracking.ts` and no decorator (stripped at fork in `23504b6`), so it forwarded nothing and could never capture a `gclid`. Ported, minus the FareHarbor session bridge |
+> | **Cockpit** | `revenue_by_platform(basis)`, `attribution_handoffs()`, and per-platform `CAC_first`/`CAC_last`, over-claim vs the deterministic floor, and a `role_index` re-derived every window. All `advisory_only` |
+>
+> #### The meaning change to know about
+> `ref` used to be built from the storefront's **first-touch** field, so the ledger's only attribution
+> column recorded *discovery* while any consumer would read it as *conversion*. **`ref` now means the
+> last click**, matching how Meta, Google and TikTok all attribute — which is what makes it comparable
+> to their reported numbers. Discovery moved to `ref_first`.
+>
+> #### Guardrails that must not be quietly dropped
+> The `unattributed` bucket is reported and **never allocated** across platforms; every figure ships
+> with coverage; ratios are suppressed below **40%** coverage; everything is advisory-only, so §11a's
+> directional/marginal-shift rule still governs real budget moves.
+>
+> ⚠️ **TikTok is reported but NOT managed.** It is deliberately absent from `platform_mix` and the
+> decision engine: `rules.py` has per-platform generators, the analyst's JSON Schema pins
+> `enum: ["google","meta"]` in three places, and at least six sites do `if google else <assume meta>` —
+> a TikTok proposal would be silently handled as Meta rather than failing loudly. Generalising that is
+> required before TikTok spend is *managed*, not before it is *measured*.
+>
+> ⚠️ **`BookingLinkDecorator` is the PRIMARY capture path, not dead FareHarbor code.** It was built for
+> FareHarbor and it does still work; `LINKER_DOMAIN` follows the booking host. `TRACKING_CUTOVER_PLAYBOOK.md`
+> used to say it "goes inert" after cutover — corrected 2026-08-28. Deleting it now deletes attribution.
+>
+> ---
 > ### ▶ STATE AS OF 2026-08-26 — booking system **v1.5**
 >
 > **v1.5 — scarcity display + the Dallas Glow retime** (live on `main`)

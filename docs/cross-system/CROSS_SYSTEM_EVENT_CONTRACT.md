@@ -20,6 +20,7 @@ see the reality check below.
 > | Secret in `location_secrets` | Read from `process.env` (`BRAIN_WEBHOOK_SECRET ?? REPLIT_WEBHOOK_SECRET`) |
 > | `tour_key`, `customer_type`, flat `email_lower` | Emitted as `tour_id`, `customer_type_id`, nested `data.customer{…}` |
 > | Dead letters queryable from the dashboard | Not built. Query `succeeded_at IS NULL AND attempt_count >= 6` |
+> | `last_attribution_click_id` / `_type` spec'd but never sent | **Now real** (2026-08-28). Both bases ship on `booking.created`; the cockpit stores them as `ref` (last) and `ref_first` (first) |
 >
 > **`booking.created` has TWO shapes.** `source_surface: "booking_system"` sends the full payload;
 > `"dashboard"` (operator/manual bookings) once sent only `{booking_id, source}`. Fixed 2026-08-21 —
@@ -339,7 +340,22 @@ Fires when a payment succeeds and a `bookings` row is finalized.
 }
 ```
 
-**Attribution fields:** Vercel side should compute first-click and last-click IDs from the anonymous_id's touchpoint history if possible. If not available, send null and Replit will reconstruct.
+**Attribution fields — as built, 2026-08-28.** Both bases are now sent, and they come from different
+places because their cardinality differs:
+
+| Field | Source | Scope |
+|---|---|---|
+| `first_attribution_click_*` | `customers`, set on INSERT only | once per **person** — discovery |
+| `last_attribution_click_*` | `bookings`, set per row | once per **purchase** — conversion |
+
+They are resolved at checkout from our own first-party `tb_click_first` / `tb_click_last` cookies,
+written from the landing URL by proxy, with `_fbc` / `_gcl_aw` as a legacy fallback. The original note
+here said Vercel "should compute" these from the `anonymous_id`'s touchpoint history — there is no
+touchpoint history, and there is no Replit receiver to "reconstruct" anything, so that path was never
+available. The cookies are what makes both bases real.
+
+The two are frequently equal, which is meaningful rather than redundant: it says one platform did the
+whole job unaided. Null means organic, direct, or a click we could not capture — never zero.
 
 #### `booking.cancelled`
 

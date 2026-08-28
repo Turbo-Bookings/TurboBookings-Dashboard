@@ -261,9 +261,20 @@ kept sending customers to the old system after cutover), and FareHarbor's
 follow the switch. **Do this grep on Miami too** — it is a better check than
 reading the diff.
 
-`BookingLinkDecorator` is deliberately left alone: it bridges tracking params onto
-a third-party domain, and once the booking app is on our own registrable domain
-the cookies carry natively. It matches nothing and goes inert. Dallas never had one.
+> ⚠️ **Corrected 2026-08-28. This paragraph used to say the decorator "matches nothing and goes
+> inert" once the booking app is on our own domain. That is FALSE and acting on it would delete live
+> attribution.**
+>
+> `LINKER_DOMAIN` is derived from `BOOKING_ORIGIN`, so after a cutover the decorator matches
+> `book.<domain>` links and keeps decorating them. It was briefly true only while the host was pinned
+> to a `fareharbor.com` literal — Houston shipped that way and ran blind for a day (`db51288`).
+>
+> It is now the **primary** capture path, not a fallback: the booking app reads click ids off the URL
+> first (`clickFromUrl`) and treats `_fbc` / `_gcl_aw` as the legacy fallback, precisely because those
+> cookies only exist if the Meta pixel and gtag both loaded and survived ITP.
+>
+> Dallas never had a decorator, which is why it forwarded nothing and could never capture a `gclid` at
+> all. It was ported in on 2026-08-28, minus the FareHarbor-only session bridge.
 
 ### Done — Phase 2 (config)
 
