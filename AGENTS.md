@@ -33,13 +33,20 @@ the `bookingsystem` repo). Current: Sprints A–B done; **next is Sprint C
 - `~/takeovers-site` — Miami marketing site, the template every fork comes from
 - `~/htown-atv-rentals-site` — Houston, first fork of the template
 - `~/takeovers-platform` — local clone of Replit's `Takeovers-Phone-and-SMS-Agent` repo (AI receptionist, the "operations brain" side of the system; long-term unified-platform host). See `~/takeovers-site/docs/unified-platform-integration.md` for the cross-repo contract.
+  > ⚠️ **This clone is MIAMI ONLY** — hardcoded Aircall number, business identity and pickup address,
+  > no tenant column. **Dallas and Houston run on a SECOND Replit project with its own GitHub repo,
+  > not cloned here.** Reading only the local clone and concluding those markets have no phone/SMS
+  > system is wrong — that mistake was made on 2026-08-28. Any measurement taken from
+  > `~/takeovers-platform` describes Miami and nothing else.
+  > **Open:** that second repo is not currently visible in the GitHub account and may need re-pushing
+  > from Replit before it can be read or migrated.
 
 ## Cross-repo responsibility split
 
 - **This dashboard (Vercel)** owns: client-facing portal, catalog + bookings, intake forms, asset library, tracking config, cross-location analytics, the Storefront DB schema, and the outbound event queue + retry cron
 - **`bookingsystem` (Vercel)** owns: the customer-facing booking flow, checkout, and click-ID capture at checkout
 - **Ad cockpit — `~/ads/SHARED` (Railway, Python)** owns: ad + creative intelligence, the revenue ledger, and per-platform ROAS
-- **Replit (`~/takeovers-platform`)** owns: the AI voice/SMS receptionist — **and is a retiring PROTOTYPE**. Its production replacement is the Node platform service on Railway, not yet built
+- **Replit (TWO projects — `~/takeovers-platform` is Miami only; Dallas + Houston have their own)** own: the AI voice/SMS receptionist — **and are retiring PROTOTYPES**. Their production replacement is the Node platform service on Railway, not yet built
 
 If you're touching tracking-config, catalog, bookings, intake forms, or cross-location analytics — this is the right repo.
 If you're touching ads, creative, or ROAS — that's the cockpit (`~/ads/SHARED`), not here.

@@ -5,6 +5,22 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ CORRECTION 2026-08-28 — there are TWO Replit projects
+>
+> `~/takeovers-platform` is **Miami only**: hardcoded Aircall number, business identity and pickup
+> address, no tenant column, last application commit 2026-04-26. **Dallas and Houston run on a
+> SECOND, separate Replit project with its own GitHub repo**, not cloned locally.
+>
+> A session reading only the local clone concluded Dallas and Houston had no phone/SMS system at all.
+> **That was wrong.** Any figure taken from `~/takeovers-platform` — call counts, SMS threads,
+> transcript coverage — describes Miami and nothing else.
+>
+> **Open:** the second project's GitHub repo is not currently visible in the account; it may need
+> re-pushing from Replit before it can be read, planned against, or migrated to Railway. Until then
+> the Dallas/Houston side of the receptionist is undocumented here, and the Railway rebuild cannot be
+> scoped accurately — it has to replace BOTH projects, not one.
+>
+> ---
 > ### ▶ STATE AS OF 2026-08-28 — attribution on two bases, TikTok-ready
 >
 > Project **#25 is built** — `bookings.ref` was written from 2026-08-22 and read by nothing; it is now

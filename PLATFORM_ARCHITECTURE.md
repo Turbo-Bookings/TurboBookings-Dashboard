@@ -27,8 +27,18 @@ payments; Drizzle schema lives here). Vercel / Next.js. Hosts the event-retry cr
   proven; rebuilding = double work. (Cockpit code: `~/ads/SHARED/cockpit/`.)
 
 ## The decision (read this first)
-- The **Replit project (`takeovers-platform`)** — Retell (AI phone agent), Aircall (human reps + SMS),
-  the SMS agent — **stays as-is and serves as the PROTOTYPE.** Do NOT re-architect it in place.
+- **There are TWO Replit projects, not one.** `takeovers-platform` (cloned at `~/takeovers-platform`)
+  serves **Miami only** — its Aircall number, business identity and pickup address are hardcoded, and
+  it has no tenant column. **Dallas and Houston run on a SECOND, separate Replit project with its own
+  GitHub repo**, which is NOT cloned locally and is not the one in `~/takeovers-platform`.
+  > ⚠️ Do not conclude from reading `~/takeovers-platform` that Dallas and Houston have no phone/SMS
+  > system. They do. That inference was made and was wrong (2026-08-28). Anything measured against the
+  > local clone describes **Miami only**.
+  >
+  > **Open:** the second project's GitHub repo is currently not visible in the account and may need
+  > re-pushing from Replit before it can be read, planned against, or migrated.
+- Both Replit projects — Retell (AI phone agent), Aircall (human reps + SMS), the SMS agent —
+  **stay as-is and serve as the PROTOTYPE.** Do NOT re-architect them in place.
 - The **production, multi-tenant version is being built on Railway.** Railway becomes the always-on
   "brains"; Replit retires once the Railway build reaches parity.
 - The ad-management / creative-intelligence tool (the "cockpit", Python, in `ads/SHARED`) deploys to
