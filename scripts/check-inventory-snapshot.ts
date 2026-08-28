@@ -39,6 +39,7 @@ async function main() {
   const { structuralUtilisation } = await import("@/lib/inventory/structural");
   const { nearTermInventory } = await import("@/lib/inventory/nearTerm");
   const { leadTimeAndMatrix, horizonDaysFor } = await import("@/lib/inventory/leadTime");
+  const { buildInventorySnapshotPayload } = await import("@/lib/events/inventorySnapshotPayload");
   const { fleetForLocation, blockedItems } = await import("@/lib/inventory/fleet");
   const { getDb, locations } = await import("@/lib/db");
   const { eq } = await import("drizzle-orm");
@@ -64,6 +65,10 @@ async function main() {
       booked_u: d.unitsBooked, max_single: d.maxSellableUnitsSingleSlot,
       upper_bound: d.sellableUnitsUpperBound, empty_ok: d.lowFillIsNotADemandSignal,
     })));
+
+    const t0 = Date.now();
+    const payload = await buildInventorySnapshotPayload(loc, new Date());
+    console.log(`payload: ${Buffer.byteLength(JSON.stringify(payload))} bytes, built in ${Date.now() - t0}ms`);
 
     const s = await structuralUtilisation(loc.id, tz);
     console.log(`live from ${s.liveFromLocalDate ?? "(never)"} | window ${s.window.fromLocalDate} → ${s.window.toLocalDate} | ${s.weeksObserved}w observed | confidence=${s.confidence.toUpperCase()}`);

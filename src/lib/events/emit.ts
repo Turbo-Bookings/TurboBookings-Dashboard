@@ -28,6 +28,22 @@ export type EmitInput = {
   source_surface: SourceSurface;
   data: Record<string, unknown>;
   occurred_at?: string;
+  /**
+   * Whether a failed send should go on `outbound_event_queue` for the retry cron. Default true.
+   *
+   * Set false for events that SUPERSEDE rather than accumulate — currently `inventory.snapshot`.
+   * Queueing those is actively harmful in two ways:
+   *
+   *   1. The backoff runs out to ~13h, so a snapshot that fails at 09:00 can be delivered at 22:00
+   *      and overwrite the 21:00 one. `event_id` dedup cannot help: every snapshot has a fresh id.
+   *   2. The drain is a shared 50-per-minute budget. A receiver outage would fill the queue with
+   *      dead snapshots queued AHEAD of `booking.created`, so the inventory feed would delay revenue
+   *      truth — the one number the whole spend objective is measured against.
+   *
+   * Dropping is correct for a superseding event: the next tick replaces it within the hour, and the
+   * gap is visible to the receiver as staleness rather than as a wrong number.
+   */
+  queue_on_failure?: boolean;
 };
 
 export const EVENT_VERSION = "1.0";
@@ -83,7 +99,7 @@ export async function emitEvent(input: EmitInput): Promise<void> {
 
   // No receiver configured: queue everything for when one comes online.
   if (!url || !secret) {
-    await enqueueForRetry(envelope, "BRAIN_WEBHOOK_URL or _SECRET not set");
+    await enqueueForRetry(envelope, "BRAIN_WEBHOOK_URL or _SECRET not set", input.queue_on_failure);
     return;
   }
 
@@ -111,12 +127,14 @@ export async function emitEvent(input: EmitInput): Promise<void> {
       await enqueueForRetry(
         envelope,
         `HTTP ${response.status} ${response.statusText}`,
+        input.queue_on_failure,
       );
     }
   } catch (err) {
     await enqueueForRetry(
       envelope,
       err instanceof Error ? err.message : String(err),
+      input.queue_on_failure,
     );
   }
 }
@@ -124,7 +142,17 @@ export async function emitEvent(input: EmitInput): Promise<void> {
 async function enqueueForRetry(
   envelope: Envelope,
   lastError: string,
+  queueOnFailure: boolean = true,
 ): Promise<void> {
+  if (queueOnFailure === false) {
+    // Deliberately dropped, not lost silently — a superseding event replaces itself next tick.
+    console.warn("[emit] dropped (supersedes, not queued)", {
+      event_id: envelope.event_id,
+      event_type: envelope.event_type,
+      lastError,
+    });
+    return;
+  }
   try {
     const db = getDb();
     await db.insert(outboundEventQueue).values({
