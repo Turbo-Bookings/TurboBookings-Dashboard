@@ -992,6 +992,15 @@ history, not a plan. The state blocks at the TOP of this file are the live pick-
 
 ### Open work, in priority order
 
+0. **⚠️ BACK UP THE RAILWAY `/data` VOLUME. It has none.** Single most valuable thing on this list per
+   hour spent. That volume is the ONLY copy of:
+   * `bookings.db` — the revenue ledger the entire 10–16% spend objective is measured against
+   * `journal/proposals.json` + `actions.json` — every decision the cockpit has made, its baseline and
+     after ROAS, and the win/loss playbook the analyst reads before each analysis
+   * `inventory.db` — capacity history, accumulating from 2026-08-28
+   A volume failure loses all of it permanently, and the decision history is exactly the asset that
+   makes the cockpit improve over months. Nothing else here compounds like it. A periodic export to
+   somewhere durable (Blob, S3, even a committed snapshot) is a small job.
 1. **FareHarbor imports cannot be rescheduled** — being fixed. Some bookings kept arriving through
    FareHarbor after cutover, and the desk cannot move them.
 2. **One final FareHarbor import, all three locations.** `npm run import:fh -- --file=<path>
