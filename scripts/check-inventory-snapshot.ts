@@ -71,6 +71,24 @@ async function main() {
     console.log(`payload: ${Buffer.byteLength(JSON.stringify(payload))} bytes, built in ${Date.now() - t0}ms`);
 
     const s = await structuralUtilisation(loc.id, tz);
+
+    // INVARIANT: peak units can never exceed a pool's nameplate.
+    //
+    // Two tours share one ATV pool in every market, so if the roll-up ever SUMMED per-tour bookings
+    // instead of sweeping peak-concurrent, this is where it would show: Dallas would report more than
+    // 27 ATVs simultaneously out. That is the documented bug peakConcurrent exists to prevent (it once
+    // showed 35 Miami ATVs free when 7 were true), and it is silent unless asserted.
+    const nameplateOf = new Map(fleet.map((f) => [f.name, f.nameplateUnits]));
+    const violations = s.cells.filter((c) => {
+      const cap = c.bindingResourceName ? nameplateOf.get(c.bindingResourceName) : undefined;
+      return cap != null && c.peakUnitsMax > cap;
+    });
+    console.log(
+      violations.length
+        ? `  ✗ DOUBLE-COUNT: ${violations.length} cell(s) exceed nameplate — ` +
+            violations.map((v) => `${v.dowName} ${v.daypart} ${v.peakUnitsMax}>${nameplateOf.get(v.bindingResourceName!)}`).join(", ")
+        : `  ✓ no double-counting: every cell's peak is within its pool's nameplate (${s.cells.length} cells checked)`,
+    );
     console.log(`live from ${s.liveFromLocalDate ?? "(never)"} | window ${s.window.fromLocalDate} → ${s.window.toLocalDate} | ${s.weeksObserved}w observed | confidence=${s.confidence.toUpperCase()}`);
     const top = [...s.cells].sort((a,b)=>b.peakUnitsMax-a.peakUnitsMax).slice(0,6);
     console.table(top.map(c => ({

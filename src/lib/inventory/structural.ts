@@ -287,16 +287,22 @@ export async function structuralUtilisation(
   }
 
   // Roll day-level buckets up into (dow × daypart) cells.
+  // Per-resource accumulation, deliberately.
+  //
+  // An earlier version tracked one peak per cell and picked the binding pool by majority vote across
+  // days. Those two can describe DIFFERENT pools: Houston reported a peak of 8 units labelled "UTV"
+  // against a UTV fleet of 1, because the 8 came from a day where ATV was binding while UTV was the
+  // more frequent label. A consumer comparing that peak to that pool's size gets nonsense. Keeping
+  // everything per resource means the reported peak and the reported pool always match.
+  type ResAcc = { name: string; nameplate: number; pcts: number[]; units: number[] };
   type Acc = {
     days: Set<string>;
     slots: number;
-    peakPcts: number[];
-    peakUnits: number[];
+    perResource: Map<string, ResAcc>;
     unitHoursSold: number;
     unitHoursOffered: number;
     slotsAtCapacity: number;
     daysAtOrOverServiceable: number;
-    bindingCounts: Map<string, number>;
   };
   const acc = new Map<string, Acc>();
 
@@ -307,13 +313,11 @@ export async function structuralUtilisation(
       a = {
         days: new Set(),
         slots: 0,
-        peakPcts: [],
-        peakUnits: [],
+        perResource: new Map(),
         unitHoursSold: 0,
         unitHoursOffered: 0,
         slotsAtCapacity: 0,
         daysAtOrOverServiceable: 0,
-        bindingCounts: new Map(),
       };
       acc.set(key, a);
     }
@@ -334,8 +338,6 @@ export async function structuralUtilisation(
 
     // Peak is per resource; the binding one is whichever ran hottest against its own nameplate.
     let dayPeakPct = 0;
-    let dayPeakUnits = 0;
-    let binding: string | null = null;
     let hitServiceable = false;
     for (const [resourceId, intervals] of b.usage) {
       const pool = byResource.get(resourceId);
@@ -352,11 +354,14 @@ export async function structuralUtilisation(
       );
       if (pool.serviceableUnits > 0 && peak >= pool.serviceableUnits) hitServiceable = true;
       const pct = (100 * peak) / pool.nameplateUnits;
-      if (pct > dayPeakPct) {
-        dayPeakPct = pct;
-        dayPeakUnits = peak;
-        binding = pool.name;
+      if (pct > dayPeakPct) dayPeakPct = pct;
+      let ra = a.perResource.get(resourceId);
+      if (!ra) {
+        ra = { name: pool.name, nameplate: pool.nameplateUnits, pcts: [], units: [] };
+        a.perResource.set(resourceId, ra);
       }
+      ra.pcts.push(pct);
+      ra.units.push(peak);
       // Machine-hours: each booking's units for as long as it overlaps the daypart.
       for (const iv of intervals) {
         const overlapMs =
@@ -376,11 +381,8 @@ export async function structuralUtilisation(
       if (largest) a.unitHoursOffered += largest.nameplateUnits * openHours;
     }
 
-    a.peakPcts.push(dayPeakPct);
-    a.peakUnits.push(dayPeakUnits);
     if (dayPeakPct >= SATURATION_PCT) a.slotsAtCapacity += 1;
     if (hitServiceable) a.daysAtOrOverServiceable += 1;
-    if (binding) a.bindingCounts.set(binding, (a.bindingCounts.get(binding) ?? 0) + 1);
   }
 
   const cells: StructuralCell[] = [];
@@ -388,9 +390,16 @@ export async function structuralUtilisation(
     for (const daypart of DAYPARTS) {
       const a = acc.get(cellKey(dow, daypart));
       if (!a || a.days.size === 0) continue; // never offered — omitted, never reported as 0% demand
-      const mean = a.peakPcts.reduce((s, v) => s + v, 0) / a.peakPcts.length;
-      const binding =
-        [...a.bindingCounts.entries()].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null;
+      // The binding pool is the one that ran hottest against its OWN nameplate across the window, and
+      // every peak figure below is that pool's — so `peak_units_max` can always be compared against
+      // `binding_resource_name`'s fleet size.
+      const resources = [...a.perResource.values()].filter((r) => r.pcts.length > 0);
+      const bindingRes =
+        resources.sort((x, y) => Math.max(...y.pcts) - Math.max(...x.pcts))[0] ?? null;
+      const pcts = bindingRes?.pcts ?? [0];
+      const units = bindingRes?.units ?? [0];
+      const mean = pcts.reduce((sum, v) => sum + v, 0) / pcts.length;
+      const binding = bindingRes?.name ?? null;
       cells.push({
         dow,
         dowName: DOW_NAMES[dow],
@@ -398,10 +407,9 @@ export async function structuralUtilisation(
         daysObserved: a.days.size,
         slotsObserved: a.slots,
         peakFleetPctMean: Math.round(mean * 10) / 10,
-        peakFleetPctMax: Math.round(Math.max(...a.peakPcts) * 10) / 10,
-        peakUnitsMean:
-          Math.round((a.peakUnits.reduce((x, y) => x + y, 0) / a.peakUnits.length) * 10) / 10,
-        peakUnitsMax: Math.max(...a.peakUnits),
+        peakFleetPctMax: Math.round(Math.max(...pcts) * 10) / 10,
+        peakUnitsMean: Math.round((units.reduce((x, y) => x + y, 0) / units.length) * 10) / 10,
+        peakUnitsMax: Math.max(...units),
         unitHoursSold: Math.round(a.unitHoursSold * 10) / 10,
         unitHoursOffered: Math.round(a.unitHoursOffered * 10) / 10,
         fillPct:
