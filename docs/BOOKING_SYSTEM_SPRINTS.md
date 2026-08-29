@@ -19,8 +19,38 @@
 > | Hourly emit | `src/app/api/cron/inventory-snapshot/route.ts`, `0 * * * *` |
 > | Receiver + store | `~/ads/SHARED/cockpit/inventory.py` (its own `inventory.db`) |
 >
-> **Reporting only.** The fact pack, `efficiency()` and the analyst prompt are deliberately not wired
-> yet — nothing reaches the model until the data has been correct on its own for a day.
+> #### Consumption side — 6 of 7 steps done (updated 2026-08-29)
+>
+> | Step | Piece | State |
+> |---|---|---|
+> | 1 | Compute + emit hourly | ✅ live |
+> | 2 | `inventory.summary()` — downsampled view | ✅ live, 15 tests |
+> | 3 | `pack["inventory"]` in the fact pack | ✅ live |
+> | 4 | `capacity` key on `efficiency()` | ✅ live |
+> | 5 | Freshness recomputed at READ (the pack caches 12h) | ✅ live, verified |
+> | 6 | Capacity-stale alert, below revenue-stale | ✅ live |
+> | **7** | **Analyst prompt — `cockpit/analyst.py::_SYSTEM`** | ⛔ **NOT WRITTEN** |
+>
+> ⛔ **The model still has no idea inventory exists.** Steps 3–6 are inert plumbing by design; nothing
+> reaches the analyst until the feed has run a clean 24h. **Step 7 is the entire remaining scope of
+> this phase.** It must say: physical capacity ≠ media headroom; **veto only** (may block or downgrade
+> a scale, never justify one, never justify a cut); an empty near-term slot is NORMAL, not weak demand;
+> and a tour-day shortage may never become a serving-day bid change.
+>
+> ⚠️ **Also decide `booking_timing_heatmap` in that same pass** — computed, shipped in every fact pack,
+> read by nothing. Recommendation: drop it from the pack, keep the function. Full reasoning in the feed
+> doc. Doing nothing is the bad option — a second dead fact makes the pack look decorative.
+>
+> #### A fourth measurement bug, caught by an invariant test
+> `peak_units_max` was the max across days while `binding_resource_name` was the most FREQUENT across
+> days — different pools. Houston reported a **peak of 8 against a "UTV" fleet of 1**. Not a
+> double-count; the two fields simply described different things while inviting comparison. Fixed by
+> accumulating per resource (`structural.ts`) and now asserted by `scripts/check-inventory-snapshot.ts`.
+> **Run that script after any change to the producer.** All 63 cells across three markets pass.
+>
+> #### The feed caught a real-world repair unprompted
+> Miami's UTV pool went **0/4 → 3/4 serviceable** overnight 2026-08-29 (`updated_at 03:34`). The 203
+> blocked slots are largely resolved. Nobody told the system; it observed it.
 >
 > #### Three measurement bugs the verification gate caught, all of which had been stated as fact
 > 1. An inner join on bookings averaged only slots that HAD bookings → "Dallas Saturdays run 72% full".
@@ -36,7 +66,9 @@
 >   is the base case, not weak demand.
 > * Dallas sends **15.9% of all bookings from Thursday to Saturday tours**. Serving-day bids
 >   (`set_ad_schedule`) must never be inferred from a tour-day shortage — see the feed doc.
-> * Miami's UTV pool is **4 units, 4 out of service**: two tours unsellable, 203 slots over 7 days.
+> * Miami's UTV pool was **4 units, 4 out of service** (two tours unsellable, 203 slots over 7 days);
+>   **3 of 4 were repaired overnight 2026-08-29.** Kept here because it is the worked example of
+>   why `blocked_items` is the sharpest signal in the payload — spend was reaching unsellable tours.
 > * Dallas ran **24 ATVs against 22 serviceable** on Aug 22 — either the out-of-service count is stale
 >   or it genuinely oversold. Worth confirming; the near-term half divides by serviceable.
 >
@@ -1009,18 +1041,52 @@ history, not a plan. The state blocks at the TOP of this file are the live pick-
    > inventory snapshots are `queue_on_failure: false` by design, replaced by the next hourly tick.
    > This was an AVAILABILITY event, not a data-loss one - but it is the exact failure shape this
    > item exists for, and it landed on the storage layer holding the only copy.
-1. ~~**FareHarbor imports cannot be rescheduled.**~~ **DONE 2026-08-28.** Two money bugs, not a UI
-   gap: `rescheduleBooking` rebuilt `totalCents` from the catalog (repricing a legacy FareHarbor
-   total) and `syncPlatformFee` charged our 6% on an imported booking we never sold.
-2. ~~**One final FareHarbor import, all three locations.**~~ **DONE 2026-08-28** - 22 bookings across
-   the three markets. Command retained below; re-runs stay safe. `npm run import:fh -- --file=<path>
-   --slug=<dtown|htown|miami>` — dry run by default, `--commit` to write. One CSV per location because
-   `--slug` scopes the run; filenames are arbitrary. **Re-importing an overlapping export is safe** —
-   the planner loads existing `external_ref`s and reports already-imported rows instead of duplicating
-   them. **Never let imported bookings reach the cockpit** (see the FareHarbor lock above).
+1. **⛔ STEP 7 — the analyst prompt block. THE NEXT BUILD ACTION.** `cockpit/analyst.py::_SYSTEM`.
+   Steps 1-6 of the inventory feed are live but INERT: the model has never been told inventory exists.
+   Held deliberately until the feed had a clean 24h — from 2026-08-29 ~02:00 UTC it has that (minus one
+   snapshot lost to the Railway outage; the gap is the incident, not a bug). Must state, in this order:
+   physical capacity ≠ media headroom · **veto only** (may block or downgrade a scale, never justify one
+   and never justify a cut) · an empty near-term slot is the NORMAL state, not weak demand · a tour-day
+   shortage may never become a serving-day bid change. Deploy with `railway up`, not git.
+2. **⛔ Decide `booking_timing_heatmap` — in the same pass as step 7.** Computed in `cockpit/bookings.py`,
+   embedded in every fact pack as `pack["fareharbor"]["booking_timing_heatmap"]` (~168 numbers), read by
+   nothing. **Recommendation: drop it from the pack, keep the function**, with a comment saying it
+   belongs to serving-day work if that is ever built. Wiring it is defensible too. Doing nothing is not:
+   a second never-read fact beside the new inventory block teaches the model the pack is decorative.
 3. **Four tours whose low-stock ceiling is at or below the default 5** need their threshold tuned or
    the message fires on empty slots: dtown Night Glow, htown Buggy, both miami UTV tours.
-4. **Miami's 4 UTVs are all marked out of service** — either wrong, or those tours are unsellable.
+4. ~~**Miami's 4 UTVs are all marked out of service.**~~ **Largely resolved 2026-08-29** — 3 of 4 were
+   repaired overnight and the feed observed it unprompted. Re-check the remaining 1.
+5. **Dallas ran 24 ATVs against 22 serviceable on 2026-08-22.** Either `out_of_service_count` is stale
+   or the day genuinely oversold. Operational, not code — but the near-term half divides by serviceable,
+   so a stale count biases every near-term reading in that market.
+6. **FareHarbor reminder emails for the 22 imported bookings** — imported bookings do not enter the
+   normal reminder path.
+7. **Emit `discount_code` on `booking.created`.** Specified in the event contract §4, never emitted.
+   Without it the cockpit can recommend a midweek offer and have no way to tell whether it worked —
+   which is the whole point of the offer layer. One field, same shape as the attribution fields.
+8. **`bookingsystem` dependabot residue** — the dashboard and the sites are clean after the Next 16.3.3
+   upgrade; the booking repo still has open advisories.
+
+### Completed 2026-08-28/29 — do not re-open
+
+* **FareHarbor imports could not be rescheduled.** Two MONEY bugs, not a UI gap: `rescheduleBooking`
+  rebuilt `totalCents` from the catalog (repricing a legacy FareHarbor total) and `syncPlatformFee`
+  charged our 6% on an imported booking we never sold. An earlier agent blamed an empty slot picker;
+  that was wrong — every tour had hundreds of pickable slots. **Verify against live data before
+  accepting a root cause.**
+* **Final FareHarbor import, all three locations** — 22 bookings. `npm run import:fh --
+  --file=<path> --slug=<dtown|htown|miami>`; dry run by default, `--commit` to write, one CSV per
+  location. **Re-importing an overlapping export is safe** — the planner reports already-imported
+  rows rather than duplicating them. **Never let imported bookings reach the cockpit.**
+* **Reschedule missing for one rep** — `CapabilitiesProvider` wrapped only `{children}`, not
+  `LocationShell`, so the toolbar rendered with no capabilities. Misdiagnosed twice as a role problem
+  before the owner pointed out the rep already had manager access on other bookings.
+* **Next.js 16.3.3 across five repos** — 4 high-severity advisories → 0 in this repo and the sites.
+* **Preview database restored** (~96 days stale) and the dependabot advisories cleared.
+* **Attribution project #25** — two bases (first + last click), `ttclid`/TikTok in the data model
+  before launch, `tb_aid` finally issued (was 0 of 1,446).
+* **Inventory feed steps 1-6** — see the state block at the top of this file. **Step 7 is NOT done.**
 
 ### Parked, decided but not built
 

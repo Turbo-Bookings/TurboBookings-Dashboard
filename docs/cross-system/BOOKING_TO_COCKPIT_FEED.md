@@ -133,6 +133,41 @@ rather than a Monday slot.
 All three markets went live 2026-08-18..21, so `structural.confidence` reads **`none`** until roughly
 November. That is honest, not broken. Do not read the cells while it does.
 
+### Consumption side — what reads this (state 2026-08-29)
+
+The producer and the store are done. The consumption side is done **except the last step**:
+
+| Step | Piece | State |
+|---|---|---|
+| 1 | Compute + emit hourly (storefront) | ✅ live |
+| 2 | `inventory.summary(market)` — downsampled, not 63 raw cells | ✅ live |
+| 3 | `pack["inventory"]` in the fact pack | ✅ live |
+| 4 | `capacity` key on `efficiency()` | ✅ live |
+| 5 | Freshness recomputed at read (the pack caches 12h, a baked age would lie) | ✅ live |
+| 6 | Capacity-stale alert, chained below revenue-stale | ✅ live |
+| **7** | **Analyst prompt block — `cockpit/analyst.py::_SYSTEM`** | ⛔ **not written** |
+
+**Until step 7 exists, the model has never been told inventory exists.** Steps 3–6 are inert
+plumbing. That is intentional: nothing reaches the model until the feed has run a clean 24 hours.
+
+### ⚠️ Open decision — `booking_timing_heatmap`
+
+`cockpit/bookings.py` computes an hour × day-of-week grid of when bookings are MADE (~168 numbers),
+embeds it in the fact pack as `pack["fareharbor"]["booking_timing_heatmap"]`, and **nothing reads it** —
+not the analyst prompt, not the UI. It predates the inventory work.
+
+Decide it in the same pass as step 7, because the choice interacts with it:
+
+* **Wire it** — the natural use is serving-day ad scheduling (people book Thursday evening → serve
+  Thursday evening). But that lever is deliberately deferred (see "two different days" above), so it
+  would be a fact with no permitted action attached.
+* **Remove it from the fact pack, keep the function** — ⭐ *recommended*. It is ~168 numbers of noise
+  in every briefing, and it costs a future session real time to work out whether it is load-bearing.
+  Leave a comment saying it belongs with the serving-day work if that is ever built.
+
+Either is fine. Doing nothing is the one bad option: shipping a second never-read fact beside the
+inventory block sets the precedent that facts in the pack are decorative.
+
 ## Field mapping — and the two that matter
 
 `cockpit/turbobookings.py :: parse_booking_created`

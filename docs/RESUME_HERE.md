@@ -8,14 +8,64 @@ restating them, because a prompt that duplicates the docs goes stale the moment 
 ## The prompt
 
 ```
-Read docs/BOOKING_SYSTEM_SPRINTS.md (the ⭐ RESUME HERE block at the top) and
-PLATFORM_ARCHITECTURE.md before doing anything. Then tell me the current state
-and what you think the next action is, and wait for me to confirm before you
-build.
+Read docs/BOOKING_SYSTEM_SPRINTS.md (the ⭐ RESUME HERE block at the top, and the
+"Open work, in priority order" list near the bottom) before doing anything.
+
+We are mid-phase on the inventory feed to the ad cockpit. Steps 1-6 are live but
+INERT — the analyst has never been told inventory exists. Step 7, the analyst
+prompt block, is the next build action, and item 2 (booking_timing_heatmap) is
+an open decision to settle in the same pass.
+
+This is cockpit work: also read ~/ads/SHARED/AGENTS.md and
+docs/cross-system/BOOKING_TO_COCKPIT_FEED.md. The cockpit deploys with
+`railway up`, NOT git.
+
+Before writing anything, confirm the feed is still healthy
+(curl -s https://cockpit.turbobookings.net/api/health) and tell me the current
+state and your proposed next action. Wait for me to confirm before you build.
 ```
 
-That's it. `CLAUDE.md` already auto-loads `AGENTS.md` and `PLATFORM_ARCHITECTURE.md`, so the
-architecture arrives on its own.
+`CLAUDE.md` auto-loads `AGENTS.md` and `PLATFORM_ARCHITECTURE.md`, so the architecture arrives on its
+own. Once the inventory phase is closed, drop the middle two paragraphs and the prompt goes back to
+the short generic form: *"Read the ⭐ RESUME HERE block, tell me the state and the next action, wait."*
+
+---
+
+## ▶ Where things stand — 2026-08-29 (CURRENT; the two sections further down are history)
+
+**The whole platform is live and healthy.** All three markets on our own booking system, cockpit
+steering spend, revenue + attribution + capacity all feeding it.
+
+Verified in-browser 2026-08-29 02:10 UTC:
+
+| Market | Efficiency 7D | ROAS 30D | Spend 7D | True revenue 7D | Review cards |
+|---|---|---|---|---|---|
+| Miami | 16.1% | 4.3x | $10,848 | $67,547 | 4 |
+| Dallas | 5.5% | 6.4x | $4,195 | $76,944 | 1 |
+| Houston | 16.2% | 4.9x | $16,261 | $100,386 | 11 |
+
+Miami and Houston sit at the TOP of the 10-16% efficiency band; Dallas has headroom but the cockpit is
+correctly refusing to scale it into creative fatigue. Dallas still has no Google Ads account — the UI
+shows `Google — no account`, which is right, not a bug.
+
+### The one thing in flight
+
+**Inventory feed, step 7 of 7.** Steps 1-6 (compute → emit → store → summarise → fact pack →
+`efficiency()` capacity key → freshness → stale alert) are live. **Nothing reaches the model yet** —
+that is step 7, `cockpit/analyst.py::_SYSTEM`, deliberately held until the feed had run a clean 24h.
+It now has. Alongside it, settle `booking_timing_heatmap` (item 2 in the open-work list).
+
+### Two operational facts from the 2026-08-29 Railway incident
+
+1. **`railway status` lies during a platform incident.** It reported `Building` / `0/1 replicas` while
+   the app served perfectly. **`/api/health` is the truthful signal**, not the CLI.
+2. **`railway redeploy` does NOT clear a wedged rollout during a Railway incident** — it re-queues
+   behind the same backlog. Check <https://status.railway.com> FIRST; if there is an active incident in
+   US West (our region is `sfo`), wait rather than redeploy.
+
+Blast radius that night was zero, by design: `booking.created` rides the retry queue
+(`queue_on_failure` defaults true) while inventory snapshots set it `false` and are replaced by the
+next hourly tick. One snapshot (02:00 UTC) was lost — that gap is the incident, not a bug.
 
 **If the session is about the ad cockpit**, add:
 
@@ -26,7 +76,7 @@ turbobookings-dashboard/docs/cross-system/BOOKING_TO_COCKPIT_FEED.md first.
 
 ---
 
-## Where things stand (2026-08-22)
+## Where things stand (2026-08-22) — HISTORY
 
 All three locations run on our own booking system; FareHarbor is retired as a booking surface. The
 cockpit revenue feed is connected and verified — this was the last missing piece of the ad loop.
@@ -49,7 +99,7 @@ cockpit revenue feed is connected and verified — this was the last missing pie
 | `takeovers-site` + forks | Marketing sites | Vercel, git push |
 | `~/takeovers-platform` | AI voice/SMS receptionist — **retiring prototype** | Replit |
 
-## Five things that cost real time — don't re-derive them
+## Six things that cost real time — don't re-derive them
 
 1. **The cockpit does not deploy from GitHub.** `railway status --json` → `source: None`. Pushing to
    `main` deploys nothing. `cd ~/ads/SHARED && railway up --detach --yes`.
@@ -62,6 +112,11 @@ cockpit revenue feed is connected and verified — this was the last missing pie
    *signs with*. `BRAIN_WEBHOOK_*` are the real names now.
 5. **`vercel env pull` returns sensitive values as empty strings.** Any script needing a real secret
    must run inside Vercel, not on a dev machine. This has bitten twice.
+6. **When the cockpit 502s, check <https://status.railway.com> BEFORE touching anything.** On
+   2026-08-29 it was down ~50 min on a Railway US-West storage incident, not our code. `railway status`
+   reported `Building` / `0/1 replicas` while the app was serving fine — trust `/api/health`, not the
+   CLI. And `railway redeploy` does not clear a wedge during an incident; it re-queues behind the same
+   backlog.
 
 ## Editing PLATFORM_ARCHITECTURE.md
 
@@ -78,7 +133,7 @@ npm run arch:sync -- --write
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried
 three different status dates and disagreed about whether the booking system was live.
 
-## Where things stand (2026-08-26)
+## Where things stand (2026-08-26) — HISTORY
 
 Booking system **v1.5**. All three locations live. Everything below is on `main` and in production.
 
