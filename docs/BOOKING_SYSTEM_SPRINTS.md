@@ -1001,9 +1001,19 @@ history, not a plan. The state blocks at the TOP of this file are the live pick-
    A volume failure loses all of it permanently, and the decision history is exactly the asset that
    makes the cockpit improve over months. Nothing else here compounds like it. A periodic export to
    somewhere durable (Blob, S3, even a committed snapshot) is a small job.
-1. **FareHarbor imports cannot be rescheduled** — being fixed. Some bookings kept arriving through
-   FareHarbor after cutover, and the desk cannot move them.
-2. **One final FareHarbor import, all three locations.** `npm run import:fh -- --file=<path>
+   > **Evidence, 2026-08-29 ~01:12-02:00 UTC:** Railway ran a US-West **storage** partial outage
+   > ("problems starting up, slow or unavailable storage") plus a deploy-worker backlog. The cockpit
+   > sat at `0/1 replicas` for ~50 min and `railway redeploy` did NOT clear it — during a platform
+   > incident a redeploy just re-queues behind the same backlog, so the correct action was to wait.
+   > Nothing was lost: `booking.created` rides the retry queue (`queue_on_failure` defaults true) and
+   > inventory snapshots are `queue_on_failure: false` by design, replaced by the next hourly tick.
+   > This was an AVAILABILITY event, not a data-loss one - but it is the exact failure shape this
+   > item exists for, and it landed on the storage layer holding the only copy.
+1. ~~**FareHarbor imports cannot be rescheduled.**~~ **DONE 2026-08-28.** Two money bugs, not a UI
+   gap: `rescheduleBooking` rebuilt `totalCents` from the catalog (repricing a legacy FareHarbor
+   total) and `syncPlatformFee` charged our 6% on an imported booking we never sold.
+2. ~~**One final FareHarbor import, all three locations.**~~ **DONE 2026-08-28** - 22 bookings across
+   the three markets. Command retained below; re-runs stay safe. `npm run import:fh -- --file=<path>
    --slug=<dtown|htown|miami>` — dry run by default, `--commit` to write. One CSV per location because
    `--slug` scopes the run; filenames are arbitrary. **Re-importing an overlapping export is safe** —
    the planner loads existing `external_ref`s and reports already-imported rows instead of duplicating
