@@ -69,9 +69,24 @@
 > | # | Step | State |
 > |---|---|---|
 > | 1 | Apply `0041` (nullable, additive, index untouched) | ✅ applied to prod |
-> | 2 | Dashboard `develop` → preview → `main` | code done, **not deployed** |
-> | 3 | Storefront `develop` → preview → `main` | code done, **not deployed** |
-> | 4 | `npm run miami:utv-split -- --commit` | ⛔ **NOT RUN** — do it only after 2 and 3 are in production |
+> | 2 | Dashboard `develop` → preview → `main` | ✅ live (`4713b68`) |
+> | 3 | Storefront `develop` → preview → `main` | ✅ live (`9e667b0`) |
+> | 4 | `npm run miami:utv-split -- --commit` | ✅ **RUN 2026-08-30** |
+>
+> **Post-cutover state, verified on the live site:** `fleet: ATVs 36/36  2-Seat UTVs 3/3
+> 4-Seat UTVs 0/1`, `blocked: none`, and both UTV tours reported as **partially blocked**
+> (4-Seat dead, 2-Seat still selling — 105 and 98 slots/7d). On
+> `book.takeoversmiamiatvrentals.com` the 1-Hour UTV Tour shows `2-Seat UTV $225 · Only 3 left`
+> with a live stepper and `4-Seat UTV $300 · Sold out` struck through, and the slot itself is
+> **not** sold out. Time pills print no count, because with the options at 3 and 0 no single
+> number is honest.
+>
+> ⚠️ **The oversell hole was real and was exercised.** Between the pre-flight audit (2026-08-29,
+> zero UTV bookings ever) and the cutover, a customer bought **1 × 4-Seat UTV for 2026-08-30
+> 21:00** — while the only four-seater was, and still is, out of service. The undifferentiated
+> pool could not tell the sizes apart: it saw "a UTV" against 3 serviceable and sold it. Operator
+> confirmed the machine is genuinely down; **the sales team is rescheduling that booking.** Nothing
+> can be sold into that pool now.
 >
 > Steps 2 and 3 change no numbers (see the audits), which is what makes this safe on live tours with a
 > 0.2-day median booking lead time. The script hard-aborts if any live checkout hold exists on the UTV

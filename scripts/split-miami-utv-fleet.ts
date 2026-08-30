@@ -22,6 +22,7 @@
  * Reversal (also one transaction): recreate "UTVs" with max 4 / oos 1, repoint the four
  * resource_requirements rows back to it, delete the two new pools.
  */
+import { readFileSync } from "node:fs";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { withTxn, type Tx } from "../src/lib/db/pool";
 import {
@@ -31,6 +32,18 @@ import {
   resourceRequirements,
   resources,
 } from "../src/lib/db/schema";
+
+// Same env loading as scripts/check-inventory-snapshot.ts, so this runs the same way as every
+// other script here rather than needing the connection string passed in by hand.
+for (const f of [".env.production.local", ".env.local"]) {
+  try {
+    const raw = readFileSync(f, "utf8");
+    for (const key of ["DATABASE_URL", "DATABASE_URL_UNPOOLED"]) {
+      const m = raw.match(new RegExp(`^${key}="?([^"\\n]+)"?`, "m"));
+      if (m?.[1] && !process.env[key]) process.env[key] = m[1];
+    }
+  } catch {}
+}
 
 const COMMIT = process.argv.includes("--commit");
 const SLUG = "miami";
