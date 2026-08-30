@@ -1,7 +1,15 @@
 import "server-only";
 import { and, asc, count, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { DateTime } from "luxon";
-import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import {
+  bestTypeRemaining,
+  cartFits,
+  fixedRemaining,
+  remainingByType,
+  slotRemaining,
+  type Cart,
+} from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItem, withUsage } from "@/lib/booking/pools";
 import { overlappingResourceUsage } from "@/lib/availability/resourceUsage";
 import {
   availabilities,
@@ -10,8 +18,6 @@ import {
   bookings,
   getDb,
   items,
-  resourceRequirements,
-  resources,
 } from "@/lib/db";
 
 // Generated bookable slots (concrete availabilities). Read side for the
@@ -175,11 +181,24 @@ export async function getSlot(
  * it as a callable surface that took a raw location id and checked nothing — for no benefit, since
  * both of its callers are already-guarded actions in other files.
  */
+export type OpenSlot = {
+  id: string;
+  startsAt: Date;
+  /** Total vehicles sellable across every option. NOT a booking-fits test — see `fits`. */
+  remaining: number;
+  /** Standalone "N left" per option. Never sum these: options sharing a pool double-count. */
+  perType: { customerTypeId: string; remaining: number }[];
+  /** Whether `cart` (or, with no cart, anything at all) actually fits on this slot. */
+  fits: boolean;
+};
+
 export async function openSlotsForItem(
   locationId: string,
   itemId: string,
   days = 60,
-): Promise<{ id: string; startsAt: Date; remaining: number }[]> {
+  /** The booking being moved, as customer_type_id -> units. Makes `fits` exact. */
+  cart?: Cart,
+): Promise<OpenSlot[]> {
   const db = getDb();
   const item = (
     await db
@@ -215,21 +234,13 @@ export async function openSlotsForItem(
   const bySlot = new Map<string, number>();
   for (const b of booked) bySlot.set(b.availabilityId, (bySlot.get(b.availabilityId) ?? 0) + b.qty);
 
-  let pools: { resourceId: string; max: number; oos: number; maxQ: number }[] = [];
-  if (item.capacityMode === "resource_based") {
-    const rr = await db
-      .select({ rr: resourceRequirements, r: resources })
-      .from(resourceRequirements)
-      .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-      .where(eq(resourceRequirements.itemId, itemId));
-    const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-    for (const { rr: req, r } of rr) {
-      const cur = byRes.get(r.id);
-      if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-      else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-    }
-    pools = [...byRes.entries()].map(([resourceId, v]) => ({ resourceId, ...v }));
-  }
+  // Raw pools + per-customer-type requirements. Deliberately NOT collapsed to one row per
+  // resource: two options drawing on DIFFERENT pools (Miami's 2-Seat and 4-Seat UTVs) are
+  // alternatives, and collapsing them made the scarcer one cap the whole tour.
+  const { pools, requirements } =
+    item.capacityMode === "resource_based"
+      ? await poolsAndRequirementsForItem(itemId)
+      : { pools: [], requirements: [] };
 
   // Shared-pool usage: peak concurrent use of each resource by EVERY tour overlapping the slot, not
   // just this one. Without it, two tours on the same machines each see the whole fleet as free.
@@ -243,18 +254,36 @@ export async function openSlotsForItem(
 
   return slots.map(({ a, cap }) => {
     const bk = bySlot.get(a.id) ?? 0;
-    const slotUsage = usage.get(a.id);
-    const remaining =
-      item.capacityMode === "fixed"
-        ? fixedRemaining(a.capacityOverride ?? cap, bk)
-        : resourceRemaining(
-            pools.map<ResourcePool>((p) => ({
-              maxConcurrentUses: p.max,
-              outOfServiceCount: p.oos,
-              maxQuantityConsumed: p.maxQ,
-              consumed: slotUsage?.get(p.resourceId) ?? 0,
-            })),
-          );
-    return { id: a.id, startsAt: a.startsAt, remaining };
+    if (item.capacityMode === "fixed") {
+      const remaining = fixedRemaining(a.capacityOverride ?? cap, bk);
+      return {
+        id: a.id,
+        startsAt: a.startsAt,
+        remaining,
+        perType: [],
+        fits: cart ? bk + cartSize(cart) <= (a.capacityOverride ?? cap ?? 0) : remaining > 0,
+      };
+    }
+    const live = withUsage(pools, usage.get(a.id));
+    return {
+      id: a.id,
+      startsAt: a.startsAt,
+      // Total vehicles still sellable across the tour's options. Display only.
+      remaining: slotRemaining(live, requirements),
+      perType: [...remainingByType(live, requirements)].map(([customerTypeId, remaining]) => ({
+        customerTypeId,
+        remaining,
+      })),
+      // With a cart in hand this is exact — a booking of one four-seater needs a slot with a free
+      // four-seater, not merely a slot with three free two-seaters. Without one, fall back to
+      // "anything at all can be sold here", which is a max over options and never a min.
+      fits: cart ? cartFits(cart, live, requirements) : bestTypeRemaining(live, requirements) > 0,
+    };
   });
+}
+
+function cartSize(cart: Cart): number {
+  let n = 0;
+  for (const q of cart.values()) n += q;
+  return n;
 }

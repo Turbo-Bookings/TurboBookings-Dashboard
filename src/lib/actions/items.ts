@@ -758,16 +758,17 @@ export async function saveItemResourceRequirements(
     existing.map((r) => [`${r.customerTypeId}:${r.resourceId}`, r]),
   );
 
-  // Diff: delete cleared cells, insert new ones, update changed quantities.
-  // One statement per change, mirroring the pricing save (neon-http has no
-  // multi-statement transaction); each diff op is independently idempotent.
-  for (const [key, row] of existingByKey) {
-    if (!desired.has(key)) {
-      await db
-        .delete(resourceRequirements)
-        .where(eq(resourceRequirements.id, row.id));
-    }
-  }
+  // Diff: insert new cells and update changed quantities FIRST, then delete cleared ones.
+  // One statement per change, mirroring the pricing save (neon-http has no multi-statement
+  // transaction); each diff op is independently idempotent.
+  //
+  // ⚠️ Order matters, and it is the opposite of the obvious one. Deletes used to run first, so
+  // moving a rider type from one pool to another — exactly what splitting a fleet into two vehicle
+  // sizes looks like from this grid — left a window where that type had NO requirement row. A type
+  // with no requirement row consumes nothing, and the capacity math is only ever as tight as the
+  // rows it can see, so for the length of that window the tour sold that option without limit.
+  // Inserting first means the window holds a DUPLICATE requirement instead: briefly consuming from
+  // both pools, which over-reserves. That is the safe direction of the same race.
   for (const [key, cell] of desired) {
     const ex = existingByKey.get(key);
     if (!ex) {
@@ -782,6 +783,13 @@ export async function saveItemResourceRequirements(
         .update(resourceRequirements)
         .set({ quantityConsumed: cell.quantityConsumed })
         .where(eq(resourceRequirements.id, ex.id));
+    }
+  }
+  for (const [key, row] of existingByKey) {
+    if (!desired.has(key)) {
+      await db
+        .delete(resourceRequirements)
+        .where(eq(resourceRequirements.id, row.id));
     }
   }
 

@@ -17,10 +17,14 @@ import {
   items,
   paymentMethodsOnFile,
   payments,
-  resourceRequirements,
-  resources,
 } from "@/lib/db";
-import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import {
+  bestTypeRemaining,
+  fixedRemaining,
+  remainingByType,
+  slotRemaining,
+} from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItems, withUsage } from "@/lib/booking/pools";
 import { overlappingResourceUsage } from "@/lib/availability/resourceUsage";
 
 export type CheckInRollup = "not_yet" | "checked_in" | "no_show" | "partial";
@@ -217,7 +221,14 @@ export type GridSlot = {
   bookingCount: number;
   capacityMode: "resource_based" | "fixed";
   capacityOverride: number | null;
-  riderCounts: { ctName: string; booked: number }[];
+  riderCounts: { customerTypeId: string; ctName: string; booked: number }[];
+  /**
+   * How many MORE of each option this slot can take. Null for fixed-capacity tours.
+   *
+   * Never sum these against `available`: two options sharing one pool (Single and Double Rider
+   * both take an ATV) each see the whole fleet, so they would double-count it.
+   */
+  riderRemaining: { customerTypeId: string; ctName: string; remaining: number }[] | null;
 };
 
 export async function gridForDate(
@@ -258,6 +269,7 @@ export async function gridForDate(
       bookingId: bookings.id,
       availabilityId: bookings.availabilityId,
       qty: bookingLines.quantity,
+      ctId: bookingLines.customerTypeId,
       ctName: customerTypes.singular,
     })
     .from(bookings)
@@ -265,7 +277,7 @@ export async function gridForDate(
     .innerJoin(customerTypes, eq(bookingLines.customerTypeId, customerTypes.id))
     .where(and(inArray(bookings.availabilityId, slotIds), eq(bookings.status, "active")));
   const bookedBySlot = new Map<string, number>();
-  const typeBySlot = new Map<string, Map<string, number>>();
+  const typeBySlot = new Map<string, Map<string, { ctName: string; booked: number }>>();
   const bookingIdsBySlot = new Map<string, Set<string>>();
   for (const r of bookedRows) {
     bookedBySlot.set(r.availabilityId, (bookedBySlot.get(r.availabilityId) ?? 0) + r.qty);
@@ -280,34 +292,25 @@ export async function gridForDate(
       m = new Map();
       typeBySlot.set(r.availabilityId, m);
     }
-    m.set(r.ctName, (m.get(r.ctName) ?? 0) + r.qty);
+    const cur = m.get(r.ctId);
+    if (cur) cur.booked += r.qty;
+    else m.set(r.ctId, { ctName: r.ctName, booked: r.qty });
   }
 
-  // Resource pools per resource-based item (for available counts).
+  // Raw pools + per-customer-type requirements per resource-based item. NOT collapsed to one row
+  // per resource — two options on DIFFERENT pools are alternatives, and collapsing them let the
+  // scarcer pool cap the whole tour.
   const resourceItemIds = [
     ...new Set(slots.filter((s) => s.capacityMode === "resource_based").map((s) => s.a.itemId)),
   ];
-  const poolsByItem = new Map<string, { resourceId: string; max: number; oos: number; maxQ: number }[]>();
+  const capacityByItem = await poolsAndRequirementsForItems(resourceItemIds);
+  const ctNames = new Map<string, string>();
   if (resourceItemIds.length) {
-    const rr = await db
-      .select({ itemId: resourceRequirements.itemId, rr: resourceRequirements, r: resources })
-      .from(resourceRequirements)
-      .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-      .where(inArray(resourceRequirements.itemId, resourceItemIds));
-    const byItemRes = new Map<string, Map<string, { max: number; oos: number; maxQ: number }>>();
-    for (const row of rr) {
-      let m = byItemRes.get(row.itemId);
-      if (!m) {
-        m = new Map();
-        byItemRes.set(row.itemId, m);
-      }
-      const cur = m.get(row.r.id);
-      if (!cur)
-        m.set(row.r.id, { max: row.r.maxConcurrentUses, oos: row.r.outOfServiceCount, maxQ: row.rr.quantityConsumed });
-      else cur.maxQ = Math.max(cur.maxQ, row.rr.quantityConsumed);
-    }
-    for (const [itemId, m] of byItemRes)
-      poolsByItem.set(itemId, [...m.entries()].map(([resourceId, v]) => ({ resourceId, ...v })));
+    const cts = await db
+      .select({ id: customerTypes.id, singular: customerTypes.singular })
+      .from(customerTypes)
+      .where(eq(customerTypes.locationId, locationId));
+    for (const c of cts) ctNames.set(c.id, c.singular);
   }
 
   // Shared-pool usage per slot. This grid is where the overbooking risk was visible: two tours on the
@@ -323,21 +326,32 @@ export async function gridForDate(
     const booked = bookedBySlot.get(s.a.id) ?? 0;
     const slotUsage = usage.get(s.a.id);
     let available: number | null;
+    let full: boolean;
+    let riderRemaining: GridSlot["riderRemaining"] = null;
     if (s.capacityMode === "fixed") {
       const base = s.a.capacityOverride ?? s.schedCap;
       available = base != null ? fixedRemaining(base, booked) : null;
+      full = available != null && available <= 0;
     } else {
-      const pools = poolsByItem.get(s.a.itemId) ?? [];
-      available = pools.length
-        ? resourceRemaining(
-            pools.map<ResourcePool>((p) => ({
-              maxConcurrentUses: p.max,
-              outOfServiceCount: p.oos,
-              maxQuantityConsumed: p.maxQ,
-              consumed: slotUsage?.get(p.resourceId) ?? 0,
-            })),
-          )
-        : null;
+      const cap = capacityByItem.get(s.a.itemId);
+      if (!cap) {
+        // No resource requirements configured: the tour sells nothing rather than everything.
+        available = null;
+        full = false;
+      } else {
+        const live = withUsage(cap.pools, slotUsage);
+        available = slotRemaining(live, cap.requirements);
+        // Sold out only when NOTHING can be sold — a max over options, never a min. The min is
+        // what took Miami's three two-seaters down with the one dead four-seater.
+        full = bestTypeRemaining(live, cap.requirements) <= 0;
+        riderRemaining = [...remainingByType(live, cap.requirements)].map(
+          ([customerTypeId, remaining]) => ({
+            customerTypeId,
+            ctName: ctNames.get(customerTypeId) ?? "?",
+            remaining,
+          }),
+        );
+      }
     }
     return {
       availabilityId: s.a.id,
@@ -348,14 +362,16 @@ export async function gridForDate(
       onlineStatus: s.a.onlineBookingStatus,
       booked,
       available,
-      full: available != null && available <= 0,
+      full,
       bookingCount: bookingIdsBySlot.get(s.a.id)?.size ?? 0,
       capacityMode: s.capacityMode,
       capacityOverride: s.a.capacityOverride,
-      riderCounts: [...(typeBySlot.get(s.a.id)?.entries() ?? [])].map(([ctName, b]) => ({
-        ctName,
-        booked: b,
+      riderCounts: [...(typeBySlot.get(s.a.id)?.entries() ?? [])].map(([customerTypeId, v]) => ({
+        customerTypeId,
+        ctName: v.ctName,
+        booked: v.booked,
       })),
+      riderRemaining,
     };
   });
 }

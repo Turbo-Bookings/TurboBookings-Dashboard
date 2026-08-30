@@ -37,7 +37,13 @@ export default async function BookingDetailPage({ params }: Props) {
 
   const { booking: b, item, slot, customer, lines, payments, holds, reschedules, fieldValues, activity } = d;
   const refund = await getCancellationRefund(loc.id, id);
-  const tourData = b.status === "active" ? await getTourBookingData(slug, b.itemId) : null;
+  // The reschedule picker must be filtered against THIS booking's basket, not a headline count: a
+  // booking for one four-seater does not fit a slot whose free machines are all two-seaters, and
+  // offering it would fail only at save time.
+  const movingCart: Record<string, number> = {};
+  for (const l of d.lines) movingCart[l.customerTypeId] = (movingCart[l.customerTypeId] ?? 0) + l.quantity;
+  const tourData =
+    b.status === "active" ? await getTourBookingData(slug, b.itemId, movingCart) : null;
   // What the desk would charge if the customer pays the rest by card. Null when there is nothing to
   // collect, or the caller cannot take payments — the component then renders nothing.
   // `collect_payment`, not `manage_bookings`. Taking the balance at the desk IS the front-line job —

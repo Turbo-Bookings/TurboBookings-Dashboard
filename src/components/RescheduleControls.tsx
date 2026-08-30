@@ -11,7 +11,10 @@ import { rescheduleBooking } from "@/lib/actions/bookings";
 type Slot = {
   id: string;
   startsAt: string | Date;
+  /** Total vehicles free across the tour's options — a display figure, not a fit test. */
   remaining: number;
+  /** Whether the booking being moved actually fits here. */
+  fits: boolean;
   itemId?: string;
   itemName?: string;
 };
@@ -45,7 +48,9 @@ export function RescheduleControls({
   const [to, setTo] = useState("");
 
   const options = useMemo(
-    () => slots.filter((s) => s.id !== currentId && s.remaining > 0),
+    // `fits` is this booking against that slot, not the slot's headline count. A booking for one
+    // four-seater must not be offered a slot whose free machines are all two-seaters.
+    () => slots.filter((s) => s.id !== currentId && s.fits),
     [slots, currentId],
   );
 

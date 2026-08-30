@@ -5,6 +5,85 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ STATE AS OF 2026-08-29 — capacity is now PER RIDER TYPE (Miami UTV fleet split)
+>
+> **Why:** Miami sells a `2-Seat UTV` and a `4-Seat UTV` option on both UTV tours, correctly priced,
+> but both consumed from ONE undifferentiated pool of 4. The operator owns **3 two-seaters and 1
+> four-seater**. Nothing stopped the system selling 3 four-seaters against a fleet of one — a live
+> oversell hole, not just a reporting gap.
+>
+> **The blocker, and why this was not a config change.** `resourceRemaining(pools)` returned ONE
+> scalar per slot: the MINIMUM across every pool, after collapsing each pool to the LARGEST
+> consumption any of the tour's rider types had for it. That is right when a tour's pools are
+> required TOGETHER (Dallas's Glow Tour takes an ATV *and* a glow kit) and wrong when they are
+> ALTERNATIVES. Splitting the pool under the old rule would have capped the whole tour at
+> `min(3, 1) = 1`, and the moment the four-seater sold, the three two-seaters would have gone
+> unsellable.
+>
+> | Piece | Where |
+> |---|---|
+> | `headroomForType` / `cartFits` / `bestTypeRemaining` / `slotRemaining` | `src/lib/booking/capacity.ts` — **mirrored byte-identical** to `bookingsystem/src/lib/availability/capacity.ts` |
+> | 34-assertion pure-function proof | `npm run check:capacity` (both repos) |
+> | One loader replacing 11 hand-rolled copies | `src/lib/booking/pools.ts` (mirrored) |
+> | Per-type hold lines | `drizzle/0041_seat_hold_lines.sql`, `seat_holds.lines` jsonb |
+> | Per-option blocked signal | `blockedInventory()` in `src/lib/inventory/fleet.ts` |
+> | Data migration | `npm run miami:utv-split` (dry run) / `-- --commit` |
+>
+> #### Four things that were nearly wrong
+>
+> 1. **`seat_holds.customer_type_id` would have broken production.** It forces the unique index to
+>    become `(availability_id, hold_token, customer_type_id)`, so the current one must be DROPPED —
+>    and the storefront's `ON CONFLICT (availability_id, hold_token)` upsert then has no conflict
+>    target and throws on **every in-flight checkout**, during the window between the migration and
+>    the storefront deploy. A child table is no better: `holds.ts` runs on neon-http, which has NO
+>    transactions, so a 3-statement refresh can leave a live hold reserving nothing. It is a nullable
+>    **jsonb `lines`** column, and the unique index is deliberately untouched.
+> 2. **Summing free pool units is wrong for AND-pools.** The first `slotRemaining` summed across
+>    pools and reported Dallas as `22 ATVs + 10 glow kits = 32` sellable glow rides against a fleet
+>    that can produce 10. Caught by diffing the live inventory feed, not by review. It is now a
+>    greedy fill.
+> 3. **`blockedItems` gains a false positive after any split.** It flagged a tour when ANY pool it
+>    touched hit zero serviceable. Post-split, pulling the one four-seater would have reported both
+>    UTV tours as 100% ad waste while three two-seaters were still selling. Now a tour is blocked
+>    only when EVERY option is dead; partial loss ships as `partially_blocked_items`.
+> 4. **The requirements grid deleted before inserting.** Moving a rider type between pools through
+>    the admin UI left a window with NO requirement row — and a type with no requirement row consumes
+>    nothing, i.e. unmetered oversell, on a driver with no transactions. Inserts now run first, so the
+>    window over-reserves instead.
+>
+> #### Pre-flight audits (all clean, run 2026-08-29)
+>
+> * No `(item, resource)` pair has differing `quantity_consumed` → the new math is **provably
+>   identical** to the old for every current config, so both code deploys are a no-op.
+> * No priced+visible rider type lacks a requirement row → the new fail-closed behaviour takes
+>   nothing down.
+> * **Miami has zero UTV bookings, ever** → no history to retroactively re-attribute, so the
+>   `structural.ts` 84-day sweep and its `peak <= nameplate` invariant are unaffected. (This is why
+>   no reconfigured-resource guard was needed.)
+>
+> **Verified:** `check-inventory-snapshot.ts` output is **byte-identical across all three markets**
+> before vs after the code change, run back-to-back.
+>
+> #### Rollout order — steps 1-3 done, step 4 is the live cutover
+>
+> | # | Step | State |
+> |---|---|---|
+> | 1 | Apply `0041` (nullable, additive, index untouched) | ✅ applied to prod |
+> | 2 | Dashboard `develop` → preview → `main` | code done, **not deployed** |
+> | 3 | Storefront `develop` → preview → `main` | code done, **not deployed** |
+> | 4 | `npm run miami:utv-split -- --commit` | ⛔ **NOT RUN** — do it only after 2 and 3 are in production |
+>
+> Steps 2 and 3 change no numbers (see the audits), which is what makes this safe on live tours with a
+> 0.2-day median booking lead time. The script hard-aborts if any live checkout hold exists on the UTV
+> tours: a basket of 2 four-seaters is legal pre-split and infeasible post-split, so an in-flight
+> PaymentIntent committing across the cutover would make the webhook REFUND a paid booking.
+>
+> ⚠️ **The four-seater is currently out of service** (`4-Seat UTVs` = 1 total, 1 out of service). After
+> the cutover the 4-Seat option correctly reads sold out on every slot until it is repaired. That is
+> honest — today it is silently sellable — but the $300/$450 option earns nothing meanwhile. Consider
+> `item_customer_types.visibility = 'hidden'` instead of a permanently sold-out row.
+>
+> ---
 > ### ▶ STATE AS OF 2026-08-28 (later) — inventory feed live
 >
 > The cockpit now receives hourly physical-capacity snapshots. It previously steered spend with no idea

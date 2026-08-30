@@ -324,7 +324,9 @@ function EliminateView({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [slots, setSlots] = useState<{ id: string; startsAt: string; remaining: number }[] | null>(null);
+  const [slots, setSlots] = useState<
+    { id: string; startsAt: string; remaining: number; fits: boolean }[] | null
+  >(null);
   const [target, setTarget] = useState("");
   const [emptied, setEmptied] = useState(slot.bookingCount === 0);
   const [loading, setLoading] = useState(false);
@@ -343,14 +345,19 @@ function EliminateView({
     if (slots != null || loading) return;
     setLoading(true);
     startTransition(async () => {
-      const r = await getTourBookingData(slug, slot.itemId);
+      // Move the WHOLE group, so the basket is this slot's own rider breakdown. Filtering on a
+      // scalar "remaining >= booked" offered targets that then rejected the save: a slot with three
+      // free two-seaters looks big enough for four vehicles until one of them is a four-seater.
+      const groupCart: Record<string, number> = {};
+      for (const rc of slot.riderCounts) groupCart[rc.customerTypeId] = rc.booked;
+      const r = await getTourBookingData(slug, slot.itemId, groupCart);
       setLoading(false);
       if (!r.ok) {
         setError(r.error);
         setSlots([]);
         return;
       }
-      setSlots(r.slots.filter((s) => s.id !== slot.availabilityId && s.remaining >= slot.booked));
+      setSlots(r.slots.filter((s) => s.id !== slot.availabilityId && s.fits));
     });
   }
 

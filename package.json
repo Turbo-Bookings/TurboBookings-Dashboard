@@ -16,6 +16,7 @@
     "clerk:export-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-export-roles.ts",
     "clerk:import-roles": "node --env-file-if-exists=.env.local --import tsx scripts/clerk-import-roles.ts",
     "stripe:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/stripe-live-preflight.ts",
+    "check:capacity": "node src/lib/booking/capacity.test.mjs",
     "check:csv": "node --import tsx scripts/check-csv-parser.ts",
     "check:fh": "node --import tsx scripts/check-fareharbor-parse.ts",
     "import:fh": "node --env-file-if-exists=.env.local --import tsx scripts/import-fareharbor.ts",
@@ -27,6 +28,7 @@
     "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts",
     "push:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-push.ts",
     "htown:tours": "node --env-file-if-exists=.env.local --import tsx scripts/add-htown-tours.ts",
+    "miami:utv-split": "node --env-file-if-exists=.env.local --import tsx scripts/split-miami-utv-fleet.ts",
     "location:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/location-preflight.ts",
     "terms:status": "node --env-file-if-exists=.env.local --import tsx scripts/terms-status.ts",
     "arch:sync": "node scripts/sync-architecture.mjs"

@@ -20,11 +20,14 @@ type Props = {
   initialValues?: ItemFormState["values"];
   submitLabel: string;
   /**
-   * The most vehicles this tour can ever have free, computed server-side from its resource pools (or
-   * its schedule capacity for fixed tours). Used only to warn that a threshold at or above it fires
-   * on every slot. Null when it cannot be determined — a new tour with no resources yet.
+   * The ceiling for EACH option this tour sells, computed server-side from its resource pools.
+   * Used only to warn that a threshold at or above one fires on every slot, including empty ones.
+   *
+   * Per option because one number cannot describe a tour selling from two pools: Miami's 1-Hour UTV
+   * Tour has three two-seaters and one four-seater, and the old single figure quoted `min(3, 1) = 1`
+   * for a tour that tops out at four vehicles. Empty for a new tour with no resources yet.
    */
-  capacityCeiling?: number | null;
+  capacityCeilings?: { customerTypeId: string; singular: string; ceiling: number }[];
 };
 
 const EMPTY: ItemFormState["values"] = {
@@ -63,7 +66,7 @@ export function ItemForm({
   cancelHref,
   initialValues,
   submitLabel,
-  capacityCeiling = null,
+  capacityCeilings = [],
 }: Props) {
   const [state, formAction] = useActionState<ItemFormState | null, FormData>(
     action,
@@ -172,15 +175,23 @@ export function ItemForm({
           <p className="mt-1.5 text-xs text-zinc-500">
             Above this number the booking site shows nothing at all — just the time. Set{" "}
             <span className="font-medium">0</span> to never show it.
-            {capacityCeiling != null && (
+            {capacityCeilings.length > 0 && (
               <>
                 {" "}
-                This tour tops out around{" "}
+                This tour tops out at{" "}
+                {capacityCeilings.map((c, i) => (
+                  <span key={c.customerTypeId}>
+                    {i > 0 && (i === capacityCeilings.length - 1 ? " and " : ", ")}
+                    <span className="font-medium text-zinc-600 dark:text-zinc-300">
+                      {c.ceiling} &times; {c.singular}
+                    </span>
+                  </span>
+                ))}
+                . The message is shown per rider row, so a number at or above{" "}
                 <span className="font-medium text-zinc-600 dark:text-zinc-300">
-                  {capacityCeiling}
+                  {Math.max(...capacityCeilings.map((c) => c.ceiling))}
                 </span>{" "}
-                {capacityCeiling === 1 ? "vehicle" : "vehicles"} — a number at or above that shows the
-                message on every slot, including empty ones.
+                shows it on every slot, including empty ones.
               </>
             )}
           </p>

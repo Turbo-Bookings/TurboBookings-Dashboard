@@ -2,7 +2,8 @@ import "server-only";
 import { and, asc, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { overlappingResourceUsage } from "@/lib/availability/resourceUsage";
-import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { bestTypeRemaining, fixedRemaining, slotRemaining } from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItems, withUsage } from "@/lib/booking/pools";
 import {
   availabilities,
   availabilitySchedules,
@@ -10,8 +11,6 @@ import {
   bookings,
   getDb,
   items,
-  resourceRequirements,
-  resources,
 } from "@/lib/db";
 import { DAYPARTS, type Daypart, type Dow, daypartForHour } from "./dayparts";
 
@@ -130,42 +129,13 @@ export async function nearTermInventory(
   for (const r of bookedRows)
     bookedBySlot.set(r.availabilityId, (bookedBySlot.get(r.availabilityId) ?? 0) + r.qty);
 
-  // 3 — resource pools per resource-based item.
+  // 3 — resource pools + per-customer-type requirements per resource-based item. Kept raw rather
+  // than collapsed per resource: a tour selling from two ALTERNATIVE pools (Miami's 2-Seat and
+  // 4-Seat UTVs) has no single "units remaining", and collapsing let the scarcer pool cap the tour.
   const resourceItemIds = [
     ...new Set(slots.filter((s) => s.capacityMode === "resource_based").map((s) => s.a.itemId)),
   ];
-  const poolsByItem = new Map<
-    string,
-    { resourceId: string; max: number; oos: number; maxQ: number }[]
-  >();
-  if (resourceItemIds.length) {
-    const rr = await db
-      .select({ itemId: resourceRequirements.itemId, rr: resourceRequirements, r: resources })
-      .from(resourceRequirements)
-      .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-      .where(inArray(resourceRequirements.itemId, resourceItemIds));
-    const byItemRes = new Map<string, Map<string, { max: number; oos: number; maxQ: number }>>();
-    for (const row of rr) {
-      let m = byItemRes.get(row.itemId);
-      if (!m) {
-        m = new Map();
-        byItemRes.set(row.itemId, m);
-      }
-      const cur = m.get(row.r.id);
-      if (!cur)
-        m.set(row.r.id, {
-          max: row.r.maxConcurrentUses,
-          oos: row.r.outOfServiceCount,
-          maxQ: row.rr.quantityConsumed,
-        });
-      else cur.maxQ = Math.max(cur.maxQ, row.rr.quantityConsumed);
-    }
-    for (const [itemId, m] of byItemRes)
-      poolsByItem.set(
-        itemId,
-        [...m.entries()].map(([resourceId, v]) => ({ resourceId, ...v })),
-      );
-  }
+  const capacityByItem = await poolsAndRequirementsForItems(resourceItemIds);
 
   // 4 — shared-pool usage, ONE query for every slot in the horizon. Peak concurrent, never a sum.
   const usage = resourceItemIds.length
@@ -228,27 +198,31 @@ export async function nearTermInventory(
     d.slotsRemaining += 1;
 
     const slotUsage = usage.get(s.a.id);
+    // Two different questions, and they are not the same number once a tour sells from more than
+    // one pool. `available` is how many more units could be sold in total; `anySellable` is whether
+    // ANYTHING can be sold. A tour with three free two-seaters and a dead four-seater has
+    // available = 3 and is emphatically not sold out — the old single scalar said 0 to both.
     let available: number | null;
+    let anySellable: number;
     if (s.capacityMode === "fixed") {
       const base = s.a.capacityOverride ?? s.schedCap;
       available = base != null ? fixedRemaining(base, booked) : null;
+      anySellable = available ?? 0;
     } else {
-      const pools = poolsByItem.get(s.a.itemId) ?? [];
-      available = pools.length
-        ? resourceRemaining(
-            pools.map<ResourcePool>((p) => ({
-              maxConcurrentUses: p.max,
-              outOfServiceCount: p.oos,
-              maxQuantityConsumed: p.maxQ,
-              consumed: slotUsage?.get(p.resourceId) ?? 0,
-            })),
-          )
-        : null;
+      const cap = capacityByItem.get(s.a.itemId);
+      if (!cap) {
+        available = null;
+        anySellable = 0;
+      } else {
+        const live = withUsage(cap.pools, slotUsage);
+        available = slotRemaining(live, cap.requirements);
+        anySellable = bestTypeRemaining(live, cap.requirements);
+      }
     }
 
     const free = available ?? 0;
-    if (available != null && free <= 0) d.slotsSoldOut += 1;
-    if (free > 0) {
+    if (available != null && anySellable <= 0) d.slotsSoldOut += 1;
+    if (anySellable > 0) {
       d.slotsSellable += 1;
       if (!d.firstSellable || local < d.firstSellable) d.firstSellable = local;
     }

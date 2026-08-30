@@ -18,8 +18,6 @@ import {
   items,
   paymentMethodsOnFile,
   payments,
-  resourceRequirements,
-  resources,
 } from "@/lib/db";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
@@ -28,7 +26,8 @@ import { openSlotsForItem } from "@/lib/data/availability";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { syncPlatformFee } from "@/lib/booking/platformFee";
-import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { cartFits, fixedRemaining, type Cart } from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItem, withUsage } from "@/lib/booking/pools";
 import { overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { withTxn } from "@/lib/db/txn";
 import { getBalanceQuote } from "@/lib/actions/collectBalance";
@@ -687,10 +686,17 @@ export async function rescheduleBooking(
   if (!item) return { ok: false, error: "Tour not found" };
 
   const lineRows = await db
-    .select({ q: bookingLines.quantity })
+    .select({ q: bookingLines.quantity, ctId: bookingLines.customerTypeId })
     .from(bookingLines)
     .where(eq(bookingLines.bookingId, bookingId));
   const partySize = lineRows.reduce((s, r) => s + r.q, 0);
+  // What the booking actually consumes, by rider type. A group of one four-seater needs a slot
+  // with a free four-seater — not merely a slot with three free two-seaters, which is all a
+  // single "party size vs remaining" number could ever check.
+  const movingCart: Cart = lineRows.reduce((m, r) => {
+    m.set(r.ctId, (m.get(r.ctId) ?? 0) + r.q);
+    return m;
+  }, new Map<string, number>());
 
   let performedBy: string | null = null;
   try {
@@ -722,7 +728,7 @@ export async function rescheduleBooking(
         .where(and(eq(bookings.availabilityId, toAvailabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
 
-      let remaining: number;
+      let fits: boolean;
       if (targetItem.capacityMode === "fixed") {
         let base = slot.capacityOverride;
         if (base == null && slot.scheduleId) {
@@ -731,30 +737,20 @@ export async function rescheduleBooking(
           )[0];
           base = sc?.c ?? null;
         }
-        remaining = fixedRemaining(base, booked);
+        fits = partySize <= fixedRemaining(base, booked);
       } else {
-        const rr = await tx
-          .select({ rr: resourceRequirements, r: resources })
-          .from(resourceRequirements)
-          .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-          .where(eq(resourceRequirements.itemId, targetItem.id));
-        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-        for (const { rr: req, r } of rr) {
-          const cur = byRes.get(r.id);
-          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-        }
+        const { pools, requirements } = await poolsAndRequirementsForItem(targetItem.id, { db: tx });
         // Shared across every tour overlapping this slot — `booked` sees only this availability row.
         const usage = await overlappingUsageForSlot(
           { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
           location.id,
           { db: tx },
         );
-        remaining = resourceRemaining(
-          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
-        );
+        // Per rider type, not a scalar: every pool must clear at once. A cart with one line on a
+        // full pool fails even when the tour as a whole has room elsewhere.
+        fits = cartFits(movingCart, withUsage(pools, usage), requirements);
       }
-      if (partySize > remaining) throw new Error("Not enough capacity at the new time");
+      if (!fits) throw new Error("Not enough capacity at the new time");
 
       // Re-price against the target tour. Every rider type on the booking must exist on it, or we
       // would silently keep the old tour's rate and under-bill.
@@ -961,31 +957,28 @@ export async function addVehicles(
         .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
         .where(and(eq(bookings.availabilityId, booking.availabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
-      let remaining: number;
+      let fits: boolean;
       if (item.capacityMode === "fixed") {
         let base = slot.capacityOverride;
         if (base == null && slot.scheduleId) {
           const sc = (await tx.select({ c: availabilitySchedules.capacityPerSlot }).from(availabilitySchedules).where(eq(availabilitySchedules.id, slot.scheduleId)).limit(1))[0];
           base = sc?.c ?? null;
         }
-        remaining = fixedRemaining(base, booked);
+        fits = qty <= fixedRemaining(base, booked);
       } else {
-        const rr = await tx.select({ rr: resourceRequirements, r: resources }).from(resourceRequirements).innerJoin(resources, eq(resourceRequirements.resourceId, resources.id)).where(eq(resourceRequirements.itemId, booking.itemId));
-        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-        for (const { rr: req, r } of rr) {
-          const cur = byRes.get(r.id);
-          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-        }
+        const { pools, requirements } = await poolsAndRequirementsForItem(booking.itemId, { db: tx });
         // Shared across every tour overlapping this slot — `booked` sees only this availability row.
         const usage = await overlappingUsageForSlot(
           { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
           location.id,
           { db: tx },
         );
-        remaining = resourceRemaining([...byRes.entries()].map<ResourcePool>(([resourceId, x]) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: usage.get(resourceId) ?? 0 })));
+        // Only the units being ADDED, against this rider type's own pool. `usage` already counts the
+        // booking's existing lines.
+        const adding: Cart = new Map([[line.customerTypeId, qty]]);
+        fits = cartFits(adding, withUsage(pools, usage), requirements);
       }
-      if (qty > remaining) throw new Error("Not enough capacity in this slot");
+      if (!fits) throw new Error("Not enough capacity in this slot");
 
       const delta = qty * line.unitPriceCents;
       addedDelta = delta;
@@ -1071,31 +1064,28 @@ export async function addLine(
         .innerJoin(bookingLines, eq(bookingLines.bookingId, bookings.id))
         .where(and(eq(bookings.availabilityId, booking.availabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
-      let remaining: number;
+      let fits: boolean;
       if (item.capacityMode === "fixed") {
         let base = slot.capacityOverride;
         if (base == null && slot.scheduleId) {
           const sc = (await tx.select({ c: availabilitySchedules.capacityPerSlot }).from(availabilitySchedules).where(eq(availabilitySchedules.id, slot.scheduleId)).limit(1))[0];
           base = sc?.c ?? null;
         }
-        remaining = fixedRemaining(base, booked);
+        fits = qty <= fixedRemaining(base, booked);
       } else {
-        const rr = await tx.select({ rr: resourceRequirements, r: resources }).from(resourceRequirements).innerJoin(resources, eq(resourceRequirements.resourceId, resources.id)).where(eq(resourceRequirements.itemId, booking.itemId));
-        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-        for (const { rr: req, r } of rr) {
-          const cur = byRes.get(r.id);
-          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-        }
+        const { pools, requirements } = await poolsAndRequirementsForItem(booking.itemId, { db: tx });
         // Shared across every tour overlapping this slot — `booked` sees only this availability row.
         const usage = await overlappingUsageForSlot(
           { id: slot.id, startsAt: slot.startsAt, endsAt: slot.endsAt },
           location.id,
           { db: tx },
         );
-        remaining = resourceRemaining([...byRes.entries()].map<ResourcePool>(([resourceId, x]) => ({ maxConcurrentUses: x.max, outOfServiceCount: x.oos, maxQuantityConsumed: x.maxQ, consumed: usage.get(resourceId) ?? 0 })));
+        // Only the units being ADDED, against this rider type's own pool. Adding a four-seater when the
+        // four-seater is out must fail while adding a two-seater on the same tour succeeds.
+        const adding: Cart = new Map([[customerTypeId, qty]]);
+        fits = cartFits(adding, withUsage(pools, usage), requirements);
       }
-      if (qty > remaining) throw new Error("Not enough capacity in this slot");
+      if (!fits) throw new Error("Not enough capacity in this slot");
 
       // Reuse an existing line for the same type rather than duplicating it.
       const existing = (
@@ -1371,10 +1361,16 @@ export async function moveSlotBookings(
       // Party size of the whole moving group.
       const groupIds = group.map((g) => g.id);
       const groupLines = await tx
-        .select({ q: bookingLines.quantity })
+        .select({ q: bookingLines.quantity, ctId: bookingLines.customerTypeId })
         .from(bookingLines)
         .where(inArray(bookingLines.bookingId, groupIds));
       const groupSize = groupLines.reduce((s, r) => s + r.q, 0);
+      // Folded by rider type, not just totalled: a group of three two-seaters and one four-seater
+      // needs room in BOTH pools, which a single group size can never express.
+      const groupCart: Cart = groupLines.reduce((m, r) => {
+        m.set(r.ctId, (m.get(r.ctId) ?? 0) + r.q);
+        return m;
+      }, new Map<string, number>());
 
       // Capacity already consumed at the target (excludes the moving group,
       // which is still attached to the source slot).
@@ -1385,7 +1381,7 @@ export async function moveSlotBookings(
         .where(and(eq(bookings.availabilityId, toAvailabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
 
-      let remaining: number;
+      let fits: boolean;
       if (item.capacityMode === "fixed") {
         let base = target.capacityOverride;
         if (base == null && target.scheduleId) {
@@ -1394,30 +1390,18 @@ export async function moveSlotBookings(
           )[0];
           base = sc?.c ?? null;
         }
-        remaining = fixedRemaining(base, booked);
+        fits = groupSize <= fixedRemaining(base, booked);
       } else {
-        const rr = await tx
-          .select({ rr: resourceRequirements, r: resources })
-          .from(resourceRequirements)
-          .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-          .where(eq(resourceRequirements.itemId, item.id));
-        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-        for (const { rr: req, r } of rr) {
-          const cur = byRes.get(r.id);
-          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-        }
+        const { pools, requirements } = await poolsAndRequirementsForItem(item.id, { db: tx });
         // Shared across every tour overlapping this slot — `booked` sees only this availability row.
         const usage = await overlappingUsageForSlot(
           { id: target.id, startsAt: target.startsAt, endsAt: target.endsAt },
           location.id,
           { db: tx },
         );
-        remaining = resourceRemaining(
-          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
-        );
+        fits = cartFits(groupCart, withUsage(pools, usage), requirements);
       }
-      if (groupSize > remaining) throw new Error("Not enough capacity at the target time");
+      if (!fits) throw new Error("Not enough capacity at the target time");
 
       // Where they are coming from, once — every booking in a group move shares the origin slot.
       const fromSlot = (
@@ -1540,6 +1524,8 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     id: string;
     startsAt: Date;
     remaining: number;
+    /** Whether THIS booking fits — not merely whether the slot has room for something. */
+    fits: boolean;
     itemId: string;
     itemName: string;
   }[] = [];
@@ -1549,9 +1535,17 @@ export async function getBookingModalData(slug: string, bookingId: string) {
       .from(items)
       .where(and(eq(items.locationId, location.id), eq(items.bookableOnline, true)))
       .orderBy(asc(items.sortOrder));
+    // What this booking consumes, by rider type. Offering a slot that merely has "room" is not
+    // good enough once a tour sells two vehicle sizes: a booking for one four-seater does not fit
+    // a slot whose only free machines are two-seaters, and the operator would only find that out
+    // when the save was rejected.
+    const movingCart: Cart = detail.lines.reduce((m, l) => {
+      m.set(l.customerTypeId, (m.get(l.customerTypeId) ?? 0) + l.quantity);
+      return m;
+    }, new Map<string, number>());
     const perTour = await Promise.all(
       bookable.map(async (it) => {
-        const slots = await openSlotsForItem(location.id, it.id);
+        const slots = await openSlotsForItem(location.id, it.id, 60, movingCart);
         return slots.map((sl) => ({ ...sl, itemId: it.id, itemName: it.name }));
       }),
     );

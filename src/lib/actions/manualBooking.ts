@@ -16,10 +16,9 @@ import {
   items,
   paymentMethodsOnFile,
   payments,
-  resourceRequirements,
-  resources,
 } from "@/lib/db";
-import { fixedRemaining, resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { cartFits, fixedRemaining, type Cart } from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItem, withUsage } from "@/lib/booking/pools";
 import { overlappingResourceUsage, overlappingUsageForSlot } from "@/lib/availability/resourceUsage";
 import { validateDiscountForBooking, type DiscountLine } from "@/lib/booking/discount";
 import { openSlotsForItem } from "@/lib/data/availability";
@@ -66,7 +65,16 @@ export type TourField = {
 export type TourBookingData =
   | {
       ok: true;
-      slots: { id: string; startsAt: string; remaining: number }[];
+      slots: {
+        id: string;
+        startsAt: string;
+        /** Total vehicles free across the tour's options. Display only — see `fits`. */
+        remaining: number;
+        /** Whether `cart` (or, with no cart, anything at all) fits on this slot. */
+        fits: boolean;
+        /** Standalone "N left" per rider type. Never sum: options sharing a pool double-count. */
+        perType: { customerTypeId: string; remaining: number }[];
+      }[];
       pricing: { ct: string; label: string; priceCents: number; taxBps: number | null }[];
       customFields: TourField[];
     }
@@ -75,6 +83,12 @@ export type TourBookingData =
 export async function getTourBookingData(
   slug: string,
   itemId: string,
+  /**
+   * The booking or group being MOVED, as customer_type_id -> units. Supplied, each returned slot's
+   * `fits` says whether that exact basket clears — not merely whether the slot has room for
+   * something, which is a different question once a tour sells two vehicle sizes from two fleets.
+   */
+  cart?: Record<string, number>,
 ): Promise<TourBookingData> {
   // Gated at `checkin` rather than `manage_bookings`: this returns catalog data (open slots, tier
   // prices, custom fields) that the public booking site shows anyway, and `getBookingModalData` calls
@@ -84,13 +98,24 @@ export async function getTourBookingData(
   const location = await getLocationBySlug(slug);
   if (!location) return { ok: false, error: "Location not found" };
   const [slots, pricing, fields] = await Promise.all([
-    openSlotsForItem(location.id, itemId),
+    openSlotsForItem(
+      location.id,
+      itemId,
+      60,
+      cart ? new Map(Object.entries(cart)) : undefined,
+    ),
     getItemPricing(itemId),
     getWholeBookingFieldsForItem(itemId),
   ]);
   return {
     ok: true,
-    slots: slots.map((s) => ({ id: s.id, startsAt: s.startsAt.toISOString(), remaining: s.remaining })),
+    slots: slots.map((s) => ({
+      id: s.id,
+      startsAt: s.startsAt.toISOString(),
+      remaining: s.remaining,
+      fits: s.fits,
+      perType: s.perType,
+    })),
     pricing: pricing.map((p) => ({
       ct: p.customerTypeId,
       label: p.customerTypeSingular,
@@ -350,7 +375,13 @@ export async function createDirectBooking(
         .where(and(eq(bookings.availabilityId, payload.availabilityId), eq(bookings.status, "active")));
       const booked = bookedRows.reduce((s, r) => s + r.qty, 0);
       const requested = p.qlines.reduce((s, l) => s + l.q, 0);
-      let remaining: number;
+      // The desk's basket, by rider type. A mixed manual booking (one two-seater plus one
+      // four-seater) has to clear both pools, which one total never checked.
+      const cart: Cart = p.qlines.reduce((m, l) => {
+        m.set(l.ct, (m.get(l.ct) ?? 0) + l.q);
+        return m;
+      }, new Map<string, number>());
+      let fits: boolean;
       if (item.capacityMode === "fixed") {
         let base = slot.capacityOverride;
         if (base == null && slot.scheduleId) {
@@ -359,30 +390,18 @@ export async function createDirectBooking(
           )[0];
           base = sc?.c ?? null;
         }
-        remaining = fixedRemaining(base, booked);
+        fits = requested <= fixedRemaining(base, booked);
       } else {
-        const rr = await tx
-          .select({ rr: resourceRequirements, r: resources })
-          .from(resourceRequirements)
-          .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-          .where(eq(resourceRequirements.itemId, payload.itemId));
-        const byRes = new Map<string, { max: number; oos: number; maxQ: number }>();
-        for (const { rr: req, r } of rr) {
-          const cur = byRes.get(r.id);
-          if (!cur) byRes.set(r.id, { max: r.maxConcurrentUses, oos: r.outOfServiceCount, maxQ: req.quantityConsumed });
-          else cur.maxQ = Math.max(cur.maxQ, req.quantityConsumed);
-        }
+        const { pools, requirements } = await poolsAndRequirementsForItem(payload.itemId, { db: tx });
         // Shared across every tour overlapping this slot — `booked` sees only this availability row.
         const usage = await overlappingUsageForSlot(
           { id: payload.availabilityId, startsAt: slot.startsAt, endsAt: slot.endsAt },
           location.id,
           { db: tx },
         );
-        remaining = resourceRemaining(
-          [...byRes.entries()].map<ResourcePool>(([resourceId, p]) => ({ maxConcurrentUses: p.max, outOfServiceCount: p.oos, maxQuantityConsumed: p.maxQ, consumed: usage.get(resourceId) ?? 0 })),
-        );
+        fits = cartFits(cart, withUsage(pools, usage), requirements);
       }
-      if (requested > remaining) throw new Error("Not enough capacity in this slot");
+      if (!fits) throw new Error("Not enough capacity in this slot");
 
       const emailLower = payload.contact.email.toLowerCase();
       const [firstName, ...rest] = payload.contact.name.trim().split(" ");

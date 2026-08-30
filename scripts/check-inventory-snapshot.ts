@@ -40,7 +40,7 @@ async function main() {
   const { nearTermInventory } = await import("@/lib/inventory/nearTerm");
   const { leadTimeAndMatrix, horizonDaysFor } = await import("@/lib/inventory/leadTime");
   const { buildInventorySnapshotPayload } = await import("@/lib/events/inventorySnapshotPayload");
-  const { fleetForLocation, blockedItems } = await import("@/lib/inventory/fleet");
+  const { fleetForLocation, blockedInventory } = await import("@/lib/inventory/fleet");
   const { getDb, locations } = await import("@/lib/db");
   const { eq } = await import("drizzle-orm");
 
@@ -51,8 +51,10 @@ async function main() {
     const fleet = await fleetForLocation(loc.id);
     console.log(`\n=== ${slug.toUpperCase()} (${tz})`);
     console.log("fleet:", fleet.map(f => `${f.name} ${f.serviceableUnits}/${f.nameplateUnits}`).join("  "));
-    const blocked = await blockedItems(loc.id, fleet, new Date());
+    const { blocked, partiallyBlocked } = await blockedInventory(loc.id, fleet, new Date());
     console.log("blocked:", blocked.length ? blocked.map(b => `${b.itemName} [${b.resourceName}] ${b.slotsAffectedNext7d} slots/7d`).join("; ") : "none");
+    if (partiallyBlocked.length)
+      console.log("partially blocked:", partiallyBlocked.map(p => `${p.itemName} — ${p.blockedOptions.map(o => `${o.name} [${o.resourceName}]`).join(", ")} dead, ${p.sellableOptions.join(", ")} still selling (${p.slotsAffectedNext7d} slots/7d)`).join("; "));
     const lt = await leadTimeAndMatrix(loc.id, tz);
     const horizon = horizonDaysFor(lt.leadTime);
     console.log(`lead time: median ${lt.leadTime.medianDays}d, p95 ${lt.leadTime.p95Days}d, ${lt.leadTime.within3dPct}% within 3d (n=${lt.leadTime.bookings}) -> horizon ${horizon}d`);

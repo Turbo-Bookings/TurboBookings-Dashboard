@@ -1760,6 +1760,15 @@ export const seatHolds = pgTable(
     // own hold so it can be refreshed/released and excluded from its own count.
     holdToken: uuid("hold_token").notNull(),
     quantity: integer("quantity").notNull(),
+    // Per-customer-type breakdown: [{ ct: <customer_type uuid>, q: <units> }]. `quantity` above
+    // stays the total.
+    //
+    // NULL = a hold written by a pre-split storefront; readers fall back to the conservative
+    // MAX-consumption rule for it (see resourceUsage.ts). Nullable, and the unique index
+    // seat_holds_slot_token_idx deliberately untouched, because the dashboard and bookingsystem
+    // deploy independently — putting customer_type_id in that index instead would have broken
+    // every in-flight checkout the moment the migration ran. See drizzle/0041_seat_hold_lines.sql.
+    lines: jsonb("lines").$type<{ ct: string; q: number }[]>(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

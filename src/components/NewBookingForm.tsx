@@ -19,7 +19,15 @@ import { useCaps } from "@/components/CapabilitiesProvider";
 import { BookingCalendar } from "@/components/BookingCalendar";
 
 type ItemOpt = { id: string; name: string };
-type Slot = { id: string; startsAt: string; remaining: number };
+type Slot = {
+  id: string;
+  startsAt: string;
+  /** Total vehicles free across the tour's options. */
+  remaining: number;
+  fits: boolean;
+  /** Standalone "N left" per rider type. Never sum: options sharing a pool double-count. */
+  perType: { customerTypeId: string; remaining: number }[];
+};
 type Price = { ct: string; label: string; priceCents: number; taxBps: number | null };
 type Field = { id: string; kind: string; label: string; helpText: string | null; required: boolean };
 
@@ -158,6 +166,14 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
   const baseSubtotal = overrideCents ?? lineSubtotal;
   const discountCents = discount ? Math.min(discount.cents, baseSubtotal) : 0;
   const totalQty = activeLines.reduce((s, p) => s + qty[p.ct], 0);
+
+  // "N left" for each rider type on the chosen slot. Shown at the desk because one slot figure stops
+  // being an answer as soon as a tour sells two vehicle sizes from two fleets: a Miami UTV slot can
+  // have three two-seaters free and no four-seater, and the rep needs to see which.
+  const slotPerType = useMemo(() => {
+    const chosen = slots.find((s) => s.id === slotId);
+    return new Map((chosen?.perType ?? []).map((t) => [t.customerTypeId, t.remaining]));
+  }, [slots, slotId]);
   const amountCents =
     method === "groupon_ota"
       ? Math.round(Number(grouponStr || "0") * 100)
@@ -339,16 +355,33 @@ export function NewBookingForm({ slug, tz, items, location, publishableKey, stri
           <div>
             <label className="block text-sm font-medium">Riders</label>
             <div className="mt-1 space-y-2">
-              {pricing.map((p) => (
+              {pricing.map((p) => {
+                const left = slotPerType.get(p.ct);
+                return (
                 <div key={p.ct} className="flex items-center justify-between">
-                  <span className="text-sm">{p.label} <span className="text-zinc-400">{usd(p.priceCents)}</span></span>
+                  <span className="text-sm">
+                    {p.label} <span className="text-zinc-400">{usd(p.priceCents)}</span>
+                    {left != null && (
+                      <span className={left === 0 ? "ml-2 text-xs text-red-600 dark:text-red-400" : "ml-2 text-xs text-zinc-400"}>
+                        {left === 0 ? "none left" : `${left} left`}
+                      </span>
+                    )}
+                  </span>
                   <div className="flex items-center gap-2">
                     <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: Math.max(0, (x[p.ct] ?? 0) - 1) }))}>−</button>
                     <span className="w-6 text-center text-sm">{qty[p.ct] ?? 0}</span>
-                    <button type="button" className="h-7 w-7 rounded-md border border-zinc-300 dark:border-zinc-700" onClick={() => setQty((x) => ({ ...x, [p.ct]: (x[p.ct] ?? 0) + 1 }))}>+</button>
+                    <button
+                      type="button"
+                      disabled={left != null && (qty[p.ct] ?? 0) >= left}
+                      className="h-7 w-7 rounded-md border border-zinc-300 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700"
+                      onClick={() => setQty((x) => ({ ...x, [p.ct]: (x[p.ct] ?? 0) + 1 }))}
+                    >
+                      +
+                    </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

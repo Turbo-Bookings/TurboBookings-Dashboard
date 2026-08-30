@@ -1,5 +1,5 @@
 import "server-only";
-import { blockedItems, fleetForLocation } from "@/lib/inventory/fleet";
+import { blockedInventory, fleetForLocation } from "@/lib/inventory/fleet";
 import { horizonDaysFor, leadTimeAndMatrix } from "@/lib/inventory/leadTime";
 import { nearTermInventory } from "@/lib/inventory/nearTerm";
 import { structuralUtilisation } from "@/lib/inventory/structural";
@@ -38,8 +38,8 @@ export async function buildInventorySnapshotPayload(
   const lead = await leadTimeAndMatrix(location.id, tz);
   const horizonDays = horizonDaysFor(lead.leadTime);
 
-  const [blocked, nearTerm, structural] = await Promise.all([
-    blockedItems(location.id, fleet, now),
+  const [{ blocked, partiallyBlocked }, nearTerm, structural] = await Promise.all([
+    blockedInventory(location.id, fleet, now),
     nearTermInventory(location.id, tz, now, horizonDays),
     structuralUtilisation(location.id, tz, { asOf: now }),
   ]);
@@ -76,6 +76,23 @@ export async function buildInventorySnapshotPayload(
       serviceable_units: b.serviceableUnits,
       slots_affected_next_7d: b.slotsAffectedNext7d,
       bookable_online: b.bookableOnline,
+      blocked_options: b.blockedOptions,
+    })),
+
+    // Tours that have lost SOME options but still sell others — a UTV tour whose four-seater is in
+    // the shop while its two-seaters keep going. Deliberately NOT folded into blocked_items: that
+    // list means "every dollar here is waste", and acting on it for a tour that is still filling
+    // would cut spend on live inventory.
+    partially_blocked_items: partiallyBlocked.map((p) => ({
+      item_id: p.itemId,
+      item_name: p.itemName,
+      blocked_options: p.blockedOptions.map((o) => ({
+        name: o.name,
+        resource_name: o.resourceName,
+      })),
+      sellable_options: p.sellableOptions,
+      slots_affected_next_7d: p.slotsAffectedNext7d,
+      bookable_online: p.bookableOnline,
     })),
 
     lead_time: {

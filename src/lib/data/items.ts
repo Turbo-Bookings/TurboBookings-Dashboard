@@ -1,5 +1,6 @@
 import "server-only";
-import { resourceRemaining, type ResourcePool } from "@/lib/booking/capacity";
+import { EMPTY_CART, headroomForType } from "@/lib/booking/capacity";
+import { poolsAndRequirementsForItem } from "@/lib/booking/pools";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   customerTypes,
@@ -117,51 +118,60 @@ export async function getResourceSummariesByItem(
   return out;
 }
 
+export type ItemCapacityCeiling = {
+  customerTypeId: string;
+  singular: string;
+  /** The most of THIS option the tour could ever have free, with nothing booked. */
+  ceiling: number;
+};
+
 /**
- * The most vehicles this tour could ever have free — its ceiling with nothing booked.
+ * The ceiling for each option this tour sells, with nothing booked.
  *
- * Only used to warn an operator that a low-stock threshold at or above this fires on every slot,
- * including empty ones. That is the Dallas Glow case: capped at 10 glow ATVs, so a threshold of 15
- * would always be true.
+ * Only used to warn an operator that a low-stock threshold at or above a ceiling fires on every
+ * slot, including empty ones. That is the Dallas Glow case: capped at 10 glow ATVs, so a threshold
+ * of 15 would always be true.
  *
- * Reuses `resourceRemaining` with `consumed: 0` rather than reimplementing the min-across-pools rule,
- * so the ceiling can never disagree with the live number the customer sees. Returns null when the
- * tour has no resource requirements yet — a brand-new tour has no meaningful ceiling to quote.
+ * PER OPTION, because one number cannot describe a tour selling from two pools. Miami's 1-Hour UTV
+ * Tour has three two-seaters and one four-seater; the old single figure was `min(3, 1) = 1` and
+ * told the operator a tour that tops out at four vehicles tops out at one.
+ *
+ * Reuses `headroomForType` with `consumed: 0` rather than reimplementing the rule, so a ceiling can
+ * never disagree with the live number the customer sees. Empty when the tour has no resource
+ * requirements yet — a brand-new tour has no meaningful ceiling to quote.
  */
-export async function getItemCapacityCeiling(
+export async function getItemCapacityCeilings(
   itemId: string,
   locationId: string,
-): Promise<number | null> {
-  const db = getDb();
-  const rows = await db
-    .select({
-      resourceId: resources.id,
-      maxConcurrentUses: resources.maxConcurrentUses,
-      outOfServiceCount: resources.outOfServiceCount,
-      quantityConsumed: resourceRequirements.quantityConsumed,
-    })
-    .from(resourceRequirements)
-    .innerJoin(resources, eq(resourceRequirements.resourceId, resources.id))
-    .innerJoin(items, eq(resourceRequirements.itemId, items.id))
-    .where(and(eq(resourceRequirements.itemId, itemId), eq(items.locationId, locationId)));
+): Promise<ItemCapacityCeiling[]> {
+  const owned = await getDb()
+    .select({ id: items.id })
+    .from(items)
+    .where(and(eq(items.id, itemId), eq(items.locationId, locationId)))
+    .limit(1);
+  if (owned.length === 0) return [];
 
-  if (rows.length === 0) return null;
+  const { pools, requirements } = await poolsAndRequirementsForItem(itemId);
+  if (requirements.length === 0) return [];
 
-  // Collapse to one pool per resource, taking the largest per-unit consumption — the same
-  // conservative rule `resourceRemaining` applies.
-  const byResource = new Map<string, ResourcePool>();
-  for (const r of rows) {
-    const hit = byResource.get(r.resourceId);
-    if (hit) hit.maxQuantityConsumed = Math.max(hit.maxQuantityConsumed, r.quantityConsumed);
-    else
-      byResource.set(r.resourceId, {
-        maxConcurrentUses: r.maxConcurrentUses,
-        outOfServiceCount: r.outOfServiceCount,
-        maxQuantityConsumed: r.quantityConsumed,
-        consumed: 0,
-      });
-  }
-  return resourceRemaining([...byResource.values()]);
+  const idle = pools.map((p) => ({ ...p, consumed: 0 }));
+  const typeIds: string[] = [...new Set(requirements.map((r) => r.customerTypeId))];
+  const names = new Map(
+    (
+      await getDb()
+        .select({ id: customerTypes.id, singular: customerTypes.singular })
+        .from(customerTypes)
+        .where(eq(customerTypes.locationId, locationId))
+    ).map((c) => [c.id, c.singular]),
+  );
+
+  return typeIds
+    .map((customerTypeId) => ({
+      customerTypeId,
+      singular: names.get(customerTypeId) ?? "?",
+      ceiling: headroomForType(EMPTY_CART, customerTypeId, idle, requirements),
+    }))
+    .sort((a, b) => b.ceiling - a.ceiling || a.singular.localeCompare(b.singular));
 }
 
 export async function getItemById(

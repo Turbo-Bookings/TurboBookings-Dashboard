@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { deleteResource } from "@/lib/actions/resources";
 import { getLocationBySlug } from "@/lib/data/locations";
-import { listResources } from "@/lib/data/resources";
+import { listResources, resourceUsageSummary } from "@/lib/data/resources";
 
 type Props = {
   params: Promise<{ slug: string }>;
@@ -13,7 +13,10 @@ export default async function ResourcesPage({ params }: Props) {
   const loc = await getLocationBySlug(slug);
   if (!loc) notFound();
 
-  const rows = await listResources(loc.id);
+  const [rows, usage] = await Promise.all([
+    listResources(loc.id),
+    resourceUsageSummary(loc.id),
+  ]);
 
   return (
     <section>
@@ -50,6 +53,7 @@ export default async function ResourcesPage({ params }: Props) {
         <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
           {rows.map((r) => {
             const effective = r.maxConcurrentUses - r.outOfServiceCount;
+            const usedBy = usage.get(r.id) ?? [];
             return (
               <li key={r.id} className="flex items-center gap-4 px-4 py-3">
                 <div className="flex-1 min-w-0">
@@ -66,6 +70,29 @@ export default async function ResourcesPage({ params }: Props) {
                         : ""}
                     </span>
                   </p>
+                  {/* What a count change here actually affects. Without it an operator editing
+                      "4-Seat UTVs: 1" has no way to see that it is the 4-Seat option on both UTV
+                      tours that goes with it. */}
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {usedBy.length === 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400">
+                        Not used by any tour yet — it limits nothing until a tour consumes it.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-zinc-400">Used by </span>
+                        {usedBy
+                          .map((u) => `${u.optionName} on ${u.itemName}`)
+                          .join(" · ")}
+                      </>
+                    )}
+                  </p>
+                  {effective === 0 && usedBy.length > 0 && (
+                    <p className="mt-1 text-xs font-medium text-red-600 dark:text-red-400">
+                      Nothing available — those options are sold out on every slot until one is back
+                      in service.
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <Link

@@ -111,9 +111,33 @@ export async function overlappingResourceUsage(
 
     UNION ALL
 
-    -- Checkout holds. seat_holds carries no customer type, so charge each held unit the LARGEST
-    -- consumption any rider type on that tour could use. Briefly over-reserving is the safe
-    -- direction; the alternative is selling the same machine twice.
+    -- Checkout holds WITH a per-type breakdown. Structurally the same join as the bookings branch
+    -- above: each held line is charged its own rider type's consumption, on that type's own pool.
+    SELECT rr.resource_id,
+           a.starts_at,
+           a.ends_at,
+           SUM((l->>'q')::int * rr.quantity_consumed)::int AS units
+    FROM seat_holds h
+    JOIN availabilities a ON a.id = h.availability_id
+    JOIN items i ON i.id = a.item_id AND i.location_id = ${locationId}::uuid
+    CROSS JOIN LATERAL jsonb_array_elements(h.lines) AS l
+    JOIN resource_requirements rr
+      ON rr.item_id = a.item_id AND rr.customer_type_id = (l->>'ct')::uuid
+    WHERE h.lines IS NOT NULL
+      AND h.expires_at > now()
+      ${opts.excludeHoldToken ? sql`AND h.hold_token <> ${opts.excludeHoldToken}::uuid` : sql``}
+      AND a.starts_at < ${to} AND a.ends_at > ${from}
+    GROUP BY rr.resource_id, a.starts_at, a.ends_at
+
+    UNION ALL
+
+    -- Legacy holds, written before seat_holds.lines existed (see drizzle/0041). No customer type,
+    -- so charge each held unit the LARGEST consumption any rider type on that tour could use — on
+    -- EVERY pool the tour touches, since there is no way to know which one it wanted.
+    --
+    -- On a tour selling from two pools that over-reserves: one held unit books a two-seater AND the
+    -- four-seater. Over-reserving is the safe direction (the alternative is selling the same machine
+    -- twice) and these rows expire within the 10-minute hold TTL, so the window is self-clearing.
     SELECT m.resource_id,
            a.starts_at,
            a.ends_at,
@@ -125,7 +149,8 @@ export async function overlappingResourceUsage(
       SELECT item_id, resource_id, MAX(quantity_consumed) AS max_consumed
       FROM resource_requirements GROUP BY item_id, resource_id
     ) m ON m.item_id = a.item_id
-    WHERE h.expires_at > now()
+    WHERE h.lines IS NULL
+      AND h.expires_at > now()
       ${opts.excludeHoldToken ? sql`AND h.hold_token <> ${opts.excludeHoldToken}::uuid` : sql``}
       AND a.starts_at < ${to} AND a.ends_at > ${from}
     GROUP BY m.resource_id, a.starts_at, a.ends_at

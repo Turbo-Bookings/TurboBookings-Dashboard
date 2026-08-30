@@ -1,0 +1,39 @@
+-- Per-customer-type breakdown of a checkout reservation.
+--
+-- `seat_holds` carried only a total `quantity`, so the holds branch of
+-- `lib/availability/resourceUsage.ts` could not tell WHICH option a shopper was holding. It
+-- compensated by charging every held unit the LARGEST consumption any rider type on the tour
+-- could use, joined per (item, resource) — which produces one row PER POOL the tour touches.
+--
+-- With one pool per tour that was merely conservative. It stops being survivable the moment a tour
+-- sells from two pools: splitting Miami's UTVs into 3 two-seaters and 1 four-seater would mean a
+-- single 1-unit hold reserving a two-seater AND the only four-seater, so one shopper idling in
+-- checkout would black out the four-seater for everyone.
+--
+-- ## Why jsonb and not a customer_type_id column, and not a child table
+--
+-- A `customer_type_id` column forces the unique index `seat_holds_slot_token_idx` to become
+-- (availability_id, hold_token, customer_type_id), which means DROPPING the current one. The
+-- storefront's hold upsert targets `ON CONFLICT (availability_id, hold_token)`; with that index
+-- gone the conflict target no longer resolves and EVERY in-flight checkout throws — during the
+-- window between this migration and the storefront deploy, which are independent.
+--
+-- A `seat_hold_lines` child table keeps the index safe but `actions/holds.ts` runs on neon-http,
+-- which has NO transactions. Refreshing a hold would become three statements (upsert parent,
+-- delete lines, insert lines) and a failure between the last two leaves a live hold reserving
+-- NOTHING — the oversell direction, with no transaction available to prevent it.
+--
+-- One nullable jsonb column keeps hold refresh a single atomic upsert and leaves the unique index
+-- untouched, so old and new code both keep working while the two apps deploy separately.
+--
+-- NULL means "written by a pre-split storefront": readers fall back to the old MAX-consumption
+-- rule for those rows, which over-reserves rather than oversells and self-clears within the
+-- 10-minute hold TTL. `quantity` stays populated with the total, for legacy readers and as a
+-- cheap cross-check against the lines.
+--
+-- Shape: [{"ct": "<customer_type uuid>", "q": <units>}, ...]
+--
+-- Hand-written with IF NOT EXISTS and applied by hand, like 0033-0040: the drizzle journal stops
+-- at 0032, so `db:generate` would try to recreate everything since.
+ALTER TABLE "seat_holds"
+  ADD COLUMN IF NOT EXISTS "lines" jsonb;
