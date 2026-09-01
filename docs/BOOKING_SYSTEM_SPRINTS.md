@@ -5,6 +5,111 @@
 > **BOTH** repos. If anything elsewhere disagrees on build **ORDER**, this file wins.
 >
 > ---
+> ### ▶ SIX FIXES FROM OSCAR'S TEAM — 2026-09-01  (see the block below this one for the UTV split)
+>
+> Diagnosed against the code, the live production database, and the running UI in a browser. Two were
+> worse than reported, one was not the bug described, and one was a live money defect. Migrations
+> 0042–0044 applied to production; all additive.
+>
+> | # | Reported | Verified root cause | Fix |
+> |---|---|---|---|
+> | 1 | Can't comment on past reservations | **Not a date problem — no date guard exists anywhere.** `setBookingNote` and `addFollowUp` are gated on `manage_bookings` (director+), so front-line staff saw notes read-only on EVERY booking | New `comment` capability at `basic_user` + `booking_comments` (0042) |
+> | 2 | Can't move a Glow no-show to a day tour | Server always allowed it — 4 Dallas Glow→day moves had already succeeded. The no-shows report links to the booking DETAIL page, which had a SINGLE-tour picker; the cross-tour one existed only in `BookingModal` | Shared `reschedulableSlots`; detail page now passes `currentItemId` |
+> | 3 | Win-backs disagree, 2 vs 17 | `rescheduleBooking` **zeroes `no_show_units`**, so a real win-back fails the no-shows report's own predicate and vanishes. Its "2" were bookings re-marked no-show on the NEW slot. Only **9** `status='rescheduled'` follow-ups exist system-wide, ever | One `winBacks()` definition, derived from the move. Houston **2 → 14** |
+> | 4 | Dallas Glow checkout missing policy checkboxes | **Data.** 0 rows in `item_custom_fields`; every other tour has 4–5 | Cloned the day tour's 4 attachments |
+> | 5 | Miami reschedules show a $22 fee | **$22.80** — 6% platform fee invented at reschedule on the RACK price, on bookings that correctly had none. Pushed onto `balance_due_cents`, and it **compounded** | Fee measured on the INCREASE; **$156.60 reversed across 8 bookings** |
+> | 6 | Calendars stop after October | One hard-coded `60` in the storefront. Supply runs to 2028-02-24 | 12-month horizon, one month of slots at a time |
+>
+> #### The $22.80, in full
+>
+> `syncPlatformFee` recomputed 6% of **gross `subtotal_cents`** on every reschedule, exempting only
+> FareHarbor imports. Three failures at once: walk-in/OTA bookings deliberately store
+> `platform_fee_cents = 0` and got the whole 6% invented; `discount_cents` and
+> `subtotal_cents_override` were ignored while checkout uses the NET price; and because
+> `platform_fee_cents` only advances when money is collected, an uncollectable target recomputed
+> identically next time — **#0286 was charged twice, $45.60**.
+>
+> Measuring the **increase** fixes all three and needs no knowledge of discounts, overrides or payment
+> method. That is what the FareHarbor branch already did; the special case was the correct rule applied
+> to only one case. The operator's typed reschedule fee is also out of the fee base — a $50 Miami fee
+> was generating a $3.00 top-up on top.
+>
+> ```
+> Reversed 2026-09-01 — npm run fees:reverse-phantom
+>   dtown #0578 $14.40 · miami #0101 $11.40 · #0143 $21.60 · #0164 $18.00
+>   miami #0243 $11.40 · #0286 $45.60 (2x) · #0353 $11.40 · #0394 $22.80
+>   TOTAL $156.60 — balances land on the sold price; #0353 and #0394 to $0.00
+> ```
+>
+> ⚠️ **NOT reversed, by operator decision (2026-09-01):** 4 fee top-ups totalling **$16.80** genuinely
+> CHARGED to a card off the gross base — dtown #0588 ($7.20 + $8.40), miami #0343 ($0.60), miami #0345
+> ($0.60). Real Stripe charges on discounted bookings whose value never changed; undoing them means
+> refunds. Operator chose not to.
+>
+> #### ⚖️ Compliance note — Dallas Night Glow Tour
+>
+> `getCheckoutFieldsForItem` returned nothing, the checkout rendered nothing, and the **server
+> validates against the same empty list**. Every Dallas Glow booking taken between the tour's creation
+> and 2026-09-01 completed **without the customer ever being asked to accept the Damage, Late, Refund
+> or Pricing policy.** Not hidden — never collected, and the bookings already taken cannot acquire it
+> retroactively.
+>
+> Root cause still open: neither `create-dtown-glow-tour.ts` nor `add-htown-tours.ts` attaches custom
+> fields, and there is **no tour→fields admin screen** (only field→tours), so the omission is invisible
+> from the tour page. Houston's were attached by hand after the fact; nobody did that for Dallas.
+>
+> #### Why the two win-back numbers still differ, legitimately
+>
+> **14 and 17, not 17 and 17.** The registry declares no-shows as `basis: tour_date` and reschedules as
+> `basis: action_date`. A tour missed on the 24th and won back on the 2nd is in one window and not the
+> other. Forcing them equal means putting one report on the other's clock and breaking every other tile
+> on that page. What must be shared is the **predicate**, and now is.
+>
+> Rows are keyed on the **occurrence** — (booking, tour it missed) — so a booking that missed, was won
+> back, and missed again appears twice: once won, once still to chase. Houston has 4 of those, plus
+> `#0742` which moved twice.
+>
+> The `no_show_units` reset on a move is **correct and unchanged** — the new date has not happened yet.
+> The bug was a report reading live state to answer a historical question.
+>
+> Group moves are excluded via a new `kind` column rather than by matching
+> `reason = 'Slot eliminated — group move'`, which would make an em-dash load-bearing. **Backfill hit 0
+> rows** — `moveSlotBookings` has never run in production, so the 17 was never inflated. The column is
+> protection, not a correction.
+>
+> #### The call list is now a workflow
+>
+> Houston's queue: **64 occurrences → 33 to chase.** Case state is DERIVED (`resolveCase`), never
+> stored — attempts from the follow-up log, win-backs from the move, refusals by `EXISTS`. Only a due
+> date and a manual close live in `no_show_cases` (0044), created lazily, so no backfill was needed.
+>
+> `EXISTS`/`COUNT`, never "the latest row": logging "no answer" after "deposit forfeited" used to
+> silently reopen a settled case. Precedence: won back → refused → closed by hand → 3 attempts → open.
+> New `refused` status (reps had been overloading `deposit_forfeited`); `rescheduled` dropped from the
+> picker because it now counts nothing.
+>
+> #### Calendar — supply was never the problem
+>
+> ```
+> supply          540 days, slots to 2028-02-24
+> old query        60 days  ← binding. 2026-09-01 + 60 = 2026-10-31 exactly
+> naive fix       365 days = 5,475 slots ≈ 1.07 MB per page load
+> shipped         12 months, ~366 date strings + ONE month of slots = 174 KB
+> ```
+>
+> #### Known-open, deliberately not done
+>
+> * The **operator** reschedule picker is still 60 days while the customer calendar runs a year.
+> * `materializeAllActiveSchedules` loops every active schedule **serially** under `maxDuration = 60`.
+>   The old 60-day window masked any timeout; a 12-month calendar does not.
+> * `moveSlotBookings` updates `availabilityId` but **not** `itemId` and does not re-price. Safe only
+>   while its picker stays single-tour.
+> * `items.cancellation_policy_id` is set on all 5 Miami items but `getCancellationRefund` never reads
+>   it — a per-item policy would be silently ignored. Miami also has two rows flagged `is_default` and
+>   a 0-minute grace period.
+> * `~/bookingsystem/.env.local` carries a stale Neon password; the durable fix (stop it being a
+>   hand-copied `DATABASE_URL`) is deferred.
+> ---
 > ### ▶ STATE AS OF 2026-08-29 — capacity is now PER RIDER TYPE (Miami UTV fleet split)
 >
 > **Why:** Miami sells a `2-Seat UTV` and a `4-Seat UTV` option on both UTV tours, correctly priced,
