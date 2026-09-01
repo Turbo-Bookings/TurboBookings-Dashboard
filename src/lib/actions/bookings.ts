@@ -792,7 +792,11 @@ export async function rescheduleBooking(
       // The reschedule fee is operator revenue and rides on the balance, like the tour price.
       // `platform_fee_cents` is deliberately NOT recomputed here — syncPlatformFee() does that after
       // the transaction commits, because it charges a card and must not run inside one.
-      const subtotalWithFee = newSubtotal + fee;
+      //
+      // ⚠️ The typed fee is deliberately NOT part of what syncPlatformFee is told about (see
+      // `repricedSubtotal` below). It is the operator's own charge for moving the booking, not a tour
+      // sale, and folding it into the fee base meant a $50 Miami reschedule fee also generated a
+      // $3.00 platform-fee top-up against the customer.
 
       // Move the total BY the change. Do NOT rebuild it from subtotal + tax + fee.
       //
@@ -820,7 +824,8 @@ export async function rescheduleBooking(
           updatedAt: new Date(),
         })
         .where(eq(bookings.id, bookingId));
-      repricedSubtotal = subtotalWithFee;
+      // The tour price only — see the note above. Never `newSubtotal + fee`.
+      repricedSubtotal = newSubtotal;
 
       // Snapshot where this booking is coming FROM, and what state it was in, before either is lost.
       //
@@ -892,8 +897,8 @@ export async function rescheduleBooking(
     bookingId,
     repricedSubtotal,
     "reschedule",
-    // What the booking was worth before this move. Only an INCREASE is ours to take a fee on when
-    // the booking came from FareHarbor; a same-tour move with no fee comes to zero.
+    // What the booking was worth before this move. Only an INCREASE is ever ours to take a fee on,
+    // so a same-tour move comes to zero and a cross-tour downgrade comes to zero.
     b.subtotalCents ?? 0,
   );
 

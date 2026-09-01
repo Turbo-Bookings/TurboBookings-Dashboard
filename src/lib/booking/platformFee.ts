@@ -80,25 +80,33 @@ export async function syncPlatformFee(
   const bps = location.platformFeeBps ?? 0;
   const current = b.platformFeeCents ?? 0;
 
-  // A FareHarbor import is someone else's sale. We took no fee on it, `platform_fee_cents` is 0 to
-  // say so, and the guest already paid FareHarbor in full.
+  // The fee is owed on what is newly SOLD, never on what the booking is worth.
   //
-  // Charging 6% of the WHOLE subtotal here was therefore wrong twice over: the fee had never been
-  // quoted to that guest, and `newTotal = total + delta` below put it straight onto their balance —
-  // so simply moving an imported booking to another time made them owe an extra 6% at the desk. The
-  // automatic write-off further down hid it from our side of the books while leaving it on theirs,
-  // because a write-off only stamps a date; it never reverses the total.
+  // This used to charge 6% of the whole subtotal for anything that was not a FareHarbor import — and
+  // that is wrong for exactly the same reasons the import case was, which is why the import case had
+  // already been special-cased. Three ways it went wrong on live bookings:
   //
-  // What IS ours is anything sold on top of the import — a vehicle added at the counter, a move to a
-  // pricier tour. So the base for an import is the INCREASE, and a plain reschedule (no increase)
-  // correctly comes to nothing.
-  const imported = !!b.externalRef?.startsWith("fh:");
-  const target = imported
-    ? current +
-      Math.round(
-        Math.max(0, newSubtotalCents - (previousSubtotalCents ?? newSubtotalCents)) * (bps / 10000),
-      )
-    : Math.round(Math.max(0, newSubtotalCents) * (bps / 10000));
+  //   * A walk-in or Groupon/OTA booking deliberately stores `platform_fee_cents = 0`
+  //     (pricing/breakdown.ts charges the fee only when `paymentMethod === "card"`). Rescheduling one
+  //     invented the entire 6% and, with no card on file, `newTotal = total + delta` put it on the
+  //     customer's balance. 8 live bookings carried $156.60 of fee nobody had ever been quoted.
+  //   * It read GROSS `subtotal_cents`, ignoring both `discount_cents` and `subtotal_cents_override`,
+  //     while checkout computes the fee from the NET price (bookingsystem quote.ts). So every
+  //     reschedule of a discounted booking charged 6% of the discount for a booking whose value had
+  //     not changed.
+  //   * Because `platform_fee_cents` only advances when the money is actually collected (see
+  //     `feeForRecords` below), an uncollectable target was recomputed identically on the NEXT
+  //     reschedule and charged again. Booking #0286 was hit twice, $45.60.
+  //
+  // Measuring the INCREASE fixes all three at once, and needs no knowledge of discounts, overrides or
+  // payment method: a discount is in both subtotals and cancels; an override is in neither; a
+  // same-price move is zero; and a genuinely uncollected fee cannot recur because the subtotal does
+  // not move a second time. What remains chargeable is what it should always have been — a vehicle
+  // added at the counter, or a move to a pricier tour.
+  //
+  // Omitting `previousSubtotalCents` means "nothing new was sold", which is the safe default.
+  const increase = Math.max(0, newSubtotalCents - (previousSubtotalCents ?? newSubtotalCents));
+  const target = current + Math.round(increase * (bps / 10000));
 
   // The ratchet. Equal or lower target → nothing to do, and we keep what was charged.
   if (target <= current) {
