@@ -22,7 +22,7 @@ import {
 import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
-import { openSlotsForItem } from "@/lib/data/availability";
+import { openSlotsForItem, reschedulableSlots } from "@/lib/data/availability";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { syncPlatformFee } from "@/lib/booking/platformFee";
@@ -1535,11 +1535,6 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     itemName: string;
   }[] = [];
   if (detail.booking.status === "active") {
-    const bookable = await getDb()
-      .select({ id: items.id, name: items.name })
-      .from(items)
-      .where(and(eq(items.locationId, location.id), eq(items.bookableOnline, true)))
-      .orderBy(asc(items.sortOrder));
     // What this booking consumes, by rider type. Offering a slot that merely has "room" is not
     // good enough once a tour sells two vehicle sizes: a booking for one four-seater does not fit
     // a slot whose only free machines are two-seaters, and the operator would only find that out
@@ -1548,15 +1543,7 @@ export async function getBookingModalData(slug: string, bookingId: string) {
       m.set(l.customerTypeId, (m.get(l.customerTypeId) ?? 0) + l.quantity);
       return m;
     }, new Map<string, number>());
-    const perTour = await Promise.all(
-      bookable.map(async (it) => {
-        const slots = await openSlotsForItem(location.id, it.id, 60, movingCart);
-        return slots.map((sl) => ({ ...sl, itemId: it.id, itemName: it.name }));
-      }),
-    );
-    rescheduleSlots = perTour
-      .flat()
-      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    rescheduleSlots = await reschedulableSlots(location.id, movingCart);
   }
   return {
     detail,

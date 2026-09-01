@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lt, ne } from "drizzle-orm";
 import { DateTime } from "luxon";
 import {
   bestTypeRemaining,
@@ -286,4 +286,48 @@ function cartSize(cart: Cart): number {
   let n = 0;
   for (const q of cart.values()) n += q;
   return n;
+}
+
+export type ReschedulableSlot = OpenSlot & { itemId: string; itemName: string };
+
+/**
+ * Every slot a booking could be moved into, across EVERY tour at the location.
+ *
+ * Cross-tour reschedule has worked server-side for a while — `rescheduleBooking` re-prices against
+ * the target and only refuses when a rider type is not offered there. What did not work was reaching
+ * it: this list was built inline inside `getBookingModalData` and so existed only in the booking
+ * MODAL, opened from search, recent bookings and the manifest. The booking DETAIL page built its own
+ * picker from a single item, and the no-shows report links to the detail page.
+ *
+ * So a rep working the Houston call list could not offer a Glow no-show a day tour — the option was
+ * not on screen — even though Dallas Glow and the Dallas day tour share both rider types at identical
+ * prices, and four such moves had already gone through from the modal. Shared here so both surfaces
+ * ask the same question.
+ *
+ * `cart` is the booking being moved, so `fits` is that basket against that slot rather than a
+ * headline count: a booking for one four-seater does not fit a slot whose free machines are all
+ * two-seaters.
+ *
+ * ⚠️ Only `bookable_online` tours are offered. `rescheduleBooking` itself would accept an
+ * operator-only tour, so this is the picker being stricter than the action — harmless today because
+ * every live item is bookable online, but it is the reason an offline tour would silently not appear.
+ */
+export async function reschedulableSlots(
+  locationId: string,
+  cart: Cart,
+  days = 60,
+): Promise<ReschedulableSlot[]> {
+  const bookable = await getDb()
+    .select({ id: items.id, name: items.name })
+    .from(items)
+    .where(and(eq(items.locationId, locationId), eq(items.bookableOnline, true)))
+    .orderBy(asc(items.sortOrder));
+
+  const perTour = await Promise.all(
+    bookable.map(async (it) => {
+      const slots = await openSlotsForItem(locationId, it.id, days, cart);
+      return slots.map((sl) => ({ ...sl, itemId: it.id, itemName: it.name }));
+    }),
+  );
+  return perTour.flat().sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }

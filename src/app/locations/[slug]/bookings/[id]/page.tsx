@@ -11,7 +11,7 @@ import { LineCheckIn } from "@/components/CheckInControls";
 import { RescheduleControls } from "@/components/RescheduleControls";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
-import { getTourBookingData } from "@/lib/actions/manualBooking";
+import { reschedulableSlots } from "@/lib/data/availability";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 import { BookingNote } from "@/components/BookingNote";
@@ -40,10 +40,19 @@ export default async function BookingDetailPage({ params }: Props) {
   // The reschedule picker must be filtered against THIS booking's basket, not a headline count: a
   // booking for one four-seater does not fit a slot whose free machines are all two-seaters, and
   // offering it would fail only at save time.
-  const movingCart: Record<string, number> = {};
-  for (const l of d.lines) movingCart[l.customerTypeId] = (movingCart[l.customerTypeId] ?? 0) + l.quantity;
-  const tourData =
-    b.status === "active" ? await getTourBookingData(slug, b.itemId, movingCart) : null;
+  const movingCart = new Map<string, number>();
+  for (const l of d.lines)
+    movingCart.set(l.customerTypeId, (movingCart.get(l.customerTypeId) ?? 0) + l.quantity);
+
+  // EVERY tour at the location, not just this booking's own.
+  //
+  // This page used to build its picker from a single item, and the no-shows report links here — so a
+  // rep working the call list had no way to offer a Glow no-show a day tour instead. The server has
+  // always allowed the move; the option simply was not on screen. Same list the booking modal uses.
+  const rescheduleSlots =
+    b.status === "active" && canManage
+      ? await reschedulableSlots(loc.id, movingCart)
+      : [];
   // What the desk would charge if the customer pays the rest by card. Null when there is nothing to
   // collect, or the caller cannot take payments — the component then renders nothing.
   // `collect_payment`, not `manage_bookings`. Taking the balance at the desk IS the front-line job —
@@ -62,7 +71,6 @@ export default async function BookingDetailPage({ params }: Props) {
     ...activity.map((a) => a.userId),
     ...reschedules.map((r) => r.performedByUserId),
   ]);
-  const rescheduleSlots = tourData && tourData.ok ? tourData.slots : [];
   const tz = loc.timezone ?? "America/Chicago";
   const when = slot
     ? new Intl.DateTimeFormat("en-US", {
@@ -127,6 +135,9 @@ export default async function BookingDetailPage({ params }: Props) {
           slug={slug}
           bookingId={b.id}
           currentId={b.availabilityId}
+          // Lets the control flag a target on a DIFFERENT tour and warn that the booking will be
+          // re-priced. Never passed here before, so both were dead on this page.
+          currentItemId={b.itemId}
           slots={rescheduleSlots}
           tz={tz}
         />
