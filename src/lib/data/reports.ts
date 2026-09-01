@@ -10,10 +10,16 @@ import {
   customers,
   getDb,
   items,
+  noShowCases,
   payments,
 } from "@/lib/db";
 import type { FollowupStatus } from "@/lib/booking/followupStatus";
 import { bookingRollup, type CheckInRollup } from "@/lib/data/bookings";
+import {
+  BUCKET_ORDER,
+  resolveCase,
+  type CaseState,
+} from "@/lib/booking/noShowCase";
 
 /**
  * Queries behind the reports.
@@ -498,6 +504,8 @@ export type NoShowRow = {
   outcome: "open" | "won_back";
   /** Where it went, when `outcome` is "won_back". */
   wonBackTo: { startsAt: Date | null; itemName: string | null; movedAt: Date } | null;
+  /** Full workflow state — see lib/booking/noShowCase.ts. `outcome` above is `caseState.outcome`. */
+  caseState: CaseState;
 };
 
 /**
@@ -515,6 +523,8 @@ export async function noShowReport(
   locationId: string,
   from: Date,
   to: Date,
+  /** Location timezone — decides what "due today" means for a rep in that market. */
+  tz = "America/Chicago",
 ): Promise<NoShowRow[]> {
   const db = getDb();
   const rows = await db
@@ -584,6 +594,7 @@ export async function noShowReport(
         latestByUserId: null,
         outcome: "open",
         wonBackTo: null,
+        caseState: PENDING_CASE,
       });
     }
   }
@@ -676,6 +687,7 @@ export async function noShowReport(
       latestByUserId: null,
       outcome: "won_back",
       wonBackTo: { startsAt: w.toStartsAt, itemName: w.toItemName, movedAt: w.movedAt },
+      caseState: PENDING_CASE,
     });
   }
 
@@ -725,8 +737,62 @@ export async function noShowReport(
     }
   }
 
-  // Oldest tour first: the longest-cold lead is the one most worth calling before it goes further.
-  return [...byBooking.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  // ---- workflow state -------------------------------------------------------------------------
+  //
+  // Everything is derived: attempts from the follow-up rows, won-back from the move, refusal from
+  // EXISTS over the statuses. `no_show_cases` supplies only the two things that cannot be — a due
+  // date and a manual close — and rows there are created lazily, so most occurrences have none.
+  const occurrenceIds = [...byBooking.values()];
+  const caseRows = ids.length
+    ? await db
+        .select()
+        .from(noShowCases)
+        .where(inArray(noShowCases.bookingId, ids))
+    : [];
+  const caseBy = new Map(
+    caseRows.map((c) => [key(c.bookingId, c.forStartsAt), c]),
+  );
+
+  const allFollowUps = ids.length
+    ? await db
+        .select({
+          bookingId: bookingFollowups.bookingId,
+          status: bookingFollowups.status,
+          createdAt: bookingFollowups.createdAt,
+        })
+        .from(bookingFollowups)
+        .where(inArray(bookingFollowups.bookingId, ids))
+    : [];
+  const followBy = new Map<string, { status: string; createdAt: Date }[]>();
+  for (const f of allFollowUps) {
+    const list = followBy.get(f.bookingId);
+    if (list) list.push(f);
+    else followBy.set(f.bookingId, [f]);
+  }
+
+  const now = new Date();
+  const dayKey = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(d);
+  for (const row of occurrenceIds) {
+    const k = key(row.bookingId, row.startsAt);
+    row.caseState = resolveCase(
+      {
+        wonBack: row.outcome === "won_back",
+        followUps: followBy.get(row.bookingId) ?? [],
+        caseRow: caseBy.get(k) ?? null,
+      },
+      now,
+      dayKey,
+    );
+    row.followUpCount = (followBy.get(row.bookingId) ?? []).length;
+  }
+
+  // Overdue first, then today's commitments, then never-contacted. Within a bucket the old rule
+  // stands: oldest missed tour first.
+  return occurrenceIds.sort(
+    (a, b) =>
+      BUCKET_ORDER[a.caseState.bucket] - BUCKET_ORDER[b.caseState.bucket] ||
+      a.startsAt.getTime() - b.startsAt.getTime(),
+  );
 }
 
 // ------------------------------------------------------------ win-backs
@@ -737,6 +803,15 @@ export async function noShowReport(
  * earlier move reads as "not a win-back" — which is UNKNOWN, not zero. Measured: 128 rows before,
  * 0 apparent win-backs; 219 rows after, 28 real ones.
  */
+/** Placeholder until `resolveCase` runs at the end of `noShowReport`. Never leaves the function. */
+const PENDING_CASE: CaseState = {
+  outcome: "open",
+  bucket: "new",
+  attempts: 0,
+  nextFollowUpAt: null,
+  isClosed: false,
+};
+
 export const WIN_BACK_RECORDED_FROM = new Date("2026-08-25T00:00:00.000Z");
 
 export type WinBack = {

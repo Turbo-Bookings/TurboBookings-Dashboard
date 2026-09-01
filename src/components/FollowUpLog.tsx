@@ -5,7 +5,7 @@ import { DateTime } from "luxon";
 import { Phone } from "lucide-react";
 import { addFollowUp, type FollowupEntry } from "@/lib/actions/followups";
 import {
-  FOLLOWUP_STATUSES,
+  FOLLOWUP_PICKER,
   followupLabel,
   followupToneClass,
 } from "@/lib/booking/followupStatus";
@@ -88,7 +88,7 @@ export function FollowUpLog({
             className="rounded-md border border-zinc-300 px-2 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-900"
           >
             <option value="">Outcome…</option>
-            {FOLLOWUP_STATUSES.map((s) => (
+            {FOLLOWUP_PICKER.map((s) => (
               <option key={s.key} value={s.key}>
                 {s.label}
               </option>

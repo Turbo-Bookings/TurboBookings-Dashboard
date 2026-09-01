@@ -13,6 +13,7 @@ export const FOLLOWUP_STATUSES = [
   { key: "no_answer", label: "No answer", tone: "zinc" },
   { key: "reached", label: "Reached — deciding", tone: "blue" },
   { key: "rescheduled", label: "Rescheduled", tone: "emerald" },
+  { key: "refused", label: "Refused to rebook", tone: "orange" },
   { key: "deposit_forfeited", label: "Deposit forfeited", tone: "orange" },
   // The discrepancy case: the customer says they were there. Worth its own status because it is a
   // question about OUR records, not about the customer, and it should be countable.
@@ -21,6 +22,17 @@ export const FOLLOWUP_STATUSES = [
 ] as const;
 
 export type FollowupStatus = (typeof FOLLOWUP_STATUSES)[number]["key"];
+
+/**
+ * What a rep can pick when logging a call.
+ *
+ * `rescheduled` is deliberately NOT offered any more. Win-backs are derived from the move itself
+ * now, so choosing it counts nothing — a control that lies. The value stays in the enum above so the
+ * 9 historical rows still render with a label.
+ */
+export const FOLLOWUP_PICKER = FOLLOWUP_STATUSES.filter(
+  (s) => s.key !== "rescheduled",
+);
 
 export function followupLabel(key: string): string {
   return FOLLOWUP_STATUSES.find((s) => s.key === key)?.label ?? key.replace(/_/g, " ");

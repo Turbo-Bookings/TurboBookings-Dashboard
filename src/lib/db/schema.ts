@@ -1488,6 +1488,64 @@ export type NewBookingReschedule = typeof bookingReschedules.$inferInsert;
  * without also being handed booking creation and the reschedule picker. No date or status guard:
  * commenting on a tour that ran last month is the point.
  */
+// ---------- No-show cases (the call-list workflow state) ----------
+
+/** Why a rep closed a case by hand. Automatic closures are derived, not stored — see noShowCase.ts. */
+export const noShowCloseReasonEnum = pgEnum("no_show_close_reason", [
+  "not_worth_chasing",
+  "bad_contact",
+  "duplicate",
+  "other",
+]);
+
+/**
+ * Workflow state for one missed occurrence — a due date, and whether a rep has closed it by hand.
+ *
+ * Deliberately thin. Everything derivable is derived: attempts are `count(booking_followups)`,
+ * won-back is `EXISTS(booking_reschedules …)`, refused is `EXISTS(a terminal followup)`. Storing any
+ * of those would create a second copy that drifts, which is exactly how the no-shows report came to
+ * disagree with the reschedules report about what a win-back was.
+ *
+ * Keyed on (bookingId, forStartsAt) rather than bookingId: a booking can miss, be won back, and miss
+ * again on the new date. Two calls to make, so two cases.
+ *
+ * Rows are created LAZILY — a booking with no row here is simply a new, untouched case. The table
+ * needed no backfill and the list works with it empty.
+ */
+export const noShowCases = pgTable(
+  "no_show_cases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    /** Which miss this case is about. Snapshotted so cleaning the slot off the schedule cannot orphan it. */
+    forStartsAt: timestamp("for_starts_at", { withTimezone: true }).notNull(),
+    /** When the rep said they would try again. Null = no commitment made. */
+    nextFollowUpAt: timestamp("next_follow_up_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedReason: noShowCloseReasonEnum("closed_reason"),
+    closedByUserId: text("closed_by_user_id"),
+    /**
+     * The one thing a pure function cannot derive: a reopened case still has ≥3 attempts behind it,
+     * so without this it would auto-close again on the next render. Attempts are counted from here.
+     */
+    reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    occurrenceIdx: uniqueIndex("no_show_cases_occurrence_idx").on(t.bookingId, t.forStartsAt),
+    queueIdx: index("no_show_cases_queue_idx").on(t.locationId, t.nextFollowUpAt),
+  }),
+);
+
+export type NoShowCase = typeof noShowCases.$inferSelect;
+export type NewNoShowCase = typeof noShowCases.$inferInsert;
+
 export const bookingComments = pgTable(
   "booking_comments",
   {
@@ -1519,6 +1577,10 @@ export const followupStatusEnum = pgEnum("followup_status", [
   "deposit_forfeited",
   "disputed",
   "other",
+  // ⚠️ APPEND ONLY, never reorder — pgEnum order must match the Postgres type.
+  // "They said no." Reps had been logging this as `deposit_forfeited` because it was the closest
+  // thing on offer, which conflates "we kept the money" with "they are not coming back".
+  "refused",
 ]);
 
 export const bookingFollowups = pgTable(

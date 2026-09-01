@@ -1,10 +1,24 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DateTime } from "luxon";
 import { TrendingUp, TriangleAlert } from "lucide-react";
 import { FollowUpLog } from "@/components/FollowUpLog";
+import {
+  BUCKET_LABEL,
+  MAX_ATTEMPTS,
+  NO_SHOW_CLOSE_REASONS,
+  OUTCOME_LABEL,
+  type CaseOutcome,
+  type QueueBucket,
+} from "@/lib/booking/noShowCase";
+import {
+  closeNoShowCase,
+  reopenNoShowCase,
+  snoozeNoShowCase,
+} from "@/lib/actions/followups";
 import { followupLabel, followupToneClass } from "@/lib/booking/followupStatus";
 import { usd } from "@/lib/ui/money";
 import type { FollowupEntry } from "@/lib/actions/followups";
@@ -29,6 +43,13 @@ export type NoShowView = {
   outcome: "open" | "won_back";
   wonBackToIso: string | null;
   wonBackToItemName: string | null;
+  /** Full workflow state — see lib/booking/noShowCase.ts. */
+  caseOutcome: CaseOutcome;
+  bucket: QueueBucket;
+  attempts: number;
+  nextFollowUpAtIso: string | null;
+  /** Closed by any route — won back, refused, 3 attempts, or by hand. */
+  caseState_isClosed: boolean;
 };
 
 /**
@@ -53,6 +74,15 @@ export function NoShowRows({
   canLog: boolean;
 }) {
   const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function run(k: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
+    setBusy(k);
+    const r = await fn();
+    setBusy(null);
+    if (r.ok) router.refresh();
+  }
+
   const when = (iso: string) =>
     DateTime.fromISO(iso).setZone(tz).toFormat("ccc, LLL d · h:mm a");
 
@@ -86,6 +116,23 @@ export function NoShowRows({
                 <TrendingUp className="h-3 w-3" /> Won back
                 {r.wonBackToIso ? ` → ${when(r.wonBackToIso)}` : ""}
                 {r.wonBackToItemName ? ` · ${r.wonBackToItemName}` : ""}
+              </span>
+            )}
+            {r.caseOutcome !== "open" && r.caseOutcome !== "won_back" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                {OUTCOME_LABEL[r.caseOutcome]}
+              </span>
+            )}
+            {r.caseOutcome === "open" && (r.bucket === "overdue" || r.bucket === "due_today") && (
+              <span
+                className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${
+                  r.bucket === "overdue"
+                    ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-200"
+                    : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-200"
+                }`}
+              >
+                {BUCKET_LABEL[r.bucket]}
+                {r.nextFollowUpAtIso ? ` · ${when(r.nextFollowUpAtIso)}` : ""}
               </span>
             )}
             {r.disputed && (
@@ -132,6 +179,74 @@ export function NoShowRows({
               onAdded={() => router.refresh()}
             />
           </div>
+
+          {/*
+            The workflow controls. A rep needs three things a call list has never had: a way to say
+            "try again on Tuesday", a way to give up, and a way to undo giving up. Everything else
+            about the case state — attempts, refusals, win-backs — is derived and needs no control.
+          */}
+          {canLog && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              {!r.caseState_isClosed ? (
+                <>
+                  <span className="text-zinc-400">
+                    {r.attempts}/{MAX_ATTEMPTS} attempts
+                  </span>
+                  <label className="flex items-center gap-1 text-zinc-500">
+                    Try again
+                    <input
+                      type="date"
+                      defaultValue={r.nextFollowUpAtIso?.slice(0, 10) ?? ""}
+                      onChange={(e) =>
+                        run(`snooze-${r.bookingId}`, () =>
+                          snoozeNoShowCase(
+                            slug,
+                            r.bookingId,
+                            r.startsAtIso,
+                            e.target.value ? new Date(`${e.target.value}T12:00:00`).toISOString() : null,
+                          ),
+                        )
+                      }
+                      className="rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+                    />
+                  </label>
+                  <select
+                    defaultValue=""
+                    disabled={busy === `close-${r.bookingId}`}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      run(`close-${r.bookingId}`, () =>
+                        closeNoShowCase(slug, r.bookingId, r.startsAtIso, e.target.value),
+                      );
+                    }}
+                    className="rounded-md border border-zinc-300 px-2 py-1 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                  >
+                    <option value="">Close case…</option>
+                    {NO_SHOW_CLOSE_REASONS.map((c) => (
+                      <option key={c.key} value={c.key}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                r.caseOutcome !== "won_back" && (
+                  <button
+                    type="button"
+                    disabled={busy === `reopen-${r.bookingId}`}
+                    onClick={() =>
+                      run(`reopen-${r.bookingId}`, () =>
+                        reopenNoShowCase(slug, r.bookingId, r.startsAtIso),
+                      )
+                    }
+                    className="rounded-md border border-zinc-300 px-2 py-1 font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+                  >
+                    Reopen
+                  </button>
+                )
+              )}
+            </div>
+          )}
         </li>
       ))}
     </ul>

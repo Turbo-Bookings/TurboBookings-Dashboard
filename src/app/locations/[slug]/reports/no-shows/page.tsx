@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CircleX, PhoneOff, TriangleAlert, TrendingUp } from "lucide-react";
 import { StatTile } from "@/components/ui/StatTile";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ from?: string; to?: string; preset?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; preset?: string; state?: string }>;
 };
 
 export default async function NoShowsPage({ params, searchParams }: Props) {
@@ -29,12 +30,35 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
   // nothing has no-showed yet, so "today" is an empty screen for most of the working day — the same
   // trap the check-in report fell into. The team works recent no-shows, not this hour's.
   const range = resolveRange(sp, tz, "rolling7");
-  const rows = await noShowReport(loc.id, range.from, range.to);
+  const rows = await noShowReport(loc.id, range.from, range.to, tz);
   const canLog = await can("manage_bookings", slug);
 
-  const open = rows.filter((r) => r.outcome === "open");
+  // Filter tabs. "Open" is the default because the list exists to be worked: closed cases are kept
+  // and reachable, not deleted, but they are not what a rep should see first. Houston has 25
+  // `deposit_forfeited` bookings that have been sitting in the queue with nothing to do about them.
+  const state = ["open", "due", "overdue", "won", "closed", "all"].includes(sp.state ?? "")
+    ? (sp.state as string)
+    : "open";
+  const open = rows.filter((r) => !r.caseState.isClosed);
+  const dueToday = rows.filter((r) => r.caseState.bucket === "due_today");
+  const overdue = rows.filter((r) => r.caseState.bucket === "overdue");
+  const closed = rows.filter(
+    (r) => r.caseState.isClosed && r.caseState.outcome !== "won_back",
+  );
+  const shown =
+    state === "all"
+      ? rows
+      : state === "due"
+        ? dueToday
+        : state === "overdue"
+          ? overdue
+          : state === "won"
+            ? rows.filter((r) => r.caseState.outcome === "won_back")
+            : state === "closed"
+              ? closed
+              : open;
   const disputed = open.filter((r) => r.disputed).length;
-  const untouched = open.filter((r) => r.followUpCount === 0).length;
+  const untouched = open.filter((r) => r.caseState.bucket === "new").length;
   // Derived from the MOVE, not from a rep remembering to pick "Rescheduled" from a dropdown. That
   // old rule reported 2 against a real 14 for this window, because performing the reschedule zeroes
   // no_show_units and the win-back then failed this report's own predicate. See `winBacks`.
@@ -46,7 +70,29 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
   // shown who worked it — the one thing that tells a manager whether the list is being worked.
   const actors = await resolveUserLabels(rows.map((r) => r.latestByUserId));
 
-  const view: NoShowView[] = rows.map((r) => ({
+  const tab = (key: string, label: string, n: number) => {
+    const qs = new URLSearchParams();
+    if (sp.from) qs.set("from", sp.from);
+    if (sp.to) qs.set("to", sp.to);
+    if (sp.preset) qs.set("preset", sp.preset);
+    if (key !== "open") qs.set("state", key);
+    const on = state === key;
+    return (
+      <Link
+        key={key}
+        href={`?${qs.toString()}`}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+          on
+            ? "bg-blue-600 text-white"
+            : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        }`}
+      >
+        {label} <span className={on ? "text-white/70" : "text-zinc-400"}>{n}</span>
+      </Link>
+    );
+  };
+
+  const view: NoShowView[] = shown.map((r) => ({
     bookingId: r.bookingId,
     displayNumber: r.displayNumber,
     customerName: r.customerName,
@@ -71,6 +117,11 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
     outcome: r.outcome,
     wonBackToIso: r.wonBackTo?.startsAt?.toISOString() ?? null,
     wonBackToItemName: r.wonBackTo?.itemName ?? null,
+    caseOutcome: r.caseState.outcome,
+    bucket: r.caseState.bucket,
+    attempts: r.caseState.attempts,
+    nextFollowUpAtIso: r.caseState.nextFollowUpAt?.toISOString() ?? null,
+    caseState_isClosed: r.caseState.isClosed,
   }));
 
   return (
@@ -94,12 +145,23 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
         </p>
       )}
 
-      <h3 className="mt-6 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+      <div className="mt-6 flex flex-wrap gap-2">
+        {tab("open", "To chase", open.length)}
+        {tab("overdue", "Overdue", overdue.length)}
+        {tab("due", "Due today", dueToday.length)}
+        {tab("won", "Won back", wonBack)}
+        {tab("closed", "Closed", closed.length)}
+        {tab("all", "All", rows.length)}
+      </div>
+
+      <h3 className="mt-4 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
         Call list
-        <span className="ml-2 font-normal text-zinc-400">oldest tour first</span>
+        <span className="ml-2 font-normal text-zinc-400">
+          overdue first, then today, then never called
+        </span>
       </h3>
 
-      {rows.length === 0 ? (
+      {shown.length === 0 ? (
         <p className="text-sm text-zinc-500">
           No no-shows in this range. If that looks wrong, check the Check-in report — bookings nobody
           marked either way do not count as no-shows and never appear here.
