@@ -37,11 +37,6 @@ export async function addFollowUp(
   bookingId: string,
   status: string,
   note: string,
-  /**
-   * Optional occurrence + due date, so logging a call and promising a callback is one action rather
-   * than two. Passing `forStartsAt` without `dueAtIso` clears any existing commitment.
-   */
-  schedule?: { forStartsAt: string; dueAtIso: string | null },
 ): Promise<{ ok: boolean; error?: string }> {
   const deny = await denyIfCannot("manage_bookings", slug);
   if (deny) return { ok: false, error: deny };
@@ -84,12 +79,6 @@ export async function addFollowUp(
     summary: `#${b.displayNumber} — follow-up logged: ${status.replace(/_/g, " ")}`,
     payload: { bookingId, status },
   });
-
-  if (schedule) {
-    await upsertCase(slug, bookingId, schedule.forStartsAt, {
-      nextFollowUpAt: schedule.dueAtIso ? new Date(schedule.dueAtIso) : null,
-    });
-  }
 
   revalidatePath(`/locations/${slug}/reports/no-shows`);
   revalidatePath(`/locations/${slug}/bookings/${bookingId}`);
@@ -144,7 +133,6 @@ async function upsertCase(
   bookingId: string,
   forStartsAt: string,
   patch: {
-    nextFollowUpAt?: Date | null;
     closedAt?: Date | null;
     closedReason?: NoShowCloseReason | null;
     closedByUserId?: string | null;
@@ -185,19 +173,6 @@ async function upsertCase(
   revalidatePath(`/locations/${slug}/reports/no-shows`);
   revalidatePath(`/locations/${slug}/bookings/${bookingId}`);
   return { ok: true };
-}
-
-/** "Try again on…" — the commitment that puts a case in the overdue or due-today bucket. */
-export async function snoozeNoShowCase(
-  slug: string,
-  bookingId: string,
-  forStartsAt: string,
-  dueAtIso: string | null,
-): Promise<{ ok: boolean; error?: string }> {
-  const due = dueAtIso ? new Date(dueAtIso) : null;
-  if (dueAtIso && Number.isNaN(due!.getTime()))
-    return { ok: false, error: "Pick a date." };
-  return upsertCase(slug, bookingId, forStartsAt, { nextFollowUpAt: due });
 }
 
 /**
@@ -243,6 +218,5 @@ export async function reopenNoShowCase(
     closedAt: null,
     closedReason: null,
     closedByUserId: null,
-    nextFollowUpAt: null,
   });
 }

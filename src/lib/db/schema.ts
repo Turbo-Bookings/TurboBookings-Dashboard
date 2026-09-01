@@ -1524,8 +1524,14 @@ export const noShowCases = pgTable(
       .references(() => locations.id, { onDelete: "cascade" }),
     /** Which miss this case is about. Snapshotted so cleaning the slot off the schedule cannot orphan it. */
     forStartsAt: timestamp("for_starts_at", { withTimezone: true }).notNull(),
-    /** When the rep said they would try again. Null = no commitment made. */
-    nextFollowUpAt: timestamp("next_follow_up_at", { withTimezone: true }),
+    /**
+     * When this occurrence was marked a no-show — the anchor for the FIRST follow-up attempt.
+     *
+     * The due date itself is not stored: it is derived as the mark, then 24h after each logged
+     * attempt, capped at 3 (see noShowCase.ts). A rep does not choose it. Null for occurrences
+     * marked before migration 0045, where the tour's own start time is used instead.
+     */
+    noShowMarkedAt: timestamp("no_show_marked_at", { withTimezone: true }),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedReason: noShowCloseReasonEnum("closed_reason"),
     closedByUserId: text("closed_by_user_id"),
@@ -1539,7 +1545,7 @@ export const noShowCases = pgTable(
   },
   (t) => ({
     occurrenceIdx: uniqueIndex("no_show_cases_occurrence_idx").on(t.bookingId, t.forStartsAt),
-    queueIdx: index("no_show_cases_queue_idx").on(t.locationId, t.nextFollowUpAt),
+    locationIdx: index("no_show_cases_location_idx").on(t.locationId, t.noShowMarkedAt),
   }),
 );
 

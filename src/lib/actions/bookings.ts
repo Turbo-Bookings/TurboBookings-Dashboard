@@ -16,6 +16,7 @@ import {
   getDb,
   itemCustomerTypes,
   items,
+  noShowCases,
   paymentMethodsOnFile,
   payments,
 } from "@/lib/db";
@@ -205,9 +206,52 @@ export async function setBookingCheckIn(
     payload: { bookingId, status },
   });
   if (status === "checked_in") await emitLifecycle(location, bookingId, "booking.checked_in");
-  if (status === "no_show") await emitLifecycle(location, bookingId, "booking.no_show");
+  if (status === "no_show") {
+    await emitLifecycle(location, bookingId, "booking.no_show");
+    // Starts the 24-hour follow-up cadence — the first attempt is due immediately.
+    await stampNoShowMarked(location.id, bookingId);
+  }
   revalidate(slug, bookingId);
   return { ok: true };
+}
+
+
+/**
+ * Stamp when an occurrence was marked a no-show — the anchor for the first follow-up attempt.
+ *
+ * Nothing recorded this before: `checked_in_at` is explicitly NULLed when marking a no-show, and the
+ * audit log is too loose to schedule work from. The due date itself is never stored (see
+ * noShowCase.ts); this is the one fact it needs.
+ *
+ * Only ever set once per occurrence. Re-marking a booking that is already flagged must not push the
+ * cadence back, or a rep tidying up check-in counts would silently reset everyone's call schedule.
+ */
+async function stampNoShowMarked(
+  locationId: string,
+  bookingId: string,
+): Promise<void> {
+  const db = getDb();
+  const slot = (
+    await db
+      .select({ startsAt: availabilities.startsAt })
+      .from(bookings)
+      .innerJoin(availabilities, eq(availabilities.id, bookings.availabilityId))
+      .where(eq(bookings.id, bookingId))
+      .limit(1)
+  )[0];
+  if (!slot) return;
+  await db
+    .insert(noShowCases)
+    .values({
+      bookingId,
+      locationId,
+      forStartsAt: slot.startsAt,
+      noShowMarkedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: [noShowCases.bookingId, noShowCases.forStartsAt],
+      set: { noShowMarkedAt: sql`coalesce(${noShowCases.noShowMarkedAt}, now())`, updatedAt: new Date() },
+    });
 }
 
 // Set per-vehicle check-in counts on one line (checked-in + no-show ≤ quantity).

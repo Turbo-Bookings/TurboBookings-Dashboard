@@ -157,7 +157,8 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
       <h3 className="mt-4 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
         Call list
         <span className="ml-2 font-normal text-zinc-400">
-          overdue first, then today, then never called
+          overdue first, then today, then never called — first call due on the no-show, then every
+          24h for up to 3 attempts
         </span>
       </h3>
 

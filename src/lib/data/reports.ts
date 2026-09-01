@@ -779,6 +779,7 @@ export async function noShowReport(
         wonBack: row.outcome === "won_back",
         followUps: followBy.get(row.bookingId) ?? [],
         caseRow: caseBy.get(k) ?? null,
+        missedStartsAt: row.startsAt,
       },
       now,
       dayKey,

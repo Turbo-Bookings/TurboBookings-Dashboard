@@ -30,6 +30,16 @@ export const TERMINAL_STATUSES = ["deposit_forfeited", "refused"] as const;
 export const MAX_ATTEMPTS = 3;
 
 /**
+ * Hours between attempts. The first is due the instant someone is marked a no-show; each one after
+ * that falls 24 hours after the PREVIOUS attempt was logged, not on a fixed clock from the mark.
+ *
+ * Anchoring to the last attempt is what "24 hour intervals" means for a call cadence, and it is the
+ * robust reading: anchoring to the mark would make a rep returning after two days off find every
+ * case simultaneously two attempts overdue, which tells them nothing about what to do first.
+ */
+export const FOLLOW_UP_INTERVAL_HOURS = 24;
+
+/**
  * Why a rep closed a case by hand. Lives here rather than beside the action because a `"use server"`
  * module may only export async functions — every non-function export has to sit in a plain module.
  */
@@ -56,7 +66,13 @@ export type CaseFacts = {
   /** Every follow-up on this booking, oldest or newest first, order does not matter. */
   followUps: { status: string; createdAt: Date }[];
   /** The `no_show_cases` row, when one has been created. */
-  caseRow: { nextFollowUpAt: Date | null; closedAt: Date | null; reopenedAt: Date | null } | null;
+  caseRow: { noShowMarkedAt: Date | null; closedAt: Date | null; reopenedAt: Date | null } | null;
+  /**
+   * When the tour they missed started. The fallback anchor for the first attempt on occurrences
+   * marked before `no_show_marked_at` existed — the tour has already run, so they read as due now,
+   * which is exactly what an untouched backlog is.
+   */
+  missedStartsAt: Date;
 };
 
 export type CaseState = {
@@ -64,6 +80,10 @@ export type CaseState = {
   bucket: QueueBucket;
   /** Contact attempts that count toward the cap — reset by a reopen. */
   attempts: number;
+  /**
+   * When the next attempt is due. DERIVED, never stored and never chosen by a rep: the mark for the
+   * first, then 24h after each logged attempt. Null once the case is closed.
+   */
   nextFollowUpAt: Date | null;
   isClosed: boolean;
 };
@@ -103,8 +123,6 @@ export function resolveCase(
       (!since || f.createdAt > since),
   );
 
-  const nextFollowUpAt = caseRow?.nextFollowUpAt ?? null;
-
   let outcome: CaseOutcome;
   if (wonBack) outcome = "won_back";
   else if (refused) outcome = "closed_refused";
@@ -114,12 +132,34 @@ export function resolveCase(
 
   const isClosed = outcome !== "open";
 
+  // The cadence. First attempt is due at the mark; every one after that 24h from the previous
+  // attempt. A closed case has nothing due.
+  let nextFollowUpAt: Date | null = null;
+  if (!isClosed) {
+    if (attempts === 0) {
+      // A reopen restarts the clock. Otherwise the first attempt is due at the mark, falling back to
+      // the missed tour's own start for occurrences marked before 0045 recorded one.
+      nextFollowUpAt =
+        caseRow?.reopenedAt ?? caseRow?.noShowMarkedAt ?? facts.missedStartsAt;
+    } else {
+      const last = counted.reduce(
+        (max, f) => (f.createdAt > max ? f.createdAt : max),
+        counted[0].createdAt,
+      );
+      nextFollowUpAt = new Date(
+        last.getTime() + FOLLOW_UP_INTERVAL_HOURS * 60 * 60 * 1000,
+      );
+    }
+  }
+
   let bucket: QueueBucket;
   if (isClosed) bucket = "closed";
-  else if (nextFollowUpAt && nextFollowUpAt.getTime() < now.getTime()) bucket = "overdue";
+  else if (nextFollowUpAt && nextFollowUpAt.getTime() < now.getTime())
+    // Never contacted and already past the mark is still "not called yet" to a rep — it is the
+    // freshest lead, not a broken promise. Overdue is reserved for a cadence that has slipped.
+    bucket = attempts === 0 ? "new" : "overdue";
   else if (nextFollowUpAt && tzOffsetDayKey(nextFollowUpAt) === tzOffsetDayKey(now))
     bucket = "due_today";
-  else if (attempts === 0) bucket = "new";
   else bucket = "working";
 
   return { outcome, bucket, attempts, nextFollowUpAt, isClosed };
@@ -152,6 +192,6 @@ export const BUCKET_LABEL: Record<QueueBucket, string> = {
   overdue: "Overdue",
   due_today: "Due today",
   new: "Not called yet",
-  working: "In progress",
+  working: "Next attempt scheduled",
   closed: "Closed",
 };

@@ -14,11 +14,7 @@ import {
   type CaseOutcome,
   type QueueBucket,
 } from "@/lib/booking/noShowCase";
-import {
-  closeNoShowCase,
-  reopenNoShowCase,
-  snoozeNoShowCase,
-} from "@/lib/actions/followups";
+import { closeNoShowCase, reopenNoShowCase } from "@/lib/actions/followups";
 import { followupLabel, followupToneClass } from "@/lib/booking/followupStatus";
 import { usd } from "@/lib/ui/money";
 import type { FollowupEntry } from "@/lib/actions/followups";
@@ -192,24 +188,20 @@ export function NoShowRows({
                   <span className="text-zinc-400">
                     {r.attempts}/{MAX_ATTEMPTS} attempts
                   </span>
-                  <label className="flex items-center gap-1 text-zinc-500">
-                    Try again
-                    <input
-                      type="date"
-                      defaultValue={r.nextFollowUpAtIso?.slice(0, 10) ?? ""}
-                      onChange={(e) =>
-                        run(`snooze-${r.bookingId}`, () =>
-                          snoozeNoShowCase(
-                            slug,
-                            r.bookingId,
-                            r.startsAtIso,
-                            e.target.value ? new Date(`${e.target.value}T12:00:00`).toISOString() : null,
-                          ),
-                        )
-                      }
-                      className="rounded-md border border-zinc-300 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
-                    />
-                  </label>
+                  {/*
+                    No date picker. The cadence is automatic — due on the no-show mark, then 24h
+                    after each logged attempt — so there is nothing for a rep to decide, only
+                    something to tell them.
+                  */}
+                  <span className="text-zinc-500">
+                    {r.nextFollowUpAtIso
+                      ? r.bucket === "overdue"
+                        ? `Due since ${when(r.nextFollowUpAtIso)}`
+                        : r.attempts === 0
+                          ? "Call now"
+                          : `Next attempt ${when(r.nextFollowUpAtIso)}`
+                      : ""}
+                  </span>
                   <select
                     defaultValue=""
                     disabled={busy === `close-${r.bookingId}`}

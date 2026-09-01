@@ -88,6 +88,25 @@
 > New `refused` status (reps had been overloading `deposit_forfeited`); `rescheduled` dropped from the
 > picker because it now counts nothing.
 >
+> **Follow-up timing is automatic (0045).** A rep does not choose it — operator decision, 2026-09-01.
+> The first attempt is due the moment someone is marked a no-show; each one after that 24 hours after
+> the PREVIOUS attempt was logged; three attempts and the case closes. The due date is DERIVED, not
+> stored, like everything else in this workflow; the only new fact is `no_show_cases.no_show_marked_at`,
+> stamped by `setBookingCheckIn`. Occurrences marked before 0045 have no stamp and fall back to the
+> missed tour's own start time, which reads as due now — correct for a backlog.
+>
+> Anchored to the last attempt rather than a fixed clock from the mark: otherwise a rep back from two
+> days off finds every case simultaneously two attempts overdue, which tells them nothing about what
+> to do first. A never-called case stays in **Not called yet** however old it is — it is the freshest
+> lead, not a broken promise; **Overdue** is reserved for a cadence that has actually slipped.
+>
+> ```
+> First live triage (Aug 26 – Sep 1)
+>   htown  overdue 28 · not called 4  · scheduled 1 · closed 31
+>   dtown  overdue 22 · not called 9  · closed 8
+>   miami  overdue  3 · not called 27 · closed 1
+> ```
+>
 > #### Calendar — supply was never the problem
 >
 > ```
