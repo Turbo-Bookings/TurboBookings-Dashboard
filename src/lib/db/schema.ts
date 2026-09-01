@@ -1394,6 +1394,16 @@ export type BookingCustomFieldValue = typeof bookingCustomFieldValues.$inferSele
 export type NewBookingCustomFieldValue = typeof bookingCustomFieldValues.$inferInsert;
 
 // Reschedule history — one row per move. Booking ID stays stable.
+/**
+ * Why a booking moved. Distinguishes a rep winning a no-show back from an operator sweeping a
+ * cancelled slot — the two are indistinguishable in `reason`, which is free text.
+ */
+export const rescheduleKindEnum = pgEnum("reschedule_kind", [
+  "customer", // somebody chose this move for this booking
+  "group_move", // operator eliminated a slot; every booking on it was swept along
+  "system",
+]);
+
 export const bookingReschedules = pgTable(
   "booking_reschedules",
   {
@@ -1426,6 +1436,23 @@ export const bookingReschedules = pgTable(
     fromQuantity: integer("from_quantity").notNull().default(0),
     fromCheckedInUnits: integer("from_checked_in_units").notNull().default(0),
     fromNoShowUnits: integer("from_no_show_units").notNull().default(0),
+    /**
+     * Whether a human chose this move for this booking, or the operator eliminated a slot and swept
+     * everything on it. `reason` cannot answer that — it is free text, and matching the group-move
+     * string in code would make an em-dash load-bearing.
+     */
+    kind: rescheduleKindEnum("kind").notNull().default("customer"),
+    /**
+     * What the booking was worth AT THE MOMENT IT WAS MISSED, before this move rewrote it.
+     *
+     * A cross-tour move overwrites `bookings.subtotal_cents` / `total_cents` in place and
+     * `syncPlatformFee` then rewrites `platform_fee_cents`, so the booking's current value is not
+     * what was at risk when the customer failed to turn up. Null on every row written before
+     * migration 0043 — genuinely unrecoverable, and reported as unknown rather than guessed.
+     */
+    fromTotalCents: integer("from_total_cents"),
+    fromPlatformFeeCents: integer("from_platform_fee_cents"),
+    fromTaxCents: integer("from_tax_cents"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({

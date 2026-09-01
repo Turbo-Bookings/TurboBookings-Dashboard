@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import {
   auditLog,
   availabilities,
@@ -486,6 +486,18 @@ export type NoShowRow = {
   latestNote: string | null;
   latestAt: Date | null;
   followUpCount: number;
+  /** Clerk user id of whoever logged the latest outcome. Resolved to a name by the page. */
+  latestByUserId: string | null;
+  /**
+   * Won back, or still to chase.
+   *
+   * A row is keyed on the OCCURRENCE — (booking, tour it missed) — not on the booking. A booking can
+   * miss, be won back, and miss again on the new date; that is two things to call about, and one
+   * row per booking could never say so.
+   */
+  outcome: "open" | "won_back";
+  /** Where it went, when `outcome` is "won_back". */
+  wonBackTo: { startsAt: Date | null; itemName: string | null; movedAt: Date } | null;
 };
 
 /**
@@ -537,15 +549,22 @@ export async function noShowReport(
       ),
     );
 
+  // Keyed on the OCCURRENCE. `rescheduleBooking` resets no_show_units to 0 on a move, so a booking
+  // that was won back drops out of the query above entirely — the won-back occurrences are added
+  // from the reschedule snapshots below, which is the only place that history survives.
+  const key = (bookingId: string, missedAt: Date) =>
+    `${bookingId}:${missedAt.toISOString()}`;
+
   const byBooking = new Map<string, NoShowRow>();
   for (const r of rows) {
-    const hit = byBooking.get(r.bookingId);
+    const k = key(r.bookingId, r.startsAt);
+    const hit = byBooking.get(k);
     if (hit) {
       hit.vehicles += r.quantity;
       hit.noShowUnits += r.noShowUnits;
       hit.checkedInUnits += r.checkedInUnits;
     } else {
-      byBooking.set(r.bookingId, {
+      byBooking.set(k, {
         bookingId: r.bookingId,
         displayNumber: r.displayNumber,
         customerName: [r.firstName, r.lastName].filter(Boolean).join(" ") || "—",
@@ -562,6 +581,9 @@ export async function noShowReport(
         latestNote: null,
         latestAt: null,
         followUpCount: 0,
+        latestByUserId: null,
+        outcome: "open",
+        wonBackTo: null,
       });
     }
   }
@@ -569,7 +591,95 @@ export async function noShowReport(
     row.disputed = row.checkedInUnits > 0 && row.noShowUnits > 0;
   }
 
-  const ids = [...byBooking.keys()];
+  // Won-back occurrences, added from the reschedule snapshots.
+  //
+  // This is the fix for "the no-shows report says 2 and the reschedules report says 17". The old
+  // count was `latestStatus === "rescheduled"` — a rep remembering to pick an outcome from a
+  // dropdown, which almost nobody does: 9 such rows exist system-wide, ever. Worse, performing the
+  // reschedule ZEROES no_show_units, so a genuine win-back fails this report's own predicate and
+  // disappears. The "2" were bookings somebody had re-marked no-show on the NEW slot.
+  const wins = await winBacks(locationId, from, to, "missed");
+  const winBookingIds = [...new Set(wins.map((w) => w.bookingId))];
+  const winDetail = winBookingIds.length
+    ? await db
+        .select({
+          bookingId: bookings.id,
+          displayNumber: bookings.displayNumber,
+          firstName: customers.firstName,
+          lastName: customers.lastName,
+          phone: customers.phoneE164,
+          email: customers.emailLower,
+          balanceDueCents: bookings.balanceDueCents,
+        })
+        .from(bookings)
+        .leftJoin(customers, eq(customers.id, bookings.customerId))
+        .where(inArray(bookings.id, winBookingIds))
+    : [];
+  const detailBy = new Map(winDetail.map((d) => [d.bookingId, d]));
+
+  // Snapshot units per occurrence — read from the reschedule row, not from booking_lines, which the
+  // move has already reset.
+  const winUnits = winBookingIds.length
+    ? await db
+        .select({
+          bookingId: bookingReschedules.bookingId,
+          fromStartsAt: bookingReschedules.fromStartsAt,
+          createdAt: bookingReschedules.createdAt,
+          fromQuantity: bookingReschedules.fromQuantity,
+          fromCheckedInUnits: bookingReschedules.fromCheckedInUnits,
+          fromNoShowUnits: bookingReschedules.fromNoShowUnits,
+        })
+        .from(bookingReschedules)
+        .where(inArray(bookingReschedules.bookingId, winBookingIds))
+    : [];
+  const unitsBy = new Map(
+    winUnits.map((u) => [
+      `${u.bookingId}:${(u.fromStartsAt ?? u.createdAt).toISOString()}`,
+      u,
+    ]),
+  );
+
+  for (const w of wins) {
+    const k = key(w.bookingId, w.missedStartsAt);
+    const existing = byBooking.get(k);
+    if (existing) {
+      // Missed, won back, and marked no-show AGAIN on the new date. Both facts are true; the win
+      // is the one worth reporting, and the fresh miss arrives as its own occurrence.
+      existing.outcome = "won_back";
+      existing.wonBackTo = {
+        startsAt: w.toStartsAt,
+        itemName: w.toItemName,
+        movedAt: w.movedAt,
+      };
+      continue;
+    }
+    const d = detailBy.get(w.bookingId);
+    if (!d) continue;
+    const u = unitsBy.get(k);
+    byBooking.set(k, {
+      bookingId: w.bookingId,
+      displayNumber: d.displayNumber,
+      customerName: [d.firstName, d.lastName].filter(Boolean).join(" ") || "—",
+      phone: d.phone,
+      email: d.email,
+      itemName: w.missedItemName ?? "—",
+      startsAt: w.missedStartsAt,
+      vehicles: u?.fromQuantity ?? 0,
+      noShowUnits: u?.fromNoShowUnits ?? 0,
+      checkedInUnits: u?.fromCheckedInUnits ?? 0,
+      disputed: w.wasDisputed,
+      balanceDueCents: d.balanceDueCents ?? 0,
+      latestStatus: null,
+      latestNote: null,
+      latestAt: null,
+      followUpCount: 0,
+      latestByUserId: null,
+      outcome: "won_back",
+      wonBackTo: { startsAt: w.toStartsAt, itemName: w.toItemName, movedAt: w.movedAt },
+    });
+  }
+
+  const ids = [...new Set([...byBooking.values()].map((r) => r.bookingId))];
   if (ids.length > 0) {
     // DISTINCT ON through the query builder, not a raw `sql` template.
     //
@@ -583,6 +693,7 @@ export async function noShowReport(
         status: bookingFollowups.status,
         note: bookingFollowups.note,
         createdAt: bookingFollowups.createdAt,
+        userId: bookingFollowups.userId,
       })
       .from(bookingFollowups)
       .where(inArray(bookingFollowups.bookingId, ids))
@@ -600,13 +711,17 @@ export async function noShowReport(
       .groupBy(bookingFollowups.bookingId);
     const countBy = new Map(counts.map((c) => [c.bookingId, c.n]));
 
-    for (const l of latest) {
-      const row = byBooking.get(l.bookingId);
-      if (!row) continue;
+    // Attached per BOOKING, to every occurrence of it on screen. Attempts carry no occurrence key
+    // of their own; splitting them by time window is the next step, not this one.
+    const latestBy = new Map(latest.map((l) => [l.bookingId, l]));
+    for (const row of byBooking.values()) {
+      const l = latestBy.get(row.bookingId);
+      if (!l) continue;
       row.latestStatus = l.status as FollowupStatus;
       row.latestNote = l.note;
       row.latestAt = l.createdAt;
-      row.followUpCount = countBy.get(l.bookingId) ?? 1;
+      row.latestByUserId = l.userId;
+      row.followUpCount = countBy.get(row.bookingId) ?? 1;
     }
   }
 
@@ -615,6 +730,98 @@ export async function noShowReport(
 }
 
 // ------------------------------------------------------------ win-backs
+
+/**
+ * Win-backs are only identifiable from this date, when a move started snapshotting the booking's
+ * check-in state onto the reschedule row. Before it `from_no_show_units` defaulted to 0, so every
+ * earlier move reads as "not a win-back" — which is UNKNOWN, not zero. Measured: 128 rows before,
+ * 0 apparent win-backs; 219 rows after, 28 real ones.
+ */
+export const WIN_BACK_RECORDED_FROM = new Date("2026-08-25T00:00:00.000Z");
+
+export type WinBack = {
+  rescheduleId: string;
+  bookingId: string;
+  /** The tour they did not turn up for. THE identity of the occurrence, with bookingId. */
+  missedStartsAt: Date;
+  missedItemName: string | null;
+  /** When a human clicked Reschedule. */
+  movedAt: Date;
+  toStartsAt: Date | null;
+  toItemName: string | null;
+  performedByUserId: string | null;
+  /** Units had partly checked in as well, so the original no-show was already in question. */
+  wasDisputed: boolean;
+};
+
+/**
+ * THE definition of a win-back. Both reports call this; nothing else decides.
+ *
+ * A win-back is a booking that had units marked no-show and was then moved to a new slot. It is
+ * derived from the move itself, never from a rep remembering to log an outcome — which is what the
+ * no-shows report used to require, and why it reported 2 against a real 17 for Houston in one week.
+ * Only 9 `status='rescheduled'` follow-ups exist system-wide, ever.
+ *
+ * ## Why the two reports still show different numbers, legitimately
+ *
+ * They run on different clocks, and the registry says so: the no-shows report is `basis: tour_date`,
+ * the reschedules report is `basis: action_date`. A tour missed on the 24th and won back on the 2nd
+ * of the next month belongs in one window and not the other. Forcing the counts equal would mean
+ * putting one report on the other's clock and breaking every other tile on that page. What must be
+ * shared is this predicate — and it now is.
+ *
+ * Group moves are excluded: `moveSlotBookings` sweeps every booking off a slot the operator has
+ * cancelled, and those guests were not persuaded back by anyone. Excluded by `kind`, never by
+ * matching the reason string, which a reword would silently break in the direction of inflating wins.
+ */
+export async function winBacks(
+  locationId: string,
+  from: Date,
+  to: Date,
+  /** "missed" ranges on the tour they missed; "moved" ranges on when the move happened. */
+  basis: "missed" | "moved",
+): Promise<WinBack[]> {
+  // 4 rows predate `from_starts_at` being written; fall back to the move time so they are neither
+  // dropped nor dated to 1970.
+  const missedAt = sql<Date>`coalesce(${bookingReschedules.fromStartsAt}, ${bookingReschedules.createdAt})`;
+  const rangeCol = basis === "missed" ? missedAt : bookingReschedules.createdAt;
+
+  const rows = await getDb()
+    .select({
+      rescheduleId: bookingReschedules.id,
+      bookingId: bookingReschedules.bookingId,
+      missedStartsAt: missedAt,
+      missedItemName: bookingReschedules.fromItemName,
+      movedAt: bookingReschedules.createdAt,
+      toStartsAt: bookingReschedules.toStartsAt,
+      toItemName: bookingReschedules.toItemName,
+      performedByUserId: bookingReschedules.performedByUserId,
+      fromCheckedInUnits: bookingReschedules.fromCheckedInUnits,
+    })
+    .from(bookingReschedules)
+    .innerJoin(bookings, eq(bookings.id, bookingReschedules.bookingId))
+    .where(
+      and(
+        eq(bookings.locationId, locationId),
+        gt(bookingReschedules.fromNoShowUnits, 0),
+        ne(bookingReschedules.kind, "group_move"),
+        sql`${rangeCol} >= ${from}`,
+        sql`${rangeCol} < ${to}`,
+      ),
+    );
+
+  return rows.map((r) => ({
+    rescheduleId: r.rescheduleId,
+    bookingId: r.bookingId,
+    missedStartsAt: new Date(r.missedStartsAt),
+    missedItemName: r.missedItemName,
+    movedAt: r.movedAt,
+    toStartsAt: r.toStartsAt,
+    toItemName: r.toItemName,
+    performedByUserId: r.performedByUserId,
+    wasDisputed: r.fromCheckedInUnits > 0,
+  }));
+}
 
 export type RescheduleRow = {
   id: string;
@@ -626,8 +833,15 @@ export type RescheduleRow = {
   fromItemName: string | null;
   toStartsAt: Date | null;
   toItemName: string | null;
-  /** The booking had been marked no-show before this move — a win-back. */
+  /**
+   * The booking had units marked no-show before this move — a win-back.
+   *
+   * Group moves are excluded even when the counts look like a win-back: the operator eliminated the
+   * slot, nobody was persuaded back. See `winBacks`.
+   */
   wasNoShow: boolean;
+  /** Why the booking moved — `group_move` is an operator sweeping a cancelled slot. */
+  kind: "customer" | "group_move" | "system";
   /** It had partly checked in as well, so the original no-show was already in question. */
   wasDisputed: boolean;
   feeChargedCents: number;
@@ -665,6 +879,7 @@ export async function rescheduleReport(
       toItemName: bookingReschedules.toItemName,
       fromCheckedInUnits: bookingReschedules.fromCheckedInUnits,
       fromNoShowUnits: bookingReschedules.fromNoShowUnits,
+      kind: bookingReschedules.kind,
       feeChargedCents: bookingReschedules.feeChargedCents,
       reason: bookingReschedules.reason,
       performedByUserId: bookingReschedules.performedByUserId,
@@ -692,8 +907,12 @@ export async function rescheduleReport(
       fromItemName: r.fromItemName,
       toStartsAt: r.toStartsAt,
       toItemName: r.toItemName,
-      wasNoShow: r.fromNoShowUnits > 0,
-      wasDisputed: r.fromNoShowUnits > 0 && r.fromCheckedInUnits > 0,
+      // Same predicate as `winBacks`, so the tile on this page and the tile on the no-shows page
+      // cannot disagree about what a win-back IS. They still range on different clocks, by design.
+      wasNoShow: r.fromNoShowUnits > 0 && r.kind !== "group_move",
+      kind: r.kind,
+      wasDisputed:
+        r.fromNoShowUnits > 0 && r.kind !== "group_move" && r.fromCheckedInUnits > 0,
       feeChargedCents: r.feeChargedCents,
       reason: r.reason,
       performedByUserId: r.performedByUserId,
@@ -704,4 +923,100 @@ export async function rescheduleReport(
       if (a.wasNoShow !== b.wasNoShow) return a.wasNoShow ? -1 : 1;
       return b.createdAt.getTime() - a.createdAt.getTime();
     });
+}
+
+// ------------------------------------------------------------ win-back revenue
+
+export type WinBackRevenue = {
+  /** Distinct bookings behind the figures. Occurrences can exceed this — a booking can miss twice. */
+  bookings: number;
+  /** Came back and rode. Partial check-ins prorated by units. */
+  recoveredCents: number;
+  /** Came back, tour still ahead of them, nothing marked yet. */
+  upcomingCents: number;
+  /** Moved and then no-showed again, was cancelled, or the new tour ran unmarked. */
+  lostAgainCents: number;
+};
+
+/**
+ * What the win-backs in a range are worth.
+ *
+ * ⚠️ These are CURRENT values, not what was at risk. A cross-tour move overwrites the booking's
+ * subtotal and total in place and `syncPlatformFee` rewrites the fee, so "what it was worth when
+ * they failed to turn up" is unrecoverable for anything moved before migration 0043 — which is every
+ * row on file today. The `from_*_cents` snapshot starts filling from now; the page says so.
+ *
+ * Two queries merged in JS rather than one join, deliberately. Joining `booking_lines` for unit
+ * counts multiplies the booking row and double-counts the money — the mistake `salesByUser` documents
+ * and avoids, and the reason the revenue identity `total − platform_fee − tax` is computed on
+ * `bookings` alone.
+ *
+ * Counted per BOOKING, not per occurrence: #0742 has two win-back rows but one current price, and
+ * summing per row would bill it twice. The occurrence COUNT stays separate.
+ */
+export async function winBackRevenue(
+  locationId: string,
+  from: Date,
+  to: Date,
+  basis: "missed" | "moved",
+): Promise<WinBackRevenue> {
+  const wins = await winBacks(locationId, from, to, basis);
+  const ids = [...new Set(wins.map((w) => w.bookingId))];
+  const empty = { bookings: 0, recoveredCents: 0, upcomingCents: 0, lostAgainCents: 0 };
+  if (ids.length === 0) return empty;
+
+  const db = getDb();
+  const money = await db
+    .select({
+      id: bookings.id,
+      status: bookings.status,
+      startsAt: availabilities.startsAt,
+      netCents: sql<number>`(${bookings.totalCents} - ${bookings.platformFeeCents} - ${bookings.taxCents})::int`,
+    })
+    .from(bookings)
+    .innerJoin(availabilities, eq(availabilities.id, bookings.availabilityId))
+    .where(inArray(bookings.id, ids));
+
+  const units = await db
+    .select({
+      bookingId: bookingLines.bookingId,
+      q: sql<number>`sum(${bookingLines.quantity})::int`,
+      c: sql<number>`sum(${bookingLines.checkedInUnits})::int`,
+      n: sql<number>`sum(${bookingLines.noShowUnits})::int`,
+    })
+    .from(bookingLines)
+    .where(inArray(bookingLines.bookingId, ids))
+    .groupBy(bookingLines.bookingId);
+  const unitBy = new Map(units.map((u) => [u.bookingId, u]));
+
+  const now = Date.now();
+  const out = { ...empty, bookings: money.length };
+  for (const b of money) {
+    const u = unitBy.get(b.id);
+    const q = u?.q ?? 0;
+    const c = u?.c ?? 0;
+    const roll = bookingRollup([{ quantity: q, checkedInUnits: c, noShowUnits: u?.n ?? 0 }]);
+    const net = b.netCents ?? 0;
+
+    if (b.status !== "active") {
+      out.lostAgainCents += net;
+    } else if (roll === "checked_in") {
+      out.recoveredCents += net;
+    } else if (roll === "partial") {
+      // Prorated by units rather than counted whole or dropped. The page already treats a partial
+      // as the interesting case (it is what `disputed` is), so rounding it to 0 or 100% would
+      // contradict the rest of the report.
+      const share = q > 0 ? Math.round((net * c) / q) : 0;
+      out.recoveredCents += share;
+      out.lostAgainCents += net - share;
+    } else if (roll === "no_show") {
+      out.lostAgainCents += net;
+    } else if (b.startsAt.getTime() >= now) {
+      out.upcomingCents += net;
+    } else {
+      // Tour has run and nobody marked it either way. Not recovered — a desk miss, not a ride.
+      out.lostAgainCents += net;
+    }
+  }
+  return out;
 }

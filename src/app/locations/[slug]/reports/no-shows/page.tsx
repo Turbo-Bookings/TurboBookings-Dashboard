@@ -6,6 +6,7 @@ import { NoShowRows, type NoShowView } from "@/components/reports/NoShowRows";
 import { reportByKey } from "@/lib/reports/registry";
 import { resolveRange } from "@/lib/reports/range";
 import { noShowReport } from "@/lib/data/reports";
+import { labelFor, resolveUserLabels } from "@/lib/users";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { can } from "@/lib/auth/roles";
 import { usd } from "@/lib/ui/money";
@@ -31,10 +32,19 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
   const rows = await noShowReport(loc.id, range.from, range.to);
   const canLog = await can("manage_bookings", slug);
 
-  const disputed = rows.filter((r) => r.disputed).length;
-  const untouched = rows.filter((r) => r.followUpCount === 0).length;
-  const wonBack = rows.filter((r) => r.latestStatus === "rescheduled").length;
-  const unpaid = rows.reduce((s, r) => s + r.balanceDueCents, 0);
+  const open = rows.filter((r) => r.outcome === "open");
+  const disputed = open.filter((r) => r.disputed).length;
+  const untouched = open.filter((r) => r.followUpCount === 0).length;
+  // Derived from the MOVE, not from a rep remembering to pick "Rescheduled" from a dropdown. That
+  // old rule reported 2 against a real 14 for this window, because performing the reschedule zeroes
+  // no_show_units and the win-back then failed this report's own predicate. See `winBacks`.
+  const wonBack = rows.filter((r) => r.outcome === "won_back").length;
+  // Money still owed is a question about people still to chase, so it excludes the wins.
+  const unpaid = open.reduce((s, r) => s + r.balanceDueCents, 0);
+
+  // Who logged the latest outcome. This page hardcoded an empty author, so the call list has never
+  // shown who worked it — the one thing that tells a manager whether the list is being worked.
+  const actors = await resolveUserLabels(rows.map((r) => r.latestByUserId));
 
   const view: NoShowView[] = rows.map((r) => ({
     bookingId: r.bookingId,
@@ -54,18 +64,21 @@ export default async function NoShowsPage({ params, searchParams }: Props) {
             status: r.latestStatus,
             note: r.latestNote,
             createdAt: r.latestAt,
-            byName: "",
+            byName: labelFor(actors, r.latestByUserId).name,
           }
         : null,
     followUpCount: r.followUpCount,
+    outcome: r.outcome,
+    wonBackToIso: r.wonBackTo?.startsAt?.toISOString() ?? null,
+    wonBackToItemName: r.wonBackTo?.itemName ?? null,
   }));
 
   return (
     <ReportShell slug={slug} report={reportByKey("no-shows")!} range={range}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="No-shows" value={String(rows.length)} sub={`${usd(unpaid)} unpaid`} tone="orange" icon={CircleX} />
+        <StatTile label="Still to chase" value={String(open.length)} sub={`${usd(unpaid)} unpaid`} tone="orange" icon={CircleX} />
         <StatTile label="Not called yet" value={String(untouched)} sub="no follow-up logged" tone="violet" icon={PhoneOff} />
-        <StatTile label="Won back" value={String(wonBack)} sub="rescheduled after outreach" tone="emerald" icon={TrendingUp} />
+        <StatTile label="Won back" value={String(wonBack)} sub="moved to a new slot" tone="emerald" icon={TrendingUp} />
         <StatTile label="Disputed" value={String(disputed)} sub="some vehicles checked in" tone="zinc" icon={TriangleAlert} />
       </div>
 

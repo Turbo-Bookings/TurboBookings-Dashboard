@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DateTime } from "luxon";
-import { TriangleAlert } from "lucide-react";
+import { TrendingUp, TriangleAlert } from "lucide-react";
 import { FollowUpLog } from "@/components/FollowUpLog";
 import { followupLabel, followupToneClass } from "@/lib/booking/followupStatus";
 import { usd } from "@/lib/ui/money";
@@ -22,6 +22,13 @@ export type NoShowView = {
   balanceDueCents: number;
   latest: FollowupEntry | null;
   followUpCount: number;
+  /**
+   * Whether this occurrence was won back. Keyed on (booking, missed tour), so a booking that missed,
+   * came back, and missed again appears twice — once won, once still to chase.
+   */
+  outcome: "open" | "won_back";
+  wonBackToIso: string | null;
+  wonBackToItemName: string | null;
 };
 
 /**
@@ -52,7 +59,10 @@ export function NoShowRows({
   return (
     <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
       {rows.map((r) => (
-        <li key={r.bookingId} className="p-3">
+        <li
+          key={`${r.bookingId}:${r.startsAtIso}`}
+          className={r.outcome === "won_back" ? "bg-emerald-50/40 p-3 dark:bg-emerald-950/20" : "p-3"}
+        >
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <Link
               href={`/locations/${slug}/bookings/${r.bookingId}`}
@@ -70,6 +80,13 @@ export function NoShowRows({
               </a>
             ) : (
               <span className="text-sm text-zinc-400">no phone on file</span>
+            )}
+            {r.outcome === "won_back" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200">
+                <TrendingUp className="h-3 w-3" /> Won back
+                {r.wonBackToIso ? ` → ${when(r.wonBackToIso)}` : ""}
+                {r.wonBackToItemName ? ` · ${r.wonBackToItemName}` : ""}
+              </span>
             )}
             {r.disputed && (
               <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950 dark:text-red-200">

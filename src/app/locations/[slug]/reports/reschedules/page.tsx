@@ -6,7 +6,7 @@ import { StatTile } from "@/components/ui/StatTile";
 import { ReportShell } from "@/components/reports/ReportShell";
 import { reportByKey } from "@/lib/reports/registry";
 import { resolveRange } from "@/lib/reports/range";
-import { rescheduleReport } from "@/lib/data/reports";
+import { rescheduleReport, winBackRevenue } from "@/lib/data/reports";
 import { getLocationBySlug } from "@/lib/data/locations";
 import { labelFor, resolveUserLabels } from "@/lib/users";
 import { usd } from "@/lib/ui/money";
@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 
 type Props = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ from?: string; to?: string; preset?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; preset?: string; kind?: string }>;
 };
 
 export default async function ReschedulesPage({ params, searchParams }: Props) {
@@ -26,11 +26,47 @@ export default async function ReschedulesPage({ params, searchParams }: Props) {
   const tz = loc.timezone ?? "America/Chicago";
 
   const range = resolveRange(sp, tz, "rolling7");
-  const rows = await rescheduleReport(loc.id, range.from, range.to);
-  const actors = await resolveUserLabels(rows.map((r) => r.performedByUserId));
+  const all = await rescheduleReport(loc.id, range.from, range.to);
+  const actors = await resolveUserLabels(all.map((r) => r.performedByUserId));
 
-  const wins = rows.filter((r) => r.wasNoShow);
-  const fees = rows.reduce((s, r) => s + r.feeChargedCents, 0);
+  const wins = all.filter((r) => r.wasNoShow);
+  const fees = all.reduce((s, r) => s + r.feeChargedCents, 0);
+
+  // What the win-backs are worth. Ranged on the same clock as this page — when the move happened.
+  const money = await winBackRevenue(loc.id, range.from, range.to, "moved");
+
+  // All / Reschedules / Win-backs. The data already carried `wasNoShow`; the list simply never
+  // offered a way to look at one or the other.
+  const filter = sp.kind === "winbacks" || sp.kind === "moves" ? sp.kind : "all";
+  const rows =
+    filter === "winbacks"
+      ? wins
+      : filter === "moves"
+        ? all.filter((r) => !r.wasNoShow)
+        : all;
+
+  const tab = (key: string, label: string, n: number) => {
+    const qs = new URLSearchParams();
+    if (sp.from) qs.set("from", sp.from);
+    if (sp.to) qs.set("to", sp.to);
+    if (sp.preset) qs.set("preset", sp.preset);
+    if (key !== "all") qs.set("kind", key);
+    const href = `?${qs.toString()}`;
+    const on = filter === key;
+    return (
+      <Link
+        key={key}
+        href={href}
+        className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+          on
+            ? "bg-blue-600 text-white"
+            : "border border-zinc-300 text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+        }`}
+      >
+        {label} <span className={on ? "text-white/70" : "text-zinc-400"}>{n}</span>
+      </Link>
+    );
+  };
 
   const when = (d: Date | null) =>
     d ? DateTime.fromJSDate(d).setZone(tz).toFormat("ccc, LLL d · h:mm a") : "—";
@@ -39,8 +75,19 @@ export default async function ReschedulesPage({ params, searchParams }: Props) {
     <ReportShell slug={slug} report={reportByKey("reschedules")!} range={range}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatTile label="Won back" value={String(wins.length)} sub="no-shows moved to a new slot" tone="emerald" icon={TrendingUp} />
-        <StatTile label="Moves" value={String(rows.length)} sub="all reschedules" tone="blue" icon={CalendarSync} />
+        <StatTile label="Moves" value={String(all.length)} sub="all reschedules" tone="blue" icon={CalendarSync} />
         <StatTile label="Fees charged" value={usd(fees)} sub="reschedule fees" tone="zinc" icon={CalendarSync} />
+      </div>
+
+      {/*
+        Three figures, not two. Two tiles differing by an unexplained amount reads as a bug; three is
+        a decomposition — and "lost again" is the most actionable of them, because those are people
+        a rep already won back once and then lost.
+      */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatTile label="Recovered" value={usd(money.recoveredCents)} sub="came back and rode" tone="emerald" icon={TrendingUp} />
+        <StatTile label="Still to ride" value={usd(money.upcomingCents)} sub="back on the schedule, tour ahead" tone="blue" icon={CalendarSync} />
+        <StatTile label="Lost again" value={usd(money.lostAgainCents)} sub="no-showed again, cancelled or unmarked" tone="orange" icon={CalendarSync} />
       </div>
 
       {/*
@@ -53,7 +100,19 @@ export default async function ReschedulesPage({ params, searchParams }: Props) {
         check-in state. Moves before then show as ordinary reschedules whether or not they were.
       </p>
 
-      <h3 className="mt-6 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+      <p className="mt-2 text-xs text-zinc-400">
+        Revenue is what those {money.bookings} booking{money.bookings === 1 ? " is" : "s are"} worth
+        NOW, after the move — a cross-tour move rewrites the booking&apos;s price in place, so this is
+        not &ldquo;revenue that would have been lost&rdquo;. Pre-move values are recorded from 1 Sep 2026.
+      </p>
+
+      <div className="mt-6 flex flex-wrap gap-2">
+        {tab("all", "All", all.length)}
+        {tab("moves", "Reschedules", all.length - wins.length)}
+        {tab("winbacks", "Win-backs", wins.length)}
+      </div>
+
+      <h3 className="mt-4 mb-2 text-sm font-semibold text-zinc-700 dark:text-zinc-200">
         Moves
         <span className="ml-2 font-normal text-zinc-400">win-backs first</span>
       </h3>

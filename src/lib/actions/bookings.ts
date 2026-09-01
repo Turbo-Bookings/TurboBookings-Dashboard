@@ -862,6 +862,12 @@ export async function rescheduleBooking(
         feeChargedCents: fee,
         performedByUserId: performedBy,
         reason: reason || null,
+        kind: "customer",
+        // What it was worth BEFORE this move. `b` was read at the top of the transaction, so these
+        // are the pre-move figures; the update above has already changed the row itself.
+        fromTotalCents: b.totalCents ?? null,
+        fromPlatformFeeCents: b.platformFeeCents ?? null,
+        fromTaxCents: b.taxCents ?? null,
         fromStartsAt: fromSlot?.startsAt ?? null,
         toStartsAt: slot.startsAt,
         fromItemName: fromItem?.name ?? null,
@@ -1348,7 +1354,14 @@ export async function moveSlotBookings(
       if (!target) throw new Error("Target time not found");
 
       const group = await tx
-        .select({ id: bookings.id, availabilityId: bookings.availabilityId })
+        .select({
+          id: bookings.id,
+          availabilityId: bookings.availabilityId,
+          // Pre-move money, snapshotted onto the reschedule row below.
+          totalCents: bookings.totalCents,
+          platformFeeCents: bookings.platformFeeCents,
+          taxCents: bookings.taxCents,
+        })
         .from(bookings)
         .where(
           and(
@@ -1446,6 +1459,13 @@ export async function moveSlotBookings(
           feeChargedCents: 0,
           performedByUserId: performedBy,
           reason: "Slot eliminated — group move",
+          // Not a win-back however the check-in counts read: the operator eliminated the slot, no
+          // rep persuaded anybody. Recorded as a column so the reports never have to match the
+          // reason STRING, which a reword would silently break in the direction of inflating wins.
+          kind: "group_move",
+          fromTotalCents: g.totalCents ?? null,
+          fromPlatformFeeCents: g.platformFeeCents ?? null,
+          fromTaxCents: g.taxCents ?? null,
           fromStartsAt: fromSlot?.startsAt ?? null,
           toStartsAt: target.startsAt,
           fromItemName,
