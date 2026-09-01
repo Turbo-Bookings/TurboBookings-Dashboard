@@ -28,6 +28,7 @@ export const LOCATION_ROLES = new Set<Role>(["operator", "director", "basic_user
 // Capability → minimum role. Gate mutations on these, not on raw role checks.
 export type Capability =
   | "checkin" // basic_user+
+  | "comment" // basic_user+ (write a note on the booking's comment thread)
   | "collect_payment" // basic_user+ (take the balance on a card at the desk)
   | "view_revenue" // director+ (see the note below — TOTALS, not a booking's own figures)
   | "manage_bookings" // director+ (create/reschedule)
@@ -38,6 +39,12 @@ export type Capability =
 
 export const CAP_MIN: Record<Capability, Role> = {
   checkin: "basic_user",
+  // Front-line staff have to be able to write on a booking — "customer says they were here", "called,
+  // no answer" — and that is not a reason to hand them booking creation, rescheduling and refunds,
+  // which is what `manage_bookings` carries. Split out for the same reason `collect_payment` was:
+  // "may write a note" and "may move a booking" should not become one permission that cannot be
+  // separated later. Reading the thread stays at `checkin` — anyone who can see the booking sees it.
+  comment: "basic_user",
   // Front-line staff collect the balance at the desk — that is the job. Named separately from
   // `checkin` rather than folded into it so "may mark a rider present" and "may charge $400 to a
   // card" do not become the same permission forever; tightening one later should not require

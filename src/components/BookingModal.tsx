@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { usd } from "@/lib/ui/money";
 import { customerBreakdown } from "@/lib/booking/breakdown";
 import { BookingNote } from "@/components/BookingNote";
+import { BookingComments } from "@/components/BookingComments";
 import { CollectBalance } from "@/components/CollectBalance";
 import { createPortal } from "react-dom";
 import { sourceLabel } from "@/lib/bookingSource";

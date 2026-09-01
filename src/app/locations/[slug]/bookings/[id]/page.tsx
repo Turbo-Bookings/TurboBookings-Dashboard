@@ -17,7 +17,9 @@ import { can } from "@/lib/auth/roles";
 import { BookingNote } from "@/components/BookingNote";
 import { labelFor, resolveUserLabels } from "@/lib/users";
 import { FollowUpLog } from "@/components/FollowUpLog";
+import { BookingComments } from "@/components/BookingComments";
 import { listFollowUps } from "@/lib/actions/followups";
+import { listBookingComments } from "@/lib/actions/comments";
 import { CollectBalance } from "@/components/CollectBalance";
 import { getBalanceQuote } from "@/lib/actions/collectBalance";
 import { stripePublishableKey } from "@/lib/stripe/client";
@@ -67,6 +69,11 @@ export default async function BookingDetailPage({ params }: Props) {
   // The outreach trail. Same records the no-shows report writes, so a call logged from either place
   // shows up in both — a rep working the list and a manager opening the booking see one history.
   const followUps = await listFollowUps(slug, id);
+  // Free-text thread, readable by anyone who can open the booking and writable by front-line staff.
+  // Rendered unconditionally below — a tour that ran last month is exactly what people need to
+  // annotate, and nothing here looks at the date or the status.
+  const comments = await listBookingComments(slug, id);
+  const canComment = await can("comment", slug);
   const actors = await resolveUserLabels([
     ...activity.map((a) => a.userId),
     ...reschedules.map((r) => r.performedByUserId),
@@ -276,6 +283,17 @@ export default async function BookingDetailPage({ params }: Props) {
           </ul>
         </div>
       )}
+
+      {/* Comments — always rendered, on any booking, at any date. Deliberately outside the
+          `status === "active"` blocks above: annotating a finished or cancelled booking is the
+          reported use case. */}
+      <BookingComments
+        slug={slug}
+        bookingId={id}
+        entries={comments}
+        tz={tz}
+        canAdd={canComment}
+      />
 
       {/* Follow-up outreach — shown whenever there is a trail, or when this booking no-showed and
           somebody may need to start one. */}

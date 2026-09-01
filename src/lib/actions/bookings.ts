@@ -23,6 +23,7 @@ import { getLocationBySlug } from "@/lib/data/locations";
 import { getBookingDetail } from "@/lib/data/bookings";
 import { getTourBookingData } from "@/lib/actions/manualBooking";
 import { openSlotsForItem, reschedulableSlots } from "@/lib/data/availability";
+import { listBookingComments } from "@/lib/actions/comments";
 import { denyIfCannot } from "@/lib/auth/roles";
 import { getCancellationRefund, stripeRefundableCents } from "@/lib/booking/refund";
 import { syncPlatformFee } from "@/lib/booking/platformFee";
@@ -1564,6 +1565,9 @@ export async function getBookingModalData(slug: string, bookingId: string) {
     balanceQuote: await getBalanceQuote(slug, bookingId),
     publishableKey: stripePublishableKey(),
     stripeAccount: location.stripeAccountId ?? null,
+    // The comment thread, so the desk can annotate a booking without opening its own page. Loaded
+    // here for the same reason the balance quote is — the modal is a client component.
+    comments: await listBookingComments(slug, bookingId),
   };
 }
 

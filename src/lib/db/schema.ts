@@ -1444,6 +1444,46 @@ export type NewBookingReschedule = typeof bookingReschedules.$inferInsert;
  * call would erase the first. A correction is a new entry — which is also the only way to see who is
  * actually working the list.
  */
+// ---------- Booking comments (free-text thread, any booking, any date) ----------
+
+/**
+ * A timestamped, authored note on a booking. Append-only.
+ *
+ * Deliberately NOT a `booking_followups` row: that table's `status` is NOT NULL and every value in
+ * the enum is something a report counts, and `noShowReport` reads the LATEST followup per booking to
+ * decide the call-list outcome. A plain comment landing there would overwrite a rep's "Rescheduled"
+ * and silently un-count a win-back.
+ *
+ * Also not `bookings.notes` — that is one mutable field, no author, no time, last writer wins. It
+ * stays as the single line check-in reads at the desk.
+ *
+ * Gated on the `comment` capability (basic_user+), so front-line staff can annotate a booking
+ * without also being handed booking creation and the reschedule picker. No date or status guard:
+ * commenting on a tour that ran last month is the point.
+ */
+export const bookingComments = pgTable(
+  "booking_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookingId: uuid("booking_id")
+      .notNull()
+      .references(() => bookings.id, { onDelete: "cascade" }),
+    locationId: uuid("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    /** Clerk user_id of the author. Nullable for system-written rows. */
+    userId: text("user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    bookingIdx: index("booking_comments_booking_idx").on(t.bookingId, t.createdAt),
+  }),
+);
+
+export type BookingComment = typeof bookingComments.$inferSelect;
+export type NewBookingComment = typeof bookingComments.$inferInsert;
+
 export const followupStatusEnum = pgEnum("followup_status", [
   "left_voicemail",
   "no_answer",
