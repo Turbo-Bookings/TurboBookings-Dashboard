@@ -166,10 +166,12 @@ a line saying how it was proven fixed. If you find something new, append it; do 
 | TRK-15 | Meta names the exact missing parameter: Email on `ViewContent` (miami, +3.47% median) and on `AddToCart` (dtown, +9.31% median) | open | | |
 | TRK-16 | Dallas domain verification outstanding since 2026-06-04 — `dtownatvrentals.com` unconfirmed in Business Settings | **won't do** — operator confirmed 2026-09-04 the domain no longer needs verifying; do not re-raise it | n/a | 2026-09-04 |
 | TRK-17 | Miami's `AddPaymentInfo` is Pixel-only with no EMQ score, where both forks show "Multiple" at 9.3 | open | | |
-| TRK-18 | Miami fires zero `Lead` events despite `EmailPopup` → CAPI Lead being wired in its layout; Dallas fires 2.0K | open | | |
+| TRK-18 | Miami fires zero `Lead` events; not one Miami row ever reached `leads` | **closed** — `siteConfig.customBooking` was never set after the 2026-08-21 cutover, so `EmailPopup` returned on its first line (`if (!cb) return`). The popup was enabled with full copy authored the whole time. Scope was the popup alone: `BOOKING_ORIGIN`/`BOOKING_SLUG` prefer env vars, and the live site already emitted `/miami` on all 15 CTAs | `takeovers-site@3780552` | 2026-09-04 |
 | TRK-19 | `AddToCart` sits BELOW `InitiateCheckout` in all three markets, though you must select a slot to reach checkout — needs verification, not assumed | open | | |
 | TRK-20 | Miami — the template every fork is built from — scores below both forks on every shared event | open | | |
 | TRK-21 | Dallas emits an `__missing_event` (13 events, Pixel) | open | | |
+| TRK-22 | **Dallas's popup advertised `RIDE10` to 1,081 subscribers and the code did not exist.** Found while diagnosing TRK-18. `resolveDiscount` matches `upper(code)=upper(input)` scoped to the location, so every attempt returned "Code not found" — 18 days of an unredeemable offer on an operator client's site | **closed** — created `RIDE10` ($10.00, `order_total`, active) for dtown and miami; pointed Miami's popup at it and made its headline state the actual offer | `dashboard@6d8bf62` | 2026-09-04 |
+| TRK-23 | **Houston has no email capture at all** — no `EmailPopup` in its layout and no `popup_config` row, where Miami and Dallas both have one. Not a defect, but a lead channel the other two markets have and Houston does not. Decide whether that is deliberate | open | | |
 
 **Verification still owed on the 2026-09-04 batch.** TRK-02/03/04/11 are closed in code and pass
 tsc, eslint, `next build` and both capacity suites — but the honest proof is Meta's own diagnostic.
@@ -182,6 +184,21 @@ confidence:
 
 If TRK-18 (Miami's missing `Lead`) is still silent after this deploy, that is now a *loud* silence —
 TRK-04 means a failing Lead send finally logs.
+
+**An advertised code must resolve.** `popup_config.incentive_code` is free text and nothing joined it
+to `discount_codes` — which is how Dallas advertised a code that never existed for eighteen days. The
+check is one query, and `scripts/create-popup-discount-codes.ts` runs it as a post-condition:
+
+```sql
+SELECT l.slug, p.incentive_code FROM popup_config p JOIN locations l ON l.id = p.location_id
+WHERE p.enabled AND p.incentive_code IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM discount_codes d
+                  WHERE d.location_id = p.location_id
+                    AND upper(d.code) = upper(p.incentive_code) AND d.active);
+```
+
+It must return zero rows. Run it after any popup or discount change; it belongs in
+`location-preflight` next.
 
 ### Settled decisions — do not re-litigate
 
