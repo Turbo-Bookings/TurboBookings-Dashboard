@@ -150,16 +150,16 @@ a line saying how it was proven fixed. If you find something new, append it; do 
 | ID | Finding | Status | Closed by | Date |
 | --- | --- | --- | --- | --- |
 | TRK-01 | Mid-funnel CAPI (`AddToCart`/`InitiateCheckout`) carries no hashed PII, so it sits ~3 EMQ points below Purchase | open | | |
-| TRK-02 | No `event_source_url` on any `bookingsystem` server event. Meta flags it: miami 90% of events / 4 ad sets (detected 08-22), dtown 57% / 1 ad set (detected 08-18) | open | | |
-| TRK-03 | No `content_ids` on the server Purchase, though mid-funnel has them and `items` is in scope | open | | |
-| TRK-04 | Mid-funnel and Lead responses never inspected (bare `await fetch`) — an expired token fails silently on two of three paths | open | | |
+| TRK-02 | No `event_source_url` on any `bookingsystem` server event. Meta flags it: miami 90% of events / 4 ad sets (detected 08-22), dtown 57% / 1 ad set (detected 08-18) | **closed** — all three server events now send it, each from a source validated for that event | `bookingsystem@5f9cfe5` | 2026-09-04 |
+| TRK-03 | No `content_ids` on the server Purchase, though mid-funnel has them and `items` is in scope | **closed** — server Purchase now sends `content_type`/`content_ids`/`num_items` | `bookingsystem@5f9cfe5` | 2026-09-04 |
+| TRK-04 | Mid-funnel and Lead responses never inspected (bare `await fetch`) — an expired token fails silently on two of three paths | **closed** — all three paths go through one `postToMetaCapi()` that logs rejections and the accepted-but-0-received case | `bookingsystem@5f9cfe5` | 2026-09-04 |
 | TRK-05 | Dallas GA4 cross-domain linker missing | open | | |
 | TRK-06 | **No repo sets `allow_linker`** — Miami's and Houston's linker has no receiver, so cross-domain stitching is broken everywhere, not just Dallas | open | | |
 | TRK-07 | Dallas chatbot emits `https://www.dtownatvrentals.com/book`, which the decorator's `LINKER_DOMAIN` selector cannot match — costs first-touch and UTMs (not fbclid; the cookie carries) | open | | |
 | TRK-08 | Dallas `FALLBACK_ORIGIN = book.turbobookings.net` — never fires in production, but turns a missing env var into silent off-domain traffic instead of a loud failure | open | | |
 | TRK-09 | `tb_aid` cookie set without a domain, and never appended to any booking URL — so it has no producer | open | | |
 | TRK-10 | `ga_client_id` / `ga_session_id` appended by the decorator, never read by the booking app | open | | |
-| TRK-11 | Graph API version drift — `bookingsystem` v19.0, marketing sites v21.0 | open | | |
+| TRK-11 | Graph API version drift — `bookingsystem` v19.0, marketing sites v21.0 | **closed** — single `GRAPH_API_VERSION = v21.0`, matching the marketing sites | `bookingsystem@5f9cfe5` | 2026-09-04 |
 | TRK-12 | A plain (non-`--custom-booking`) fork ships Miami's LIVE pixel, GA4 property and Ads account | open | | |
 | TRK-13 | Template redirect `MAPPINGS` are not host-constrained, so a fork 301s its own pages to Miami. `lint:brand` misses it (`\btakeoversmiami\b` does not match inside `takeoversmiamiatvrentals`) | open | | |
 | TRK-14 | Low `fbp` coverage through CAPI (Meta's own diagnostic). Likely downstream of TRK-09 — fix that first and re-measure | open | | |
@@ -170,6 +170,18 @@ a line saying how it was proven fixed. If you find something new, append it; do 
 | TRK-19 | `AddToCart` sits BELOW `InitiateCheckout` in all three markets, though you must select a slot to reach checkout — needs verification, not assumed | open | | |
 | TRK-20 | Miami — the template every fork is built from — scores below both forks on every shared event | open | | |
 | TRK-21 | Dallas emits an `__missing_event` (13 events, Pixel) | open | | |
+
+**Verification still owed on the 2026-09-04 batch.** TRK-02/03/04/11 are closed in code and pass
+tsc, eslint, `next build` and both capacity suites — but the honest proof is Meta's own diagnostic.
+7–14 days after deploy, re-read this table over a **post-2026-08-21 window only**, in this order of
+confidence:
+
+1. `s2s_missing_event_source_url_actions` clears on all three datasets — binary and unambiguous.
+2. `InitiateCheckout` EMQ moves off ~6.1 toward Purchase's ~9.2 (that one needs TRK-01 too).
+3. Affected ad spend falls from the $15,141 baseline.
+
+If TRK-18 (Miami's missing `Lead`) is still silent after this deploy, that is now a *loud* silence —
+TRK-04 means a failing Lead send finally logs.
 
 ### Settled decisions — do not re-litigate
 
