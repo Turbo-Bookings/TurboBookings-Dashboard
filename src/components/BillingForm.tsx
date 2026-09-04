@@ -228,7 +228,15 @@ function RetainerConfig({
             inputMode="numeric"
             className={input}
           />
-          <FirstCharge day={dayPreview} timezone={initial.timezone} />
+          {/*
+            Only meaningful before a subscription exists. On a running retainer the next charge is
+            Stripe's to state, not ours — printing "First charge: today" next to a subscription that
+            has already billed is precisely the kind of confidently wrong label this line was added
+            to remove.
+          */}
+          {!initial.hasSubscription && (
+            <FirstCharge day={dayPreview} timezone={initial.timezone} />
+          )}
         </div>
       </div>
       <p className="text-xs text-zinc-500">Charged in addition to the 6% per-booking fee. Changing the amount updates a running subscription.</p>
