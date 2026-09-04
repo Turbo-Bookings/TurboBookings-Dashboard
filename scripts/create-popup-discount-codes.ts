@@ -44,7 +44,20 @@ for (const f of [".env.production.local", ".env.local"]) {
 const COMMIT = process.argv.includes("--commit");
 const CODE = "RIDE10";
 const AMOUNT_CENTS = 1000;
-const SLUGS = ["dtown", "miami"] as const;
+const SLUGS = ["dtown", "htown", "miami"] as const;
+/** Copy must state the actual offer — a vague headline is how Dallas advertised a phantom code. */
+const SEED_HEADLINE = "Get $10 off Your Ride!";
+/**
+ * The success copy must describe what actually happens.
+ *
+ * Every popup said "You're in! Check your inbox for the code." Nothing emails a subscriber — the
+ * leads route imports no mailer at all; the code is returned in the API response and rendered on
+ * screen directly beneath this line (EmailPopup.tsx:184-191). So the customer DID get their code,
+ * and was then told to go looking in an inbox that would never receive anything. That is a support
+ * ticket per subscriber, and there have been 1,081.
+ */
+const SUCCESS_MESSAGE = "You're in! Here's your code — use it at checkout.";
+const OLD_SUCCESS_MESSAGE = "You're in! Check your inbox for the code.";
 const usd = (c: number) => `$${(c / 100).toFixed(2)}`;
 
 async function run(tx: Tx) {
@@ -100,15 +113,55 @@ async function run(tx: Tx) {
     // --- point the popup at it ---
     const pc = (
       await tx
-        .select({ id: popupConfig.id, code: popupConfig.incentiveCode, headline: popupConfig.headline })
+        .select({
+          id: popupConfig.id,
+          code: popupConfig.incentiveCode,
+          headline: popupConfig.headline,
+          successMessage: popupConfig.successMessage,
+        })
         .from(popupConfig)
         .where(eq(popupConfig.locationId, loc.id))
         .limit(1)
     )[0];
     if (!pc) {
-      console.log(`  ${slug.padEnd(6)}   (no popup_config row — nothing to point)`);
+      // Houston had no row at all — no popup, no lead capture, where the other two markets both
+      // had one. Seeded from Dallas's copy (the market whose popup demonstrably converts) with the
+      // noun changed, rather than inventing new copy.
+      console.log(`  ${slug.padEnd(6)}   + seed popup_config (enabled, "${SEED_HEADLINE}", ${CODE})`);
+      if (COMMIT) {
+        await tx.insert(popupConfig).values({
+          locationId: loc.id,
+          enabled: true,
+          headline: SEED_HEADLINE,
+          subhead: "Join our list for a one-time discount + first dibs on deals.",
+          buttonLabel: "Get my code",
+          successMessage: SUCCESS_MESSAGE,
+          incentiveCode: CODE,
+          delaySeconds: 4,
+          exitIntent: false,
+          suppressDays: 7,
+        });
+        await tx.insert(auditLog).values({
+          locationId: loc.id,
+          userId: null,
+          action: "catalog.popup_config.created",
+          summary: `Enabled the email-capture popup, handing out ${CODE}`,
+          payload: { headline: SEED_HEADLINE, incentiveCode: CODE, reason: "location had no popup_config row" },
+        });
+      }
       continue;
     }
+    if (pc.successMessage === OLD_SUCCESS_MESSAGE) {
+      console.log(
+        `  ${slug.padEnd(6)}   success copy: "${OLD_SUCCESS_MESSAGE}" → "${SUCCESS_MESSAGE}" (no email is ever sent)`,
+      );
+      if (COMMIT)
+        await tx
+          .update(popupConfig)
+          .set({ successMessage: SUCCESS_MESSAGE, updatedAt: new Date() })
+          .where(eq(popupConfig.id, pc.id));
+    }
+
     if (pc.code === CODE) {
       console.log(`  ${slug.padEnd(6)}   popup already hands out ${CODE}`);
       continue;
