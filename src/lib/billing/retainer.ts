@@ -4,6 +4,9 @@ import { DateTime } from "luxon";
 import { getStripe } from "@/lib/stripe/client";
 import { getDb, locations } from "@/lib/db";
 import type { Location } from "@/lib/db/schema";
+import { billsImmediately, firstChargeAt } from "@/lib/billing/schedule";
+
+export { billsImmediately, firstChargeAt, firstChargeLabel } from "@/lib/billing/schedule";
 
 // Platform-retainer billing on the PLATFORM Stripe account. Every call here uses
 // getStripe() WITHOUT a { stripeAccount } option, so it runs on our own account
@@ -63,15 +66,9 @@ export async function saveCardFromSetupIntent(
   return { brand, last4 };
 }
 
-// Next occurrence of `day`-of-month at 09:00 in the location tz, as a unix
-// timestamp — used as the subscription trial end so the first charge lands on
-// the billing day (no immediate/prorated charge).
+/** The trial-end instant as unix seconds. Only meaningful when `billsImmediately` is false. */
 export function nextBillingAnchor(day: number, timezone: string): number {
-  const d = Math.min(Math.max(1, Math.floor(day)), 28);
-  const now = DateTime.now().setZone(timezone);
-  let anchor = now.set({ day: d, hour: 9, minute: 0, second: 0, millisecond: 0 });
-  if (anchor <= now) anchor = anchor.plus({ months: 1 }).set({ day: d });
-  return Math.floor(anchor.toSeconds());
+  return Math.floor(firstChargeAt(day, timezone).toSeconds());
 }
 
 // Subscription items need a Price object (prices are immutable). prices.create
@@ -112,10 +109,15 @@ export async function startSubscription(location: Location): Promise<string> {
   if (!location.retainerCents || location.retainerCents <= 0) throw new Error("Set the retainer amount first");
   if (!location.retainerBillingDay) throw new Error("Set the billing day first");
   const priceId = await createPrice(location, location.retainerCents);
+  const tz = location.timezone ?? "America/Chicago";
+  // Set up ON the billing day, past 09:00: bill now. Omitting `trial_end` entirely is how that is
+  // expressed — Stripe then charges on creation and anchors the cycle to this moment, so renewals
+  // still land on the chosen day. Any other case trials towards the next occurrence of that day.
+  const immediate = billsImmediately(location.retainerBillingDay, tz);
   const sub = await getStripe().subscriptions.create({
     customer: location.stripePlatformCustomerId,
     items: [{ price: priceId }],
-    trial_end: nextBillingAnchor(location.retainerBillingDay, location.timezone ?? "America/Chicago"),
+    ...(immediate ? {} : { trial_end: nextBillingAnchor(location.retainerBillingDay, tz) }),
     metadata: { locationId: location.id, slug: location.slug },
   });
   await getDb()

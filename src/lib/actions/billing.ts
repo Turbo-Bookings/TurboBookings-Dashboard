@@ -23,6 +23,8 @@ export type RetainerValues = {
   cardLast4: string | null;
   hasCard: boolean;
   hasSubscription: boolean;
+  /** The location's timezone — the first-charge date is computed in it, not the viewer's. */
+  timezone: string;
 };
 
 export async function getRetainerValues(slug: string): Promise<RetainerValues> {
@@ -39,6 +41,7 @@ export async function getRetainerValues(slug: string): Promise<RetainerValues> {
     cardLast4: loc?.retainerCardLast4 ?? null,
     hasCard: !!loc?.retainerCardLast4,
     hasSubscription: !!loc?.stripeSubscriptionId && loc.retainerStatus !== "canceled",
+    timezone: loc?.timezone ?? "America/Chicago",
   };
 }
 

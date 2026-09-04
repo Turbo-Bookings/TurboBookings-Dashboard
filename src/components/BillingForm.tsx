@@ -14,11 +14,37 @@ import {
   type RetainerFormState,
   type RetainerValues,
 } from "@/lib/actions/billing";
+import { firstChargeLabel, MAX_BILLING_DAY } from "@/lib/billing/schedule";
 
 const input =
   "mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900";
 const label = "block text-sm font-medium";
 
+
+/**
+ * When the first charge will land, stated before the operator commits to it.
+ *
+ * Dallas was configured at 11:37 CT on the 4th for billing day 4, and the first charge silently
+ * became 4 OCTOBER — the anchor is 09:00 local and the code rolled a full month past it. Nothing on
+ * screen said so, so the operator only found out by opening Stripe. This line is the fix that would
+ * have caught it in the moment; the same-day billing change is the fix for the behaviour itself.
+ *
+ * Computed with the SAME function the subscription is created with, in the LOCATION's timezone —
+ * Miami bills an hour earlier in real time than Dallas, and a viewer in another zone must not see a
+ * different date from the one that will actually be charged.
+ */
+function FirstCharge({ day, timezone }: { day: string; timezone: string }) {
+  const n = Number(day);
+  if (!day.trim() || !Number.isFinite(n) || n < 1 || n > MAX_BILLING_DAY) return null;
+  const when = firstChargeLabel(n, timezone);
+  return (
+    <p className="mt-2 text-xs text-zinc-500">
+      First charge:{" "}
+      <span className="font-medium text-zinc-700 dark:text-zinc-200">{when}</span>
+      {when === "today" ? " — starting the retainer bills the card straight away." : ""}
+    </p>
+  );
+}
 
 const STATUS_TONE: Record<string, string> = {
   active: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
@@ -131,6 +157,9 @@ export function BillingForm({
             {STATUS_LABEL[initial.status] ?? initial.status}
           </span>
         </div>
+        {canManage && !initial.hasSubscription && initial.billingDay && (
+          <FirstCharge day={initial.billingDay} timezone={initial.timezone} />
+        )}
         {canManage && (
           <div className="mt-3 flex gap-2">
             {!initial.hasSubscription ? (
@@ -178,6 +207,8 @@ function RetainerConfig({
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   const v = state?.values ?? { amount: initial.amount, billingDay: initial.billingDay };
+  // Live preview as the day is typed, so the consequence is visible before saving rather than after.
+  const [dayPreview, setDayPreview] = useState(v.billingDay);
   return (
     <form action={formAction} className="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <h2 className="text-sm font-semibold">Retainer (admin)</h2>
@@ -188,7 +219,16 @@ function RetainerConfig({
         </div>
         <div>
           <label className={label} htmlFor="billingDay">Billing day (1–28)</label>
-          <input id="billingDay" name="billingDay" defaultValue={v.billingDay} placeholder="1" inputMode="numeric" className={input} />
+          <input
+            id="billingDay"
+            name="billingDay"
+            defaultValue={v.billingDay}
+            onChange={(e) => setDayPreview(e.target.value)}
+            placeholder="1"
+            inputMode="numeric"
+            className={input}
+          />
+          <FirstCharge day={dayPreview} timezone={initial.timezone} />
         </div>
       </div>
       <p className="text-xs text-zinc-500">Charged in addition to the 6% per-booking fee. Changing the amount updates a running subscription.</p>
