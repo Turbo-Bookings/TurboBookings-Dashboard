@@ -11,6 +11,14 @@
 
 ## 0. The one thing that can actually hurt you
 
+> ✅ **DONE 2026-08-31 — this section describes the world BEFORE the switch.** Houston and Miami now
+> both run `Purchase - Booking System` as the primary Google Ads conversion (`primary=True`,
+> `in_conversions_metric=True`); the GA4 import was demoted to secondary on both. Applied atomically
+> per account via `mutate_conversion_actions`; all 11 enabled campaigns verified on the account-default
+> `PURCHASE/WEBSITE` goal. Expect **~15% more reported conversion value with no real change in
+> bookings** — accounting, not performance. It moves Houston's efficiency-derived tROAS floor
+> ~402% → ~458%. **Review 2026-09-14.** Canonical record: `docs/TRACKING.md`.
+
 **Houston and Miami both import the GA4 `purchase` as the PRIMARY Google Ads
 conversion.** Smart Bidding optimises against it.
 
@@ -558,6 +566,15 @@ credential that looks correct in the UI and fails every API call silently.
 
 ## 10. Migrating Google Ads bidding off the GA4 import
 
+> ✅ **EXECUTED 2026-08-31 — Steps 1–3 are DONE.** Read this section as a record, not a to-do. Houston
+> and Miami both now run `Purchase - Booking System` as primary with the GA4 import demoted to
+> secondary. Step 4 (server-side conversion uploads) is the only part still outstanding.
+> Anyone re-deriving this plan is re-doing finished work — check `docs/TRACKING.md` first.
+>
+> Two Miami leftovers from the switch, both harmless but worth a decision: a third dormant
+> `Online Booking Purchase` action (30-day window) left secondary, and `Store visits` with
+> `primary_for_goal=True` but `include_in_conversions_metric=False` (inert).
+
 **Decided 2026-08-20.** The end state is direct Google Ads conversion tracking
 with Enhanced Conversions, and eventually server-side uploads. The GA4 import is
 the thing we are leaving, not the thing we are protecting long-term — §3 protects
@@ -653,19 +670,26 @@ by reversing the same single edit. Only Step 4 involves new credentials.
 
 ## 11. Per-location state (update as it changes)
 
+> ⚠️ **Rewritten 2026-09-04.** The previous version of this table described Miami as "nothing built",
+> "0 items", "`tracking_config` ❌" and "booking page is 404". All four were true when written
+> (2026-08-20) and all four are now false — Miami cut over on 2026-08-21 and took 160 online bookings
+> in the week of 08-28 alone. A stale state table is worse than no state table; keep this one current
+> or delete it.
+
 | | Dallas | Houston | Miami |
 |---|---|---|---|
-| Booking system | ✅ live | catalog ready, not cut over | **nothing built** |
-| Items / schedules | ✅ | 3 items ✅, schedules ✅ | 0 / 0 |
+| Booking system | ✅ live | ✅ live (cut over 2026-08-21) | ✅ live (cut over 2026-08-21) |
+| Items / schedules | ✅ | ✅ | ✅ |
 | Stripe Connect | ✅ | ✅ | ✅ |
-| `tracking_config` row | ✅ | ✅ | ❌ |
-| Meta pixel | `25974101692226269` | `1516241692811826` (hardcoded) | confirm |
-| GA4 | none | `G-BQQMF72HGR` | confirm |
-| Google Ads | none | `AW-10833387733` | confirm |
-| Primary Ads conversion | n/a | `GA4 Purchase` (GA4 import) ✅ confirmed | confirm |
-| Marketing-site fixes §4 | ✅ | ✅ on `develop`, not deployed | ❌ |
-| Readiness gate | open | **open** — storefront is live | closed (0 bookable items) |
+| `tracking_config` row | ✅ | ✅ | ✅ |
+| Meta pixel | `25974101692226269` | `1516241692811826` | `516637097197570` |
+| GA4 | **none — intentional** | `G-BQQMF72HGR` | `G-W1737CSQ2C` |
+| Google Ads | **none — intentional** | `AW-10833387733` | `AW-10789560857` |
+| Primary Ads conversion | n/a | `Purchase - Booking System` ✅ switched 2026-08-31 | `Purchase - Booking System` ✅ switched 2026-08-31 |
+| Booking origin | book.dtownatvrentals.com | book.htownatvrentals.org | book.takeoversmiamiatvrentals.com |
+| Readiness gate | open | open | open |
 
-Miami is a clean slate: zero items, zero bookings, no tracking row. Its booking
-page is 404 because the gate requires at least one bookable, listed item — so
-there is no rush and no exposure. Build the catalog first, tracking second.
+**Dallas's "none" for GA4 and Google Ads is a decision, not an omission.** It runs Meta only; it has
+no Google Ads account and has never recorded a `gclid`. See `docs/TRACKING.md`.
+
+FareHarbor was retired as a booking surface on 2026-08-21 for all three markets.

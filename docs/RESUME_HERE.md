@@ -89,6 +89,22 @@ cockpit revenue feed is connected and verified — this was the last missing pie
 | `docs/cross-system/CROSS_SYSTEM_EVENT_CONTRACT.md` | Envelope + transport. **§4's catalog is partly aspirational** — read its reality-check block |
 | `AGENTS.md` | Ownership, git workflow, cross-repo split |
 
+## Doc map — which file is canonical for what
+
+| Topic | Canonical file | Synced to |
+|---|---|---|
+| Platform topology (Face / Brains / Memory) | `PLATFORM_ARCHITECTURE.md` | all 7 repos |
+| **Tracking, pixels, attribution, click IDs** | **`docs/TRACKING.md`** | **all 7 repos** |
+| Booking-system build status & roadmap | `docs/BOOKING_SYSTEM_SPRINTS.md` | dashboard only |
+| Launching a new location | `docs/NEW_LOCATION_RUNBOOK.md` | dashboard only |
+
+Both synced files are maintained HERE and pushed out with `npm run docs:sync -- --write`.
+`npm run docs:check` exits 1 if any copy has drifted. Never edit the shared half in another repo —
+it is overwritten.
+
+`docs/TRACKING.md` carries a numbered **fix log** (TRK-01…). When you fix a tracking defect, close its
+row with the commit and a line on how you proved it — that is the whole point of the file.
+
 ## Repo map — what to edit where
 
 | Repo | Owns | Deploys via |
@@ -126,8 +142,9 @@ must stay byte-identical; above it is each repo's own role header.
 ```bash
 cd ~/turbobookings-dashboard
 # edit the shared half here, then:
-npm run arch:sync            # dry run
-npm run arch:sync -- --write
+npm run docs:sync            # dry run
+npm run docs:sync -- --write
+npm run docs:check          # exits 1 on drift
 ```
 
 Then commit each repo separately. Hand-maintaining the copies failed — by 2026-08-21 they carried

@@ -5,7 +5,8 @@
 > header. `turbobookings-dashboard` holds the canonical copy — edit the shared half there, then sync:
 >
 > ```bash
-> npm run arch:sync            # from turbobookings-dashboard
+> npm run docs:sync -- --write   # from turbobookings-dashboard
+> npm run docs:check             # exits 1 if any copy has drifted
 > ```
 >
 > Drop-in orientation so any work session understands how the Turbo Bookings systems fit together
@@ -27,6 +28,12 @@ payments; Drizzle schema lives here). Vercel / Next.js. Hosts the event-retry cr
   proven; rebuilding = double work. (Cockpit code: `~/ads/SHARED/cockpit/`.)
 
 ## The decision (read this first)
+
+> 🔒 **Everything from this heading down is SHARED across seven repos and is overwritten by
+> `npm run docs:sync -- --write` in `turbobookings-dashboard`.** Edit it THERE, not here — a local
+> edit below this line will be silently discarded on the next sync. Everything ABOVE this heading is
+> this repo's own and is never touched.
+
 - **There are TWO Replit projects, not one.** `takeovers-platform` (cloned at `~/takeovers-platform`)
   serves **Miami only** — its Aircall number, business identity and pickup address are hardcoded, and
   it has no tenant column. **Dallas and Houston run on a SECOND, separate Replit project with its own

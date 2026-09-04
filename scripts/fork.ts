@@ -172,10 +172,13 @@ async function main() {
     log("  ! Brand linter found leftovers (see above) — finish the content pass, then re-run `npm run lint:brand`.\n");
   }
 
-  // 7. (Phase 2 polish) Remove Miami-specific SEO pages, drop ES locale if
-  //    only en, strip Miami-specific docs. Skipped here — operator deletes
-  //    these manually for now in their first review pass. A clear follow-up
-  //    line item is printed below.
+  // 7. Prune the template's Miami-only docs and leave a pointer to the synced ones.
+  //    This used to be a printed follow-up that nobody performed: Dallas shipped ~1,600 lines
+  //    describing Miami's pixel, Miami's GA4 property and a FareHarbor webhook route that does
+  //    not exist in that repo. Removing them is mechanical, so it happens here.
+  //    Miami-specific SEO pages and the ES locale stay manual — they depend on whether the
+  //    client runs groups / wants Spanish — and remain in the printed follow-ups.
+  pruneTemplateDocs(targetDir, loc);
 
   // 8. git init + initial commit
   log("→ Creating initial commit…\n");
@@ -871,6 +874,83 @@ async function createGithubRepoAndPush(
 // Operator follow-ups summary
 // ---------------------------------------------------------------------------
 
+/**
+ * Delete the template docs that describe MIAMI's infrastructure and leave a README pointing at the
+ * docs that are synced across every repo.
+ *
+ * The fork copies `docs/` forward verbatim. Before this existed, every fork inherited Miami's
+ * FareHarbor-Lightframe tracking architecture, Miami's Google Ads SOP, Miami's Wix -> Next SEO
+ * migration write-up and Miami's GA4 experiment log — all describing a pixel, a GA4 property and a
+ * webhook route the new site does not have. Dallas carried the lot to production; found and removed
+ * on 2026-09-04.
+ *
+ * Conservative on re-runs: if a local `takeovers-site` checkout is present and the fork's copy has
+ * diverged from it, the file has been edited since the fork and is left alone.
+ */
+function pruneTemplateDocs(targetDir: string, loc: Location): void {
+  const MIAMI_ONLY = [
+    "active-experiments.md",
+    "fork-playbook.md",
+    "google-ads-tracking-setup-sop.md",
+    "google-tracking-architecture.md",
+    "meta-tracking-architecture.md",
+    "multi-location-architecture.md",
+    "seo-migration.md",
+    "server-side-tracking-roadmap.md",
+    "unified-platform-integration.md",
+  ];
+
+  const forkDocs = resolve(targetDir, "docs");
+  if (!existsSync(forkDocs)) return;
+  const templateDocs = resolve(scriptDir(), "..", "..", "takeovers-site", "docs");
+
+  const removed: string[] = [];
+  const kept: string[] = [];
+  for (const name of MIAMI_ONLY) {
+    const mine = resolve(forkDocs, name);
+    if (!existsSync(mine)) continue;
+    const theirs = resolve(templateDocs, name);
+    if (existsSync(theirs) && readFileSync(mine, "utf8") !== readFileSync(theirs, "utf8")) {
+      kept.push(name);
+      continue;
+    }
+    rmSync(mine);
+    removed.push(name);
+  }
+
+  const brand = loc.brandDisplayName ?? loc.slug;
+  writeFileSafe(
+    resolve(forkDocs, "README.md"),
+    [
+      `# ${brand} site docs`,
+      "",
+      "Only docs that describe **this** site belong here. Anything identical across locations is",
+      "maintained once in `turbobookings-dashboard` and synced — do not copy it in.",
+      "",
+      "| Looking for | Read |",
+      "|---|---|",
+      "| Tracking, pixels, attribution, click IDs | `docs/TRACKING.md` (synced) |",
+      "| Platform topology | `PLATFORM_ARCHITECTURE.md` (synced) |",
+      "| Launching a new location | `turbobookings-dashboard/docs/NEW_LOCATION_RUNBOOK.md` |",
+      "| Miami-era history (FareHarbor, SEO migration, GA4 experiments) | `~/takeovers-site/docs/` |",
+      "",
+      removed.length
+        ? `Removed at fork time as Miami-specific: ${removed.join(", ")}.`
+        : "No Miami-specific docs were present at fork time.",
+      ...(kept.length
+        ? ["", `Left in place because they had local edits — review by hand: ${kept.join(", ")}.`]
+        : []),
+      "",
+    ].join("\n"),
+  );
+
+  log(
+    `✓ Pruned ${removed.length} Miami-only doc(s)` +
+      (kept.length ? `, kept ${kept.length} with local edits` : "") +
+      ", wrote docs/README.md\n",
+  );
+}
+
 function printFollowUps({
   slug,
   push,
@@ -941,7 +1021,6 @@ function printFollowUps({
   log("  · src/app/[locale]/blog/why-takeovers-is-miamis-best-atv-tour/  (Miami-only SEO page)\n");
   log("  · src/app/[locale]/groups/  (only if this location doesn't run groups)\n");
   log("  · src/messages/es.json + Spanish i18n setup if locales = ['en'] only\n");
-  log("  · Anything under docs/ that's Miami-specific\n\n");
 }
 
 // ---------------------------------------------------------------------------

@@ -794,8 +794,9 @@
 >    wrong for Houston/Miami. Do not "fix" this.
 >
 > **Tracking cutover for Houston / Miami: `docs/TRACKING_CUTOVER_PLAYBOOK.md`.**
-> Both locations import the GA4 purchase as their PRIMARY Google Ads conversion, so
-> the cutover risk is a blind bidding algorithm, not broken tracking. Read it first.
+> ✅ **Completed 2026-08-31.** Both locations now use `Purchase - Booking System` as their PRIMARY
+> Google Ads conversion; the GA4 import is secondary. (This line previously said the GA4 purchase was
+> primary — true until 08-31, wrong after. Corrected 2026-09-04.) Canonical: `docs/TRACKING.md`.
 >
 > ### ▶▶ NEXT SESSION STARTS HERE (updated 2026-08-18)
 > **All feature work is DONE. The only thing between us and a live Dallas is the GO-LIVE cutover

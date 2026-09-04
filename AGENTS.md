@@ -24,7 +24,21 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 **Starting a session?** `docs/RESUME_HERE.md` has the prompt to use and a map of which doc is which.
 
 **Editing `PLATFORM_ARCHITECTURE.md`?** It lives in SEVEN repos; the half below `## The decision` is
-shared. Edit it here, then `npm run arch:sync -- --write`, then commit each repo.
+shared. Edit it here, then `npm run docs:sync -- --write`, then commit each repo.
+`npm run docs:check` exits 1 if any copy has drifted.
+
+> ⚠️ The old `sync-architecture.mjs` matched its anchor with an unanchored `indexOf`, which
+> found the backticked mention of the anchor in the banner instead of the real heading. On
+> 2026-08-27 it wrote the DASHBOARD's role header into all six other repos. Repaired
+> 2026-09-04; the replacement matches whole lines and has a `--check` mode. Do not reintroduce
+> substring anchoring.
+
+**Touching tracking, pixels, attribution or click IDs?** `docs/TRACKING.md` is the canonical
+record — how a click becomes an attributed booking, the per-market state, the measurement traps, and
+a numbered fix log (TRK-01…) that records when each known defect was closed and how it was proven.
+It is synced into all seven repos. **Read it before measuring anything**: two of its traps
+(click-ID capture began 2026-08-28; the booking cutover was 2026-08-21) invalidate most naive
+date windows.
 
 **Booking-system build status & sprint roadmap:** `docs/BOOKING_SYSTEM_SPRINTS.md`
 is the live pick-up point — what sprint we're on, what's done, and the exact next
