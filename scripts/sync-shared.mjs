@@ -41,9 +41,16 @@ const REPOS = [
   "takeovers-platform",
 ];
 
+/** Just the marketing sites — the shared PLUMBING lives here, not in the dashboard or booking app. */
+const SITE_REPOS = ["takeovers-site", "htown-atv-rentals-site", "dtown-atv-rentals-site"];
+
 /**
- * Every doc that lives in more than one repo. `canonicalRepo` holds the copy that is edited by hand;
- * every other repo receives its shared half verbatim.
+ * Every doc or code file that lives in more than one repo. `canonicalRepo` holds the copy that is
+ * edited by hand; every other repo receives it verbatim.
+ *
+ * Entries are one of two kinds:
+ *   anchored  (docs) — everything from `anchor` down is shared, the header above it is the repo's own
+ *   wholeFile (code) — the entire file is shared, and copies get a 🔒 banner
  */
 const DOCS = [
   {
@@ -52,6 +59,34 @@ const DOCS = [
     canonicalRepo: "turbobookings-dashboard",
     repos: REPOS,
   },
+  // ---- SHARED CODE ---------------------------------------------------------------------------
+  //
+  // Whole-file entries: no anchor, the file is identical end to end. These are the marketing-site
+  // PLUMBING — the layer where two copies differing is always a bug, never a feature.
+  //
+  // Presentation is deliberately NOT here. Of Miami's 23 section components only 4 are identical
+  // across the three sites, and that is correct: clients should not look like copies of each other.
+  // What must never diverge is how a click becomes an attributed booking.
+  //
+  // The cost of not having this was measured: the `tb_aid` fix on 2026-09-04 had to be written three
+  // times, once per repo, and `google-tracking.ts` had drifted into three different shapes.
+  ...[
+    "src/lib/google-tracking.ts",
+    "src/lib/cookies.ts",
+    "src/lib/anonymousId.ts",
+    "src/components/tracking/MetaPixel.tsx",
+    "src/components/tracking/GoogleAnalytics.tsx",
+    "src/components/tracking/PageTracker.tsx",
+    "src/components/tracking/TelLink.tsx",
+  ].map((file) => ({
+    file,
+    canonicalRepo: "takeovers-site",
+    repos: SITE_REPOS,
+    // Per-site identity lives in siteConfig.tracking, so these files carry no location-specific
+    // values and can be byte-identical. See TRK-12.
+    wholeFile: true,
+  })),
+
   {
     file: "docs/TRACKING.md",
     anchor: "## How attribution works (read this first)",
@@ -85,6 +120,27 @@ function anchorIndexIn(text, anchor, { exact = false } = {}) {
   return -1;
 }
 
+/**
+ * The header stamped onto every synced CODE copy.
+ *
+ * Vendored source can still be edited in place — the banner and `--check` make that visible, not
+ * impossible. That is the accepted cost of not shipping a private npm package yet: private-repo
+ * installs would need a registry token in every Vercel project, and publishing needs the GitHub
+ * automation that does not exist in this estate.
+ */
+function bannerFor(doc, file) {
+  const ext = file.slice(file.lastIndexOf("."));
+  const line = ext === ".md" ? ">" : "//";
+  return [
+    `${line} 🔒 SYNCED FILE — DO NOT EDIT HERE.`,
+    `${line} Canonical copy: ${doc.canonicalRepo}/${doc.file}`,
+    `${line} Edit it there, then run \`npm run docs:sync -- --write\` from turbobookings-dashboard.`,
+    `${line} Local edits are overwritten on the next sync; \`npm run docs:check\` exits 1 on drift.`,
+    "",
+    "",
+  ].join("\n");
+}
+
 let drifted = 0;
 let missing = 0;
 let repaired = 0;
@@ -98,14 +154,23 @@ for (const doc of DOCS) {
   }
 
   const canon = readFileSync(canonFile, "utf8");
-  const canonAt = anchorIndexIn(canon, doc.anchor, { exact: true });
-  if (canonAt === -1) {
-    console.error(
-      `Canonical ${doc.file} has no line that is exactly "${doc.anchor}" — refusing to sync.`,
-    );
-    process.exit(1);
+
+  let shared;
+  if (doc.wholeFile) {
+    // Code: the whole file is shared, so there is no anchor to find. A banner is prepended at write
+    // time rather than stored in the canonical file, so the canonical copy stays ordinary source you
+    // can lint, typecheck and reason about without a marker in the way.
+    shared = canon;
+  } else {
+    const canonAt = anchorIndexIn(canon, doc.anchor, { exact: true });
+    if (canonAt === -1) {
+      console.error(
+        `Canonical ${doc.file} has no line that is exactly "${doc.anchor}" — refusing to sync.`,
+      );
+      process.exit(1);
+    }
+    shared = canon.slice(canonAt);
   }
-  const shared = canon.slice(canonAt);
 
   console.log(`\n${doc.file}  (canonical: ${doc.canonicalRepo})`);
 
@@ -121,6 +186,25 @@ for (const doc of DOCS) {
     }
 
     const cur = readFileSync(file, "utf8");
+
+    if (doc.wholeFile) {
+      // The canonical repo holds the source of truth and needs no banner in its own copy.
+      const next =
+        repo === doc.canonicalRepo ? shared : bannerFor(doc, file) + shared;
+      if (next === cur) {
+        console.log(`  ok         ${repo}`);
+        continue;
+      }
+      drifted++;
+      if (WRITE) {
+        writeFileSync(file, next);
+        console.log(`  SYNCED     ${repo}  ${doc.file}`);
+      } else {
+        console.log(`  WOULD SYNC ${repo}  ${doc.file}`);
+      }
+      continue;
+    }
+
     const at = anchorIndexIn(cur, doc.anchor);
     if (at === -1) {
       // Never guess where the split is — a wrong guess silently deletes a repo's role header.

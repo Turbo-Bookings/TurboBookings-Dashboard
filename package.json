@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "arch:sync": "node scripts/sync-shared-docs.mjs",
+    "arch:sync": "node scripts/sync-shared.mjs",
     "booking:snapshot": "node --env-file-if-exists=.env.local --import tsx scripts/booking-test-snapshot.ts",
     "bookings:purge-test": "node --env-file-if-exists=.env.local --import tsx scripts/purge-test-bookings.ts",
     "build": "next build",
@@ -19,8 +19,8 @@
     "db:seed": "node --env-file-if-exists=.env.local --import tsx scripts/seed.ts",
     "db:studio": "node --env-file-if-exists=.env.local node_modules/drizzle-kit/bin.cjs studio",
     "dev": "next dev",
-    "docs:check": "node scripts/sync-shared-docs.mjs --check",
-    "docs:sync": "node scripts/sync-shared-docs.mjs",
+    "docs:check": "node scripts/sync-shared.mjs --check",
+    "docs:sync": "node scripts/sync-shared.mjs",
     "dtown:glow-policies": "node --import tsx scripts/attach-glow-policy-fields.ts",
     "emails:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-emails.ts",
     "fees:reverse-phantom": "node --import tsx scripts/reverse-phantom-platform-fees.ts",
@@ -34,6 +34,8 @@
     "reminders:backfill": "node --env-file-if-exists=.env.local --import tsx scripts/backfill-import-reminders.ts",
     "retainer:reset": "node --env-file-if-exists=.env.local --import tsx scripts/reset-retainer-for-live.ts",
     "retainer:status": "node --env-file-if-exists=.env.local --import tsx scripts/status-retainer.ts",
+    "shared:check": "node scripts/sync-shared.mjs --check",
+    "shared:sync": "node scripts/sync-shared.mjs",
     "start": "next start",
     "stripe:preflight": "node --env-file-if-exists=.env.local --import tsx scripts/stripe-live-preflight.ts",
     "terms:status": "node --env-file-if-exists=.env.local --import tsx scripts/terms-status.ts"

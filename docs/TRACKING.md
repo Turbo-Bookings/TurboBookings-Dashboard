@@ -142,6 +142,41 @@ CAPI alongside the Pixel, on both Miami and Dallas.
 6. **`~/takeovers-platform` is Miami only.** Any measurement taken there describes Miami and nothing
    else.
 
+### The plumbing is shared — fix it once
+
+Seven marketing-site files are **byte-identical across all three sites and synced**, because a
+difference between two copies of them is always a bug:
+
+```
+src/lib/google-tracking.ts          src/components/tracking/MetaPixel.tsx
+src/lib/cookies.ts                  src/components/tracking/GoogleAnalytics.tsx
+src/lib/anonymousId.ts              src/components/tracking/PageTracker.tsx
+                                    src/components/tracking/TelLink.tsx
+```
+
+Canonical copy lives in **`takeovers-site`**. Every other copy carries a `🔒 SYNCED FILE` banner.
+
+```bash
+npm run shared:sync -- --write   # from turbobookings-dashboard
+npm run shared:check             # exits 1 if any copy has drifted
+```
+
+Per-site identity is **not** in these files — it lives in `siteConfig.tracking`, which the fork
+regenerates per location, with `NEXT_PUBLIC_*` overriding for previews. That is what lets the files
+be identical *and* stops a fork inheriting another location's pixel (TRK-12).
+
+**Deliberately NOT shared, and why** — this boundary is the point, not an omission:
+
+| File | Why it stays per-site |
+| --- | --- |
+| `ViewContentTracker.tsx` | Genuine content — tour names, ids, prices. Dallas tracks one section, Miami three. |
+| `tracking.ts`, `ad-tracking.ts`, `BookingLinkDecorator.tsx` | Blocked on retiring the FareHarbor session bridge. Dallas has no `booking-intent` route, no `sessionUuid`, no `postBookingIntent` — it launched straight onto our system. Sharing these would push dead FareHarbor code into a repo that lacks the route it calls. |
+| `booking.ts`, `tokens.ts` | Per-site by nature (tour keys, brand tokens). |
+| Everything in `components/sections/` | Only **4 of 23** are identical across the three sites, and that is correct: clients should not look like copies of each other. |
+
+The cost of not having this was measured: the TRK-09 `tb_aid` fix had to be written three times, and
+`google-tracking.ts` had drifted into three different shapes.
+
 ### Fix log
 
 Every finding gets a stable ID and is never deleted — only closed, with the commit that closed it and
