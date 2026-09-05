@@ -59,6 +59,29 @@ export const bookingThemeModeEnum = pgEnum("booking_theme_mode", [
   "dark",
 ]);
 
+/**
+ * What the operator sells. Drives site vocabulary and the schema.org type.
+ *
+ * Kept separate from `templateLayout` on purpose: several verticals share a page structure (a yacht
+ * charter and a fishing charter are both `vessel_charter`), and adding a sixth vertical should be a
+ * row of copy rather than a new repo. Collapsing the two would force one codebase per vertical,
+ * which is the same duplication problem this estate already hit with seven copies of one doc.
+ */
+export const locationVerticalEnum = pgEnum("location_vertical", [
+  "atv",
+  "jetski",
+  "yacht_charter",
+  "fishing_charter",
+  "excursion",
+]);
+
+/** Which page structure the marketing site is built on. Many verticals share one. */
+export const templateLayoutEnum = pgEnum("template_layout", [
+  "tour_operator",
+  "vessel_charter",
+  "equipment_rental",
+]);
+
 // Per-tour entry in a location's FareHarbor catalog. Mirrors the structure
 // used by `src/config/site.ts` on each location site so the Fork CLI can
 // translate one-to-one.
@@ -114,6 +137,25 @@ export const locations = pgTable("locations", {
   bookingThemeMode: bookingThemeModeEnum("booking_theme_mode")
     .notNull()
     .default("light"),
+
+  // Vertical block — what this operator sells and which layout their site uses.
+  //
+  // Both default to the ATV shape so the three live locations are unaffected, and so a location
+  // created before anyone thinks about verticals still gets a coherent site.
+  vertical: locationVerticalEnum("vertical").notNull().default("atv"),
+  templateLayout: templateLayoutEnum("template_layout")
+    .notNull()
+    .default("tour_operator"),
+  /**
+   * What THIS operator calls one sellable unit, in their own words.
+   *
+   * Not derived from `vertical`, because operators inside one vertical disagree: an ATV shop sells
+   * "ATVs", a side-by-side shop sells "buggies", and Houston sells both. The vertical supplies a
+   * default at fork time and the operator overrides it. NULL means "use the vertical default",
+   * never "blank" — see `unitNounFor()` in lib/verticals.
+   */
+  unitNoun: text("unit_noun"),
+  unitNounPlural: text("unit_noun_plural"),
 
   // FareHarbor block
   fareharborShortname: text("fareharbor_shortname"),
